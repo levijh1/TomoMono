@@ -6,6 +6,8 @@ import scipy as sp
 import skimage.transform as sk
 from helperFunctions import show, MoviePlotter
 from pltwidget import runwidget
+import astra
+import torch
 
 
 
@@ -24,7 +26,7 @@ class tomoData:
         return self.prj
     
     def get_recon(self):
-        return self.recon_normal
+        return self.recon
     
     def get_projections(self):
         return self.projections
@@ -69,15 +71,47 @@ class tomoData:
         
         self.projections = cropped_array
 
-    def makeNotebookMovie(self):
+    def makeNotebookProjMovie(self):
         MoviePlotter(self.projections)
 
-    def makeScriptMovie(self):
+    def makeScriptProjMovie(self):
         runwidget(self.projections)
+
+    def makeNotebookReconMovie(self):
+        MoviePlotter(self.recon)
+
+    def makeScriptReconMovie(self):
+        runwidget(self.recon)
 
     def tomopyAlign(self, iterations = 10):
         align_info = tomopy.prep.alignment.align_joint(self.projections, self.ang, algorithm='sirt', iters=iterations)
         self.projections = tomopy.shift_images(self.projections, align_info[1], align_info[2])
 
     def recon(self):
-        self.recon = tomopy.recon(tomo=self.projections, theta=self.ang, algorithm='sirt')
+        print("Finding center of rotation")
+        rot_center = tomopy.find_center(self.projections, self.ang)
+
+        # Check if ASTRA is available and if a GPU device is present
+        if torch.cuda.is_available():
+            # Use an ASTRA-supported GPU algorithm, e.g., 'SIRT_CUDA'
+            extra_options = {'MinConstraint': 0}
+            options = {
+                'proj_type': 'cuda',
+                'method': 'SIRT_CUDA',
+                'num_iter': 200,
+                'extra_options': extra_options
+            }
+            print("Using GPU-accelerated reconstruction.")
+            recon = tomopy.recon(self.projections,
+                     self.ang,
+                     center=rot_center,
+                     algorithm=tomopy.astra,
+                     options=options,
+                     ncore=1)
+        else:
+            # Fallback to a CPU-based algorithm if no GPU is available
+            print("Using CPU-based reconstruction.")
+            recon = tomopy.recon(self.projections, self.ang, center=rot_center, algorithm='sirt', sinogram_order=False)
+
+        print("Applying circular mask")
+        self.recon = tomopy.circ_mask(recon, axis=0, ratio=0.95)

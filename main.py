@@ -3,10 +3,19 @@ if __name__ == '__main__':
     import sys
     import tomoDataClass
     from tiffConverter import convert_to_numpy, convert_to_tiff
+    from datetime import datetime
+    import torch
 
-    log_file = open('output_tomoMono_align.txt', 'w')
-    sys.stdout = log_file
-    sys.stderr = log_file
+    log = False
+    saveToFile = True
+
+    if log:
+        log_file = open('output_tomoMono.txt', 'w')
+        sys.stdout = log_file
+        sys.stderr = log_file
+
+    if torch.cuda.is_available():
+        print("GPU is available")
 
     #Start the timer
     start_time = time.time()
@@ -23,21 +32,36 @@ if __name__ == '__main__':
 
 
 
-    #Import foam data
-    numAngles = 20
-    tif_file = "cropped_fullTomoReconstructions2.tif"
-    obj = convert_to_numpy(tif_file)[:numAngles]
+    # #Import foam data
+    # numAngles = 20
+    # tif_file = "data/cropped_fullTomoReconstructions2.tif"
+    # obj = convert_to_numpy(tif_file)[:numAngles]
+    # tomo = tomoDataClass.tomoData(obj)
+
+    # #Alignment Process
+    # print("Starting allignment")
+    # tomo.tomopyAlign(iterations = 3)
+    # tomo.makeScriptProjMovie()
+
+
+    tif_file = "data/aligned_foamTomo.tif"
+    obj = convert_to_numpy(tif_file)
     tomo = tomoDataClass.tomoData(obj)
 
-    tomo.crop(400,400)
 
-    #Alignment Process
-    print("Starting allignment")
-    # tomo.tomopyAlign(iterations = 3)
-    tomo.makeScriptMovie()
 
-    #Save the aligned data
-    convert_to_tiff(tomo.get_projections, "aligned_foamTomo.tif")
+
+
+    # #Reconstruction Process
+    print("Reconstructing")
+    tomo.recon()
+    tomo.makeScriptReconMovie()
+
+    # # #Save the aligned data
+    if saveToFile:
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        convert_to_tiff(tomo.get_projections(), f"alignedProjections/aligned_foamTomo_{timestamp}.tif")
+        convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_{timestamp}.tif")
 
     # End the timer
     end_time = time.time()
@@ -45,6 +69,7 @@ if __name__ == '__main__':
     # Calculate and print the duration
     print(f"Script completed in {end_time - start_time} seconds.")
 
-    log_file.close()
-    sys.stdout = sys.__stdout__
-    sys.stderr = sys.__stderr__
+    if log:
+        log_file.close()
+        sys.stdout = sys.__stdout__
+        sys.stderr = sys.__stderr__
