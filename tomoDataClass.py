@@ -89,7 +89,7 @@ class tomoData:
 
     def recon(self):
         print("Normalizing projections")
-        tomopy.prep.normalize.normalize_bg(self.projections, air=10)
+        self.projections = tomopy.prep.normalize.normalize_bg(self.projections, air=10)
 
         print("Finding center of rotation")
         rot_center = tomopy.find_center(self.projections, self.ang)
@@ -99,6 +99,10 @@ class tomoData:
         # Check if ASTRA is available and if a GPU device is present
         if torch.cuda.is_available():
             # Use an ASTRA-supported GPU algorithm, e.g., 'SIRT_CUDA'
+            
+            import numexpr as ne
+            ne.set_num_threads(ne.detect_number_of_cores())
+
             # extra_options = {'MinConstraint': 0}
             extra_options = {}
             options = {
