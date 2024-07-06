@@ -33,6 +33,9 @@ class MoviePlotter:
     """Plots a sequence of images as a movie in a Jupyter Notebook with interactive controls using widgets.Play."""
     def __init__(self, x):
         self.x = x  # (M, N, N) array where M is the total number of images and N is the number of pixels in x and y
+        # Calculate global min and max for color normalization
+        self.global_min = np.min(x)
+        self.global_max = np.max(x)
         # Play and Slider widgets
         self.play = widgets.Play(
             value=0,
@@ -52,22 +55,19 @@ class MoviePlotter:
         self.output = widgets.Output()
         display(widgets.HBox([self.play, self.slider]))
         display(self.output)
-         # Initial plot
+        # Initial plot
         self.update_plot(0)  # Update initially with the first frame
-        
- 
+
     def slider_update(self, change):
-        """Update the plot based on slider/frame change."""
         self.update_plot(change['new'])
- 
-    def update_plot(self, frame_index):
-        """Update the plot with the current frame."""
+
+    def update_plot(self, frame):
         with self.output:
-            clear_output(wait=True)
-            plt.figure(figsize=(10, 10))
-            plt.imshow(self.x[frame_index].astype(float), cmap='gray')  # Adjust colormap as needed
-            plt.axis('off')
-            # plt.title(f'Run {self.runNumbers[frame_index]}, Angle: {self.angleNumbers[frame_index]}')
+            self.output.clear_output(wait=True)  # Clear the previous frame
+            # Plot with global color normalization
+            plt.imshow(self.x[frame], vmin=self.global_min, vmax=self.global_max, cmap='gray')
+            plt.colorbar(label='Intensity')
+            plt.title(f"Frame {frame}")
             plt.show()
 
 # # Fourier Transform Cross Correlation Method

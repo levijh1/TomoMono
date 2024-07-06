@@ -6,8 +6,12 @@ import scipy as sp
 import skimage.transform as sk
 from helperFunctions import show, MoviePlotter
 from pltwidget import runwidget
-import astra
+from skimage.transform import warp
 import torch
+from skimage.registration import optical_flow_tvl1
+from tqdm import tqdm
+import cv2
+
 
 
 
@@ -84,8 +88,22 @@ class tomoData:
         runwidget(self.recon)
 
     def tomopyAlign(self, iterations = 10):
-        align_info = tomopy.prep.alignment.align_joint(self.projections, self.ang, algorithm='sirt', iters=iterations)
+        align_info = tomopy.prep.alignment.align_joint(self.projections, self.ang, algorithm='sirt', iters=iterations, debug=True)
         self.projections = tomopy.shift_images(self.projections, align_info[1], align_info[2])
+
+    def opticalFlowAlign(self):
+        nr, nc = self.projections[0].shape
+        row_coords, col_coords = np.meshgrid(np.arange(nr), np.arange(nc), indexing='ij')
+        if torch.cuda.is_available():
+            ...
+        else:
+            for m in tqdm(range(1, self.numAngles+1), desc='Optical Flow Alignment of Projections'):
+                if m < self.numAngles:
+                    v, u = optical_flow_tvl1(self.projections[m-1], self.projections[m])
+                    self.projections[m] = warp(self.projections[m], np.array([row_coords + v, col_coords + u]), mode='edge')
+                else:
+                    v, u = optical_flow_tvl1(self.projections[m-1], self.projections[0])
+                    self.projections[0] = warp(self.projections[0], np.array([row_coords + v, col_coords + u]), mode='edge')
 
     def recon(self):
         print("Normalizing projections")
@@ -99,9 +117,6 @@ class tomoData:
         # Check if ASTRA is available and if a GPU device is present
         if torch.cuda.is_available():
             # Use an ASTRA-supported GPU algorithm, e.g., 'SIRT_CUDA'
-            
-            import numexpr as ne
-            ne.set_num_threads(ne.detect_number_of_cores())
 
             # extra_options = {'MinConstraint': 0}
             extra_options = {}
