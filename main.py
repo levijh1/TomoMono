@@ -7,7 +7,7 @@ if __name__ == '__main__':
     import torch
 
     log = False
-    saveToFile = False
+    saveToFile = True
 
     if log:
         log_file = open('output_tomoMono.txt', 'w')
@@ -33,7 +33,7 @@ if __name__ == '__main__':
 
 
     #Import foam data
-    numAngles = 6
+    numAngles = 800
     tif_file = "data/cropped_fullTomoReconstructions2.tif"
     obj = convert_to_numpy(tif_file)[:numAngles]
     tomo = tomoDataClass.tomoData(obj)
@@ -41,9 +41,10 @@ if __name__ == '__main__':
     #Alignment Process
     print("Starting allignment")
     # tomo.makeScriptProjMovie()
-    # tomo.tomopyAlign(iterations = 3)
-    tomo.makeScriptProjMovie()
+    tomo.tomopyAlign(iterations = 5)
+    # tomo.makeScriptProjMovie()
     tomo.opticalFlowAlign()
+    tomo.tomopyAlign(iterations = 3)
     tomo.makeScriptProjMovie()
 
 
@@ -55,16 +56,16 @@ if __name__ == '__main__':
 
 
 
-    # # #Reconstruction Process
-    # print("Reconstructing")
-    # tomo.recon()
-    # tomo.makeScriptReconMovie()
+    # #Reconstruction Process
+    print("Reconstructing")
+    tomo.recon()
+    tomo.makeScriptReconMovie()
 
-    # # # #Save the aligned data
-    # if saveToFile:
-    #     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    #     convert_to_tiff(tomo.get_projections(), f"alignedProjections/aligned_foamTomo_{timestamp}.tif")
-    #     convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_{timestamp}.tif")
+    # # #Save the aligned data
+    if saveToFile:
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        convert_to_tiff(tomo.get_projections(), f"alignedProjections/aligned_foamTomo_{timestamp}.tif")
+        convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_{timestamp}.tif")
 
     # End the timer
     end_time = time.time()

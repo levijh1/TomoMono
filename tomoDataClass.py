@@ -138,5 +138,5 @@ class tomoData:
             print("Using CPU-based reconstruction.")
             recon = tomopy.recon(self.projections, self.ang, center=rot_center, algorithm='sirt', sinogram_order=False)
 
-        print("Applying circular mask")
-        self.recon = tomopy.circ_mask(recon, axis=0, ratio=0.95)
+        # print("Applying circular mask")
+        # self.recon = tomopy.circ_mask(recon, axis=0, ratio=0.95)
