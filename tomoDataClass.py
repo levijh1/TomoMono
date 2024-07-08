@@ -106,8 +106,8 @@ class tomoData:
                     self.projections[0] = warp(self.projections[0], np.array([row_coords + v, col_coords + u]), mode='edge')
 
     def recon(self):
-        print("Normalizing projections")
-        self.projections = tomopy.prep.normalize.normalize_bg(self.projections, air=10)
+        #print("Normalizing projections")
+        #self.projections = tomopy.prep.normalize.normalize_bg(self.projections, air=10)
 
         print("Finding center of rotation")
         rot_center = tomopy.find_center(self.projections, self.ang)
