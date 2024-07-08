@@ -28,10 +28,6 @@ if __name__ == '__main__':
     # tomo = tomoDataClass.tomoData(obj)
     # tomo.jitter()
 
-
-
-
-
     #Import foam data
     numAngles = 800
     tif_file = "data/cropped_fullTomoReconstructions2.tif"
@@ -77,3 +73,4 @@ if __name__ == '__main__':
         log_file.close()
         sys.stdout = sys.__stdout__
         sys.stderr = sys.__stderr__
+
