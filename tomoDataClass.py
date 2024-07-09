@@ -12,7 +12,7 @@ from skimage.registration import optical_flow_tvl1
 from tqdm import tqdm
 from scipy.signal import correlate
 from scipy.ndimage import shift
-import cv2
+import cv2 as cv
 
 
 
@@ -74,6 +74,12 @@ class tomoData:
         
         self.projections = cropped_array
 
+    def normalize(self):
+        self.projections = -self.projections
+        self.projections = (self.projections - np.min(self.projections)) / (np.max(self.projections) - np.min(self.projections))
+
+
+
     def makeNotebookProjMovie(self):
         MoviePlotter(self.projections)
 
@@ -131,13 +137,52 @@ class tomoData:
                     v, u = optical_flow_tvl1(self.projections[m-1], self.projections[0])
                     self.projections[0] = warp(self.projections[0], np.array([row_coords + v, col_coords + u]), mode='edge')
 
+    def opticalFlowAlign2(self):
+        nr, nc = self.projections[0].shape
+        row_coords, col_coords = np.meshgrid(np.arange(nr), np.arange(nc), indexing='ij')
+        for m in tqdm(range(1, self.numAngles+1), desc='Optical Flow Alignment of Projections'):
+            if m < self.numAngles:
+                prev = self.projections[m-1]
+                curr = self.projections[m]
+                # v, u = optical_flow_tvl1(self.projections[m-1], self.projections[m])
+                # self.projections[m] = warp(self.projections[m], np.array([row_coords + v, col_coords + u]), mode='edge')
+            else:
+                prev = self.projections[m-1]
+                curr = self.projections[0]
+                # v, u = optical_flow_tvl1(self.projections[m-1], self.projections[0])
+                # self.projections[0] = warp(self.projections[0], np.array([row_coords + v, col_coords + u]), mode='edge')
+            
+            if torch.cuda.is_available():
+                # optical_flow_gpu = cv2.cuda.
+                ...
+            else:
+                # optical_flow = cv.optflow.createOptFlow_DualTVL1()
+                flow_cpu = cv.calcOpticalFlowFarneback(prev, curr, None, 0.5, 3, 15, 3, 5, 1.2, 0)
+                # v, u = optical_flow_tvl1(self.projections[m-1], self.projections[m])
+                # print(v)
+                v = flow_cpu[:,:,0]
+                u = flow_cpu[:,:,1]
+                print(v)
+                print(u)
+                print(np.max(v))
+                print(np.max(u))
+                
+
+            if m < self.numAngles:
+                self.projections[m] = warp(self.projections[m], np.array([row_coords + v, col_coords + u]), mode='edge')
+            else:
+                self.projections[0] = warp(self.projections[0], np.array([row_coords + v, col_coords + u]), mode='edge')
+
+
     def recon(self):
         #print("Normalizing projections")
         #self.projections = tomopy.prep.normalize.normalize_bg(self.projections, air=10)
 
         print("Finding center of rotation")
-        rot_center = tomopy.find_center(self.projections, self.ang, init=self.imageSize[1]//2, ind=0, tol=0.5)
+        print("Middle of iamge: ", self.imageSize[1]//2)
+        rot_center = tomopy.find_center_vo(self.projections)
         print("Guess for center of rotation: ", rot_center)
+
         #If things aren't working, maybe try doing the second dimension of imageSize
 
 
@@ -168,4 +213,4 @@ class tomoData:
             # self.recon = tomopy.recon(self.projections, self.ang, algorithm='art', sinogram_order=False)
 
         # print("Applying circular mask")
-        # self.recon = tomopy.circ_mask(recon, axis=0, ratio=0.95)
+        self.recon = tomopy.circ_mask(self.recon, axis=0, ratio=0.95)

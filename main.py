@@ -9,7 +9,7 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
     log = False
-    saveToFile = False
+    saveToFile = True
 
     if log:
         log_file = open('output_tomoMono.txt', 'w')
@@ -31,42 +31,40 @@ if __name__ == '__main__':
     # tomo.jitter()
 
     #Import foam data
-    numAngles = 30
+    numAngles = 800
     tif_file = "data/cropped_fullTomoReconstructions2.tif"
-    obj = convert_to_numpy(tif_file)[:numAngles]
+    obj = convert_to_numpy(tif_file)
+    print(obj.shape)
     tomo = tomoDataClass.tomoData(obj)
 
     #Alignment Process
     print("Starting allignment")
     tomo.makeScriptProjMovie()
     tomo.crossCorrelateAlign()
-    # tomo.tomopyAlign(iterations = 5)
-    # # tomo.makeScriptProjMovie()
-    # # tomo.opticalFlowAlign()
-    # # tomo.tomopyAlign(iterations = 3)
-    tomo.makeScriptProjMovie()
-
+    tomo.tomopyAlign(iterations = 5)
+    tomo.opticalFlowAlign()
 
     # tif_file = "data/aligned_foamTomo.tif"
     # obj = convert_to_numpy(tif_file)
     # tomo = tomoDataClass.tomoData(obj)
 
 
-    # #Show sinogram
-    # plt.imshow(tomo.get_projections()[:,128,:])
-    # plt.show()
+    #Show sinogram
+    plt.imshow(tomo.get_projections()[:,tomo.imageSize[1]//2,:])
+    plt.show()
 
 
-    # # #Reconstruction Process
-    # print("Reconstructing")
-    # tomo.recon()
-    # tomo.makeScriptReconMovie()
+    # #Reconstruction Process
+    print("Reconstructing")
+    tomo.normalize()
+    tomo.recon()
+    tomo.makeScriptReconMovie()
 
     # # #Save the aligned data
     if saveToFile:
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        convert_to_tiff(tomo.get_projections(), f"alignedProjections/aligned_foamTomo_shepp{timestamp}.tif")
-        convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_shepp{timestamp}.tif")
+        convert_to_tiff(tomo.get_projections(), f"alignedProjections/aligned_foamTomo{timestamp}.tif")
+        convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon{timestamp}.tif")
 
     # End the timer
     end_time = time.time()
