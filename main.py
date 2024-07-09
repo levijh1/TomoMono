@@ -33,16 +33,16 @@ if __name__ == '__main__':
     #Import foam data
     numAngles = 800
     tif_file = "data/cropped_fullTomoReconstructions2.tif"
-    obj = convert_to_numpy(tif_file)
+    obj = convert_to_numpy(tif_file)[::20]
     print(obj.shape)
     tomo = tomoDataClass.tomoData(obj)
 
     #Alignment Process
     print("Starting allignment")
-    tomo.makeScriptProjMovie()
     tomo.crossCorrelateAlign()
-    tomo.tomopyAlign(iterations = 5)
-    tomo.opticalFlowAlign()
+    # tomo.makeScriptProjMovie()
+    # tomo.tomopyAlign(iterations = 3)
+    # tomo.opticalFlowAlign()
 
     # tif_file = "data/aligned_foamTomo.tif"
     # obj = convert_to_numpy(tif_file)
@@ -54,17 +54,19 @@ if __name__ == '__main__':
     plt.show()
 
 
-    # #Reconstruction Process
-    print("Reconstructing")
-    tomo.normalize()
-    tomo.recon()
-    tomo.makeScriptReconMovie()
+    # # #Reconstruction Process
+    # print("Reconstructing")
+    # tomo.normalize()
+    # tomo.recon()
+    # tomo.makeScriptReconMovie()
 
     # # #Save the aligned data
     if saveToFile:
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        convert_to_tiff(tomo.get_projections(), f"alignedProjections/aligned_foamTomo{timestamp}.tif")
-        convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon{timestamp}.tif")
+        proj = tomo.get_projections()
+        recon = tomo.get_recon()
+        convert_to_tiff(proj, f"alignedProjections/aligned_foamTomo{timestamp}.tif")
+        convert_to_tiff(recon, f"reconstructions/foamRecon{timestamp}.tif")
 
     # End the timer
     end_time = time.time()
