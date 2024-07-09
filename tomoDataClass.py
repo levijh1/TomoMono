@@ -10,6 +10,8 @@ from skimage.transform import warp
 import torch
 from skimage.registration import optical_flow_tvl1
 from tqdm import tqdm
+from scipy.signal import correlate
+from scipy.ndimage import shift
 import cv2
 
 
@@ -17,17 +19,14 @@ import cv2
 
 class tomoData:
     #Dimensions
-    numAngles = 180
+    # numAngles = 180
 
-    def __init__(self, data, totalNumAngles = 800):
+    def __init__(self, data, totalNumAngles = 400):
         self.numAngles = data.shape[0]
         self.imageSize = data.shape[1:]
         self.original = data
         self.ang = tomopy.angles(nang=self.numAngles, ang1=0, ang2=(360/totalNumAngles)*self.numAngles)
         self.projections = np.copy(data)
-
-    def get_prj(self):
-        return self.prj
     
     def get_recon(self):
         return self.recon
@@ -39,8 +38,8 @@ class tomoData:
         self.prj_jitter = self.projections.copy()
         m = self.prj_jitter
         for i in range(0, self.numAngles):  ###As of now the first image stays consistent)
-            xshift = 4 * random.random() - 2
-            yshift = 4 * random.random() - 2
+            xshift = 8 * random.random() - 4
+            yshift = 8 * random.random() - 4
             m[i] = sp.ndimage.shift(m[i], (xshift, yshift), mode="wrap")
         self.projections = self.prj_jitter.copy()
 
@@ -87,7 +86,34 @@ class tomoData:
     def makeScriptReconMovie(self):
         runwidget(self.recon)
 
+    def crossCorrelateAlign(self):
+        nr, nc = self.projections[0].shape
+        for m in tqdm(range(1, self.numAngles + 1), desc='Cross-Correlation Alignment of Projections'):
+            if m < self.numAngles:
+                img1 = self.projections[m - 1]
+                img2 = self.projections[m]
+            else:
+                img1 = self.projections[m - 1]
+                img2 = self.projections[0]
+
+            # Compute the cross-correlation between two consecutive images
+            correlation = correlate(img1, img2, mode='same')
+            
+            # Find the index of the maximum correlation value
+            y_shift, x_shift = np.unravel_index(np.argmax(correlation), correlation.shape)
+            
+            # Calculate the shifts, considering the center of the images as the origin
+            y_shift -= nr // 2
+            x_shift -= nc // 2
+
+            # Apply the calculated shift to align the images
+            if m < self.numAngles:
+                self.projections[m] = shift(img2, shift=[y_shift, x_shift], mode='nearest')
+            else:
+                self.projections[0] = shift(img2, shift=[y_shift, x_shift], mode='nearest')
+
     def tomopyAlign(self, iterations = 10):
+        print("Tomopy Join Reprojection Alignment of Projections (" + str(iterations) + " iterations)")
         align_info = tomopy.prep.alignment.align_joint(self.projections, self.ang, algorithm='sirt', iters=iterations, debug=True)
         self.projections = tomopy.shift_images(self.projections, align_info[1], align_info[2])
 
@@ -110,8 +136,9 @@ class tomoData:
         #self.projections = tomopy.prep.normalize.normalize_bg(self.projections, air=10)
 
         print("Finding center of rotation")
-        rot_center = tomopy.find_center(self.projections, self.ang)
-
+        rot_center = tomopy.find_center(self.projections, self.ang, init=self.imageSize[1]//2, ind=0, tol=0.5)
+        print("Guess for center of rotation: ", rot_center)
+        #If things aren't working, maybe try doing the second dimension of imageSize
 
 
         # Check if ASTRA is available and if a GPU device is present
@@ -127,7 +154,7 @@ class tomoData:
                 'extra_options': extra_options
             }
             print("Using GPU-accelerated reconstruction.")
-            recon = tomopy.recon(self.projections,
+            self.recon = tomopy.recon(self.projections,
                      self.ang,
                      center=rot_center,
                      algorithm=tomopy.astra,
@@ -136,7 +163,9 @@ class tomoData:
         else:
             # Fallback to a CPU-based algorithm if no GPU is available
             print("Using CPU-based reconstruction.")
-            recon = tomopy.recon(self.projections, self.ang, center=rot_center, algorithm='sirt', sinogram_order=False)
+            self.makeScriptProjMovie()
+            self.recon = tomopy.recon(self.projections, self.ang, center=rot_center, algorithm='art', sinogram_order=False)
+            # self.recon = tomopy.recon(self.projections, self.ang, algorithm='art', sinogram_order=False)
 
         # print("Applying circular mask")
         # self.recon = tomopy.circ_mask(recon, axis=0, ratio=0.95)
