@@ -13,49 +13,52 @@ from tqdm import tqdm
 from scipy.signal import correlate
 from scipy.ndimage import shift
 import cv2 as cv
-import os
-
-os.environ['NUMEXPR_MAX_THREADS'] = '128'
-
-
-
 
 class tomoData:
-    #Dimensions
-    # numAngles = 180
 
-    def __init__(self, data, totalNumAngles = 400):
-        self.numAngles = data.shape[0]
-        self.imageSize = data.shape[1:]
+    def __init__(self, data, total_angles=400):
+        """
+        Initializes the TomoData object with the provided dataset.
+        
+        Parameters:
+        - data (np.array): The tomographic data as a 3D numpy array.
+        - total_angles (int): Total number of angles where measurements were taken
+        """
+        self.num_angles = data.shape[0]
+        self.image_size = data.shape[1:]
         self.original = data
-        self.ang = tomopy.angles(nang=self.numAngles, ang1=0, ang2=(360/totalNumAngles)*self.numAngles)
+        self.ang = tomopy.angles(nang=self.num_angles, ang1=0, ang2=(360 / total_angles) * self.num_angles)
         self.projections = np.copy(data)
     
     def get_recon(self):
+        """Returns the reconstructed 3D Model."""
         return self.recon
     
     def get_projections(self):
+        """Returns the current state of projections."""
         return self.projections
 
     def jitter(self):
+        """
+        Applies random jitter to the projections to simulate real-world misalignments.
+        """
         self.prj_jitter = self.projections.copy()
-        m = self.prj_jitter
-        for i in range(0, self.numAngles):  ###As of now the first image stays consistent)
-            xshift = 8 * random.random() - 4
-            yshift = 8 * random.random() - 4
-            m[i] = sp.ndimage.shift(m[i], (xshift, yshift), mode="wrap")
-        self.projections = self.prj_jitter.copy()
+        for i in range(self.num_angles):  # Now includes the first image as well
+            x_shift = 8 * random.random() - 4
+            y_shift = 8 * random.random() - 4
+            self.prj_jitter[i] = sp.ndimage.shift(self.prj_jitter[i], (x_shift, y_shift), mode="wrap")
+        self.projections = self.prj_jitter
 
     def crop(self, new_x, new_y):
         """
-        Crop each 2D numpy array in a 3D array to a specified size (new_x, new_y) centered in the middle of the array.
-
+        Crops each 2D numpy array in a 3D array to a specified size centered in the middle of the array.
+        
         Parameters:
-        - new_x: The target width of the crop.
-        - new_y: The target height of the crop.
-
+        - new_x (int): The target width of the crop.
+        - new_y (int): The target height of the crop.
+        
         Returns:
-        - Cropped 3D numpy array.
+        - np.array: Cropped 3D numpy array.
         """
         cropped_array = np.zeros((self.projections.shape[0], new_y, new_x), dtype=self.projections.dtype)
         
@@ -78,10 +81,9 @@ class tomoData:
         self.projections = cropped_array
 
     def normalize(self):
+        """Normalize all projections to be positive values between 1 and 0"""
         self.projections = -self.projections
         self.projections = (self.projections - np.min(self.projections)) / (np.max(self.projections) - np.min(self.projections))
-
-
 
     def makeNotebookProjMovie(self):
         MoviePlotter(self.projections)
@@ -95,15 +97,15 @@ class tomoData:
     def makeScriptReconMovie(self):
         runwidget(self.recon)
 
-    def crossCorrelateAlign(self):
-        nr, nc = self.projections[0].shape
-        for m in tqdm(range(1, self.numAngles + 1), desc='Cross-Correlation Alignment of Projections'):
-            if m < self.numAngles:
-                img1 = self.projections[m - 1]
-                img2 = self.projections[m]
-            else:
-                img1 = self.projections[m - 1]
-                img2 = self.projections[0]
+    def cross_correlate_align(self):
+        """
+        Aligns projections using cross-correlation to find the shift between consecutive images.
+        """
+        num_rows, num_cols = self.projections[0].shape
+        for m in tqdm(range(1, self.num_angles + 1), desc='Cross-Correlation Alignment of Projections'):
+            # Handle circular indexing for the last projection
+            img1 = self.projections[m - 1]
+            img2 = self.projections[m % self.num_angles]
 
             # Compute the cross-correlation between two consecutive images
             correlation = correlate(img1, img2, mode='same')
@@ -112,108 +114,71 @@ class tomoData:
             y_shift, x_shift = np.unravel_index(np.argmax(correlation), correlation.shape)
             
             # Calculate the shifts, considering the center of the images as the origin
-            y_shift -= nr // 2
-            x_shift -= nc // 2
+            y_shift -= num_rows // 2
+            x_shift -= num_cols // 2
 
             # Apply the calculated shift to align the images
-            if m < self.numAngles:
-                self.projections[m] = shift(img2, shift=[y_shift, x_shift], mode='nearest')
-            else:
-                self.projections[0] = shift(img2, shift=[y_shift, x_shift], mode='nearest')
+            self.projections[m % self.num_angles] = shift(img2, shift=[y_shift, x_shift], mode='nearest')
 
-    def tomopyAlign(self, iterations = 10):
-        print("Tomopy Join Reprojection Alignment of Projections (" + str(iterations) + " iterations)")
+    def tomopy_align(self, iterations = 10):
+        """
+        Aligns projections using tomopy's join repojection Alignment algorithm
+        """
+        print("Tomopy Joint Reprojection Alignment of Projections (" + str(iterations) + " iterations)")
         align_info = tomopy.prep.alignment.align_joint(self.projections, self.ang, algorithm='sirt', iters=iterations, debug=True)
         self.projections = tomopy.shift_images(self.projections, align_info[1], align_info[2])
 
-    def opticalFlowAlign(self):
-        nr, nc = self.projections[0].shape
-        row_coords, col_coords = np.meshgrid(np.arange(nr), np.arange(nc), indexing='ij')
-        # if torch.cuda.is_available():
-        #     ...
-        # else:
-        for m in tqdm(range(1, self.numAngles+1), desc='Optical Flow Alignment of Projections'):
-            if m < self.numAngles:
-                v, u = optical_flow_tvl1(self.projections[m-1], self.projections[m])
-                self.projections[m] = warp(self.projections[m], np.array([row_coords + v, col_coords + u]), mode='edge')
-            else:
-                v, u = optical_flow_tvl1(self.projections[m-1], self.projections[0])
-                self.projections[0] = warp(self.projections[0], np.array([row_coords + v, col_coords + u]), mode='edge')
+    def optical_flow_align(self):
+        """
+        Aligns projections using optical flow to estimate the motion between consecutive images.
+        """
+        num_rows, num_cols = self.projections[0].shape
+        row_coords, col_coords = np.meshgrid(np.arange(num_rows), np.arange(num_cols), indexing='ij')
+        for m in tqdm(range(1, self.num_angles + 1), desc='Optical Flow Alignment of Projections'):
+            # Handle circular indexing for the last projection
+            prev_img = self.projections[m - 1]
+            current_img = self.projections[m % self.num_angles]
 
-    def opticalFlowAlign2(self):
-        nr, nc = self.projections[0].shape
-        row_coords, col_coords = np.meshgrid(np.arange(nr), np.arange(nc), indexing='ij')
-        for m in tqdm(range(1, self.numAngles+1), desc='Optical Flow Alignment of Projections'):
-            if m < self.numAngles:
-                prev = self.projections[m-1]
-                curr = self.projections[m]
-                # v, u = optical_flow_tvl1(self.projections[m-1], self.projections[m])
-                # self.projections[m] = warp(self.projections[m], np.array([row_coords + v, col_coords + u]), mode='edge')
-            else:
-                prev = self.projections[m-1]
-                curr = self.projections[0]
-                # v, u = optical_flow_tvl1(self.projections[m-1], self.projections[0])
-                # self.projections[0] = warp(self.projections[0], np.array([row_coords + v, col_coords + u]), mode='edge')
-            
-            if torch.cuda.is_available():
-                # optical_flow_gpu = cv2.cuda.
-                ...
-            else:
-                # optical_flow = cv.optflow.createOptFlow_DualTVL1()
-                flow_cpu = cv.calcOpticalFlowFarneback(prev, curr, None, 0.5, 3, 15, 3, 5, 1.2, 0)
-                # v, u = optical_flow_tvl1(self.projections[m-1], self.projections[m])
-                # print(v)
-                v = flow_cpu[:,:,0]
-                u = flow_cpu[:,:,1]
-                print(v)
-                print(u)
-                print(np.max(v))
-                print(np.max(u))
-                
+            # Compute optical flow between two consecutive images
+            v, u = optical_flow_tvl1(prev_img, current_img)
 
-            if m < self.numAngles:
-                self.projections[m] = warp(self.projections[m], np.array([row_coords + v, col_coords + u]), mode='edge')
-            else:
-                self.projections[0] = warp(self.projections[0], np.array([row_coords + v, col_coords + u]), mode='edge')
+            # Apply the flow vectors to align the current image
+            aligned_img = warp(current_img, np.array([row_coords + v, col_coords + u]), mode='edge')
+            self.projections[m % self.num_angles] = aligned_img
 
-
-    def recon(self):
-        #print("Normalizing projections")
-        #self.projections = tomopy.prep.normalize.normalize_bg(self.projections, air=10)
+    def reconstruct(self):
+        """
+        Performs reconstruction of the projections, utilizing GPU acceleration if available.
+        """
+        print("Normalizing projections")
+        self.projections = tomopy.prep.normalize.normalize_bg(self.projections, air=10)
 
         print("Finding center of rotation")
-        print("Middle of iamge: ", self.imageSize[1]//2)
-        rot_center = tomopy.find_center_vo(self.projections)
-        print("Guess for center of rotation: ", rot_center)
+        print("Middle of image: ", self.image_size[1] // 2)
+        rotation_center = tomopy.find_center_vo(self.projections)
+        print("Estimated center of rotation: ", rotation_center)
 
-        #If things aren't working, maybe try doing the second dimension of imageSize
-
-
-        # Check if ASTRA is available and if a GPU device is present
         if torch.cuda.is_available():
-            # Use an ASTRA-supported GPU algorithm, e.g., 'SIRT_CUDA'
-
-            # extra_options = {'MinConstraint': 0}
-            extra_options = {}
+            print("Using GPU-accelerated reconstruction.")
             options = {
                 'proj_type': 'cuda',
                 'method': 'SIRT_CUDA',
                 'num_iter': 200,
-                'extra_options': extra_options
+                'extra_options': {}
             }
-            print("Using GPU-accelerated reconstruction.")
             self.recon = tomopy.recon(self.projections,
-                     self.ang,
-                     center=rot_center,
-                     algorithm=tomopy.astra,
-                     options=options,
-                     ncore=1)
+                                      self.ang,
+                                      center=rotation_center,
+                                      algorithm=tomopy.astra,
+                                      options=options,
+                                      ncore=1)
         else:
-            # Fallback to a CPU-based algorithm if no GPU is available
             print("Using CPU-based reconstruction.")
-            self.makeScriptProjMovie()
-            self.recon = tomopy.recon(self.projections, self.ang, center=rot_center, algorithm='art', sinogram_order=False)
-            # self.recon = tomopy.recon(self.projections, self.ang, algorithm='art', sinogram_order=False)
+            self.recon = tomopy.recon(self.projections,
+                                      self.ang,
+                                      center=rotation_center,
+                                      algorithm='art',
+                                      sinogram_order=False)
 
-        # print("Applying circular mask")
-        self.recon = tomopy.circ_mask(self.recon, axis=0, ratio=0.95)
+        self.recon = tomopy.circ_mask(self.recon, axis=0, ratio=0.90)
+        print("Reconstruction completed.")
