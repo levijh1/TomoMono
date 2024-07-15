@@ -30,29 +30,33 @@ if __name__ == '__main__':
 
 
 
-    # The following commented-out code block is for importing and processing model data
-    numAngles = 5
-    shepp3d = tomopy.shepp3d(size=128)
-    ang = tomopy.angles(nang=numAngles, ang1=0, ang2=360)
-    obj = tomopy.project(shepp3d, ang, pad=False)
-    tomo = tomoDataClass.tomoData(obj, numAngles)
-    tomo.jitter()  # Apply jitter to the data
-
-    # #Import foam data
+    # # The following commented-out code block is for importing and processing model data
     # numAngles = 800
-    # tif_file = "data/cropped_fullTomoReconstructions2.tif"
-    # obj, scale_info = convert_to_numpy(tif_file)[:numAngles]
-    # print(obj.shape)
-    # tomo = tomoDataClass.tomoData(obj)
+    # shepp3d = tomopy.shepp3d(size=128)
+    # ang = tomopy.angles(nang=numAngles, ang1=0, ang2=360)
+    # obj = tomopy.project(shepp3d, ang, pad=False)
+    # tomo = tomoDataClass.tomoData(obj, numAngles)
+    # tomo.jitter()  # Apply jitter to the data
+
+    #Import foam data
+    numAngles = 800
+    tif_file = "data/fullTomoReconstructions2.tif"
+    obj, scale_info = convert_to_numpy(tif_file)
+    obj = obj[0:numAngles]
+    print(obj.shape)
+    tomo = tomoDataClass.tomoData(obj)
+    tomo.crop(900,520)
+    # tomo.makeScriptProjMovie()
+
 
 
 
 
     #Alignment Process
-    print("Starting alignment")
+    # print("Starting alignment")
     tomo.cross_correlate_align()
-    tomo.tomopy_align(iterations = 3)
-    tomo.optical_flow_align()
+    # tomo.tomopy_align(iterations = 5)
+    # tomo.optical_flow_align()
     # tomo.makeScriptProjMovie()
 
     # # Use pre-aligned data to reconstruct
@@ -62,10 +66,10 @@ if __name__ == '__main__':
 
 
     # #Reconstruction Process
-    print("Reconstructing")
-    tomo.normalize()
+    # print("Reconstructing")
+    # tomo.normalize()
     tomo.reconstruct()
-    tomo.makeScriptReconMovie()
+    # tomo.makeScriptReconMovie()
 
     # # #Save the aligned data
     if saveToFile:

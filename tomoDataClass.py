@@ -62,7 +62,7 @@ class tomoData:
         """
         cropped_array = np.zeros((self.projections.shape[0], new_y, new_x), dtype=self.projections.dtype)
         
-        for i, array in enumerate(self.projections):
+        for i, array in enumerate(tqdm(self.projections, desc=f"Cropping projections to size: {new_x}x{new_y}")):
             y, x = array.shape  # Get the current dimensions of the array
             
             # Calculate the starting and ending indices for the crop
@@ -150,9 +150,6 @@ class tomoData:
         """
         Performs reconstruction of the projections, utilizing GPU acceleration if available.
         """
-        print("Normalizing projections")
-        self.projections = tomopy.prep.normalize.normalize_bg(self.projections, air=10)
-
         print("Finding center of rotation")
         print("Middle of image: ", self.image_size[1] // 2)
         rotation_center = tomopy.find_center_vo(self.projections)

@@ -1,3 +1,5 @@
+logs/
+
 #tif or tiff files
 *.tif
 *.tiff
