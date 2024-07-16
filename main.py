@@ -39,13 +39,13 @@ if __name__ == '__main__':
     # tomo.jitter()  # Apply jitter to the data
 
     #Import foam data
-    numAngles = 800
-    tif_file = "data/fullTomoReconstructions2.tif"
-    obj, scale_info = convert_to_numpy(tif_file)
-    obj = obj[0:numAngles]
-    print(obj.shape)
-    tomo = tomoDataClass.tomoData(obj)
-    tomo.crop(900,520)
+    # numAngles = 800
+    # tif_file = "data/fullTomoReconstructions2.tif"
+    # obj, scale_info = convert_to_numpy(tif_file)
+    # obj = obj[0:numAngles]
+    # print(obj.shape)
+    # tomo = tomoDataClass.tomoData(obj)
+    # tomo.crop(900,520)
     # tomo.makeScriptProjMovie()
 
 
@@ -54,26 +54,36 @@ if __name__ == '__main__':
 
     #Alignment Process
     # print("Starting alignment")
-    tomo.cross_correlate_align()
-    tomo.tomopy_align(iterations = 15)
-    tomo.optical_flow_align()
+    # tomo.cross_correlate_align()
+    # tomo.tomopy_align(iterations = 15)
+    # tomo.optical_flow_align()
     # tomo.makeScriptProjMovie()
 
-    # # Use pre-aligned data to reconstruct
-    # tif_file = "data/aligned_foamTomo.tif"
-    # obj = convert_to_numpy(tif_file)
-    # tomo = tomoDataClass.tomoData(obj)
+    # Use pre-aligned data to reconstruct
+    tif_file = "alignedProjections/aligned_foamTomo20240709-152238.tif"
+    obj, scale_info = convert_to_numpy(tif_file)
+    tomo = tomoDataClass.tomoData(obj)
 
 
     # #Reconstruction Process
     # print("Reconstructing")
-    # tomo.normalize()
+    tomo.normalize()
+    algorithms = ['art', 'bart','fbp', 'gridrec', 'mlem', 'osem', 'ospml_hybrid', 'ospml_quad']
+    # algorithms = ['pml_hybrid', 'pml_quad', 'sirt', 'tv', 'grad', 'tikh', 'gpu']
+    for alg in algorithms:
+        try:
+            tomo.reconstruct(algorithm=alg)
+        except Exception as e:
+            print(f"Failed to reconstruct using {alg}: {e}")
+            continue
+        if saveToFile:
+            convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_{timestamp}_{alg}.tif", scale_info)
     # tomo.reconstruct()
     # tomo.makeScriptReconMovie()
 
     # # #Save the aligned data
-    if saveToFile:
-        convert_to_tiff(tomo.get_projections(), f"alignedProjections/aligned_foamTomo{timestamp}.tif", scale_info)
+    # if saveToFile:
+    #     convert_to_tiff(tomo.get_projections(), f"alignedProjections/aligned_foamTomo{timestamp}.tif", scale_info)
         # convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon{timestamp}.tif", scale_info)
 
     # End the timer

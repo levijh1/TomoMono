@@ -146,7 +146,7 @@ class tomoData:
             aligned_img = warp(current_img, np.array([row_coords + v, col_coords + u]), mode='edge')
             self.projections[m % self.num_angles] = aligned_img
 
-    def reconstruct(self):
+    def reconstruct(self, algorithm):
         """
         Performs reconstruction of the projections, utilizing GPU acceleration if available.
         """
@@ -156,25 +156,28 @@ class tomoData:
         print("Estimated center of rotation: ", rotation_center)
 
         if torch.cuda.is_available():
-            print("Using GPU-accelerated reconstruction.")
-            options = {
-                'proj_type': 'cuda',
-                'method': 'SIRT_CUDA',
-                'num_iter': 200,
-                'extra_options': {}
-            }
-            self.recon = tomopy.recon(self.projections,
-                                      self.ang,
-                                      center=rotation_center,
-                                      algorithm=tomopy.astra,
-                                      options=options,
-                                      ncore=1)
+            if algorithm == 'gpu':
+                print("Using GPU-accelerated reconstruction.")
+                options = {
+                    'proj_type': 'cuda',
+                    'method': 'SIRT_CUDA',
+                    'num_iter': 200,
+                    'extra_options': {}
+                }
+                self.recon = tomopy.recon(self.projections,
+                                        self.ang,
+                                        center=rotation_center,
+                                        algorithm=tomopy.astra,
+                                        options=options,
+                                        ncore=1)
+            else: 
+                raise ValueError("GPU is available, but the selected algorithm is not GPU-accelerated.")
         else:
-            print("Using CPU-based reconstruction.")
+            print("Using CPU-based reconstruction. Algorithm: ", algorithm)
             self.recon = tomopy.recon(self.projections,
                                       self.ang,
                                       center=rotation_center,
-                                      algorithm='art',
+                                      algorithm=algorithm,
                                       sinogram_order=False)
 
         self.recon = tomopy.circ_mask(self.recon, axis=0, ratio=0.90)
