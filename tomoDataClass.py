@@ -155,8 +155,8 @@ class tomoData:
         rotation_center = tomopy.find_center_vo(self.projections)
         print("Estimated center of rotation: ", rotation_center)
 
-        if torch.cuda.is_available():
-            if algorithm == 'gpu':
+        if algorithm == 'gpu':
+            if torch.cuda.is_available():
                 print("Using GPU-accelerated reconstruction.")
                 options = {
                     'proj_type': 'cuda',
@@ -172,7 +172,7 @@ class tomoData:
                                         ncore=1)
             else: 
                 raise ValueError("GPU is available, but the selected algorithm is not GPU-accelerated.")
-        else:
+        else
             print("Using CPU-based reconstruction. Algorithm: ", algorithm)
             self.recon = tomopy.recon(self.projections,
                                       self.ang,
