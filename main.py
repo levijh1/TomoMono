@@ -55,8 +55,8 @@ if __name__ == '__main__':
     #Alignment Process
     # print("Starting alignment")
     tomo.cross_correlate_align()
-    # tomo.tomopy_align(iterations = 5)
-    # tomo.optical_flow_align()
+    tomo.tomopy_align(iterations = 15)
+    tomo.optical_flow_align()
     # tomo.makeScriptProjMovie()
 
     # # Use pre-aligned data to reconstruct
@@ -68,13 +68,13 @@ if __name__ == '__main__':
     # #Reconstruction Process
     # print("Reconstructing")
     # tomo.normalize()
-    tomo.reconstruct()
+    # tomo.reconstruct()
     # tomo.makeScriptReconMovie()
 
     # # #Save the aligned data
     if saveToFile:
         convert_to_tiff(tomo.get_projections(), f"alignedProjections/aligned_foamTomo{timestamp}.tif", scale_info)
-        convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon{timestamp}.tif", scale_info)
+        # convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon{timestamp}.tif", scale_info)
 
     # End the timer
     end_time = time.time()
