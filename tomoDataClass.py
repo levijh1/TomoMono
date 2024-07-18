@@ -14,6 +14,8 @@ from scipy.signal import correlate
 from scipy.ndimage import shift
 import cv2 as cv
 import svmbir
+from scipy.ndimage import rotate
+
 
 class tomoData:
 
@@ -120,6 +122,45 @@ class tomoData:
 
             # Apply the calculated shift to align the images
             self.projections[m % self.num_angles] = shift(img2, shift=[y_shift, x_shift], mode='nearest')
+
+    def find_optimal_rotation(img1, img2, angle_range=(-10, 10), angle_step=1):
+        """
+        Calculates the rotation angle between two projections that maximizes their similarity.
+        
+        Parameters:
+        - img1: The first projection image.
+        - img2: The second projection image, which will be rotated to find the optimal alignment.
+        - angle_range: A tuple (min_angle, max_angle) defining the range of angles to test.
+        - angle_step: The granularity of angles to test within the range.
+        
+        Returns:
+        - optimal_angle: The angle that maximizes the similarity between the two projections.
+        - max_similarity: The maximum similarity score achieved.
+        """
+        # print("Finding optimal rotation")
+        max_similarity = -np.inf
+        optimal_angle = 0
+
+        for angle in np.arange(angle_range[0], angle_range[1] + angle_step, angle_step):
+            # Rotate img2 by the current angle
+            rotated_img2 = rotate(img2, angle, reshape=False, mode='nearest')
+            
+            # Compute the similarity (cross-correlation) between img1 and the rotated img2
+            similarity = np.max(correlate(img1, rotated_img2, mode='same'))
+            
+            # Update the optimal angle if the current similarity is the highest found so far
+            if similarity > max_similarity:
+                max_similarity = similarity
+                optimal_angle = angle
+
+        # print(f"Optimal rotation angle: {optimal_angle} degrees, Maximum similarity: {max_similarity}")
+        return optimal_angle, max_similarity
+
+    def rotate_correlate_align(self):
+        for i in tqdm(range(self.numAngles//2), desc='rotation alignment'):
+            angle, maxSim = self.find_optimal_rotation(self.projections[i], self.projections[(i+400)%800])
+            self.projections[i] = rotate(self.projections[i], -angle/2, reshape=False, mode='nearest')
+            self.projections[(i+400)%800] = rotate(self.projections[(i+400)%800], angle/2, reshape=False, mode='nearest')
 
     def tomopy_align(self, iterations = 10):
         """
