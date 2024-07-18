@@ -68,8 +68,9 @@ if __name__ == '__main__':
     # #Reconstruction Process
     # print("Reconstructing")
     tomo.normalize()
-    algorithms = ['art', 'bart','fbp', 'gridrec', 'mlem', 'osem', 'ospml_hybrid', 'ospml_quad']
+    # algorithms = ['art', 'bart','fbp', 'gridrec', 'mlem', 'osem', 'ospml_hybrid', 'ospml_quad']
     # algorithms = ['pml_hybrid', 'pml_quad', 'sirt', 'tv', 'grad', 'tikh', 'gpu']
+    algorithms = ['svmbir']
     for alg in algorithms:
         try:
             tomo.reconstruct(algorithm=alg)

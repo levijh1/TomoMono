@@ -13,6 +13,7 @@ from tqdm import tqdm
 from scipy.signal import correlate
 from scipy.ndimage import shift
 import cv2 as cv
+import svmbir
 
 class tomoData:
 
@@ -172,7 +173,10 @@ class tomoData:
                                         ncore=1)
             else: 
                 raise ValueError("GPU is available, but the selected algorithm is not GPU-accelerated.")
-        else
+        elif algorithm == 'svmbir':
+            print("Using SVMBIR-based reconstruction.")
+            self.recon = svmbir.recon(self.projections, self.ang, verbose=2)
+        else:
             print("Using CPU-based reconstruction. Algorithm: ", algorithm)
             self.recon = tomopy.recon(self.projections,
                                       self.ang,
