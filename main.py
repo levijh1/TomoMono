@@ -8,14 +8,23 @@ if __name__ == '__main__':
     import tomopy
     import matplotlib.pyplot as plt
     import os
+    import argparse
+
+    # Start the timer for execution duration tracking
+    start_time = time.time()
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")  # Timestamp for file naming
 
     # Configuration flags
     log = False  # Enable logging to file
     saveToFile = True  # Enable saving data to file
 
-    # Start the timer for execution duration tracking
-    start_time = time.time()
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")  # Timestamp for file naming
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description='Run reconstruction algorithms.')
+    parser.add_argument('--algorithms', nargs='+', help='List of algorithms to use for reconstruction', required=False,
+                         default=[['art', 'bart','fbp', 'gridrec', 'mlem', 'osem', 'ospml_hybrid', 'ospml_quad', 'pml_hybrid', 'pml_quad', 'sirt', 'tv', 'grad', 'tikh', 'gpu', 'svmbir']])
+    args = parser.parse_args()
+    algorithms = args.algorithms
+    print(f"Algorithms: {algorithms}")
 
     # Setup logging if enabled
     if log:
@@ -78,8 +87,6 @@ if __name__ == '__main__':
     #Reconstruction Process
     print("Reconstructing")
     # tomo.normalize()
-    # algorithms = ['art', 'bart','fbp', 'gridrec', 'mlem', 'osem', 'ospml_hybrid', 'ospml_quad', 'pml_hybrid', 'pml_quad', 'sirt', 'tv', 'grad', 'tikh', 'gpu', 'svmbir']
-    algorithms = ['svmbir']
     for alg in algorithms:
         try:
             tomo.reconstruct(algorithm=alg)
