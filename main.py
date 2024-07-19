@@ -38,47 +38,48 @@ if __name__ == '__main__':
     # tomo = tomoDataClass.tomoData(obj, numAngles)
     # tomo.jitter()  # Apply jitter to the data
 
-    # Import foam data
-    numAngles = 800
-    tif_file = "data/fullTomoReconstructions2.tif"
-    obj, scale_info = convert_to_numpy(tif_file)
-    obj = obj[0:numAngles]
-    print(obj.shape)
-    tomo = tomoDataClass.tomoData(obj)
-    tomo.crop(900,550)
-    # tomo.makeScriptProjMovie()
-
-
-
-
-
-    # Alignment Process
-    print("Starting alignment")
-    tomo.cross_correlate_align()
-    tomo.rotate_correlate_align()
-    tomo.tomopy_align(iterations = 10)
-    tomo.optical_flow_align()
-    # tomo.makeScriptProjMovie()
-
-    # #Save the aligned data
-    if saveToFile:
-        convert_to_tiff(tomo.get_projections(), f"alignedProjections/aligned_foamTomo{timestamp}.tif", scale_info)
-        # convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon{timestamp}.tif", scale_info)
-
-
-
-
-
-    # # Use pre-aligned data to reconstruct
-    # tif_file = "alignedProjections/aligned_foamTomo20240709-152238.tif"
+    # # Import foam data
+    # numAngles = 800
+    # tif_file = "data/fullTomoReconstructions2.tif"
     # obj, scale_info = convert_to_numpy(tif_file)
+    # obj = obj[0:numAngles]
+    # print(obj.shape)
     # tomo = tomoDataClass.tomoData(obj)
+    # tomo.crop(900,550)
+    # # tomo.makeScriptProjMovie()
+
+
+
+
+
+    # # Alignment Process
+    # print("Starting alignment")
+    # # tomo.cross_correlate_align()
+    # tomo.rotate_correlate_align()
+    # tomo.tomopy_align(iterations = 10)
+    # tomo.optical_flow_align()
+    # # tomo.makeScriptProjMovie()
+
+    # # #Save the aligned data
+    # if saveToFile:
+    #     convert_to_tiff(tomo.get_projections(), f"alignedProjections/aligned_foamTomo{timestamp}.tif", scale_info)
+    #     # convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon{timestamp}.tif", scale_info)
+
+
+
+
+
+    # Use pre-aligned data to reconstruct
+    tif_file = "alignedProjections/aligned_foamTomo20240718-165515.tif"
+    obj, scale_info = convert_to_numpy(tif_file)
+    tomo = tomoDataClass.tomoData(obj)
 
 
     #Reconstruction Process
     print("Reconstructing")
     # tomo.normalize()
-    algorithms = ['art', 'bart','fbp', 'gridrec', 'mlem', 'osem', 'ospml_hybrid', 'ospml_quad', 'pml_hybrid', 'pml_quad', 'sirt', 'tv', 'grad', 'tikh', 'gpu', 'svmbir']
+    # algorithms = ['art', 'bart','fbp', 'gridrec', 'mlem', 'osem', 'ospml_hybrid', 'ospml_quad', 'pml_hybrid', 'pml_quad', 'sirt', 'tv', 'grad', 'tikh', 'gpu', 'svmbir']
+    algorithms = ['svmbir']
     for alg in algorithms:
         try:
             tomo.reconstruct(algorithm=alg)

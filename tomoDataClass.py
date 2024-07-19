@@ -32,6 +32,7 @@ class tomoData:
         self.original = data
         self.ang = tomopy.angles(nang=self.num_angles, ang1=0, ang2=(360 / total_angles) * self.num_angles)
         self.projections = np.copy(data)
+        self.rotation_center = 0
     
     def get_recon(self):
         """Returns the reconstructed 3D Model."""
@@ -123,7 +124,7 @@ class tomoData:
             # Apply the calculated shift to align the images
             self.projections[m % self.num_angles] = shift(img2, shift=[y_shift, x_shift], mode='nearest')
 
-    def find_optimal_rotation(img1, img2, angle_range=(-10, 10), angle_step=1):
+    def find_optimal_rotation(self, img1, img2, angle_range=[-10, 10], angle_step=1):
         """
         Calculates the rotation angle between two projections that maximizes their similarity.
         
@@ -138,10 +139,10 @@ class tomoData:
         - max_similarity: The maximum similarity score achieved.
         """
         # print("Finding optimal rotation")
-        max_similarity = -np.inf
+        max_similarity = -100000
         optimal_angle = 0
 
-        for angle in np.arange(angle_range[0], angle_range[1] + angle_step, angle_step):
+        for angle in np.arange(angle_range[0],angle_range[1] + angle_step, angle_step):
             # Rotate img2 by the current angle
             rotated_img2 = rotate(img2, angle, reshape=False, mode='nearest')
             
@@ -157,7 +158,7 @@ class tomoData:
         return optimal_angle, max_similarity
 
     def rotate_correlate_align(self):
-        for i in tqdm(range(self.numAngles//2), desc='rotation alignment'):
+        for i in tqdm(range(self.num_angles//2), desc='rotation alignment'):
             angle, maxSim = self.find_optimal_rotation(self.projections[i], self.projections[(i+400)%800])
             self.projections[i] = rotate(self.projections[i], -angle/2, reshape=False, mode='nearest')
             self.projections[(i+400)%800] = rotate(self.projections[(i+400)%800], angle/2, reshape=False, mode='nearest')
@@ -187,16 +188,26 @@ class tomoData:
             # Apply the flow vectors to align the current image
             aligned_img = warp(current_img, np.array([row_coords + v, col_coords + u]), mode='edge')
             self.projections[m % self.num_angles] = aligned_img
+    
+    def center_projections(self):
+            print("Finding center of rotation for projections")
+            rotation_center = tomopy.find_center_vo(self.projections)
+            x_shift = (self.image_size[1]//2 - rotation_center)
+            y_shift = 0
+            for m in tqdm(range(self.num_angles), desc='Center projections'):
+                self.projections[m] = shift(self.projections[m], shift=[y_shift, x_shift], mode='nearest')
+            
+            self.rotation_center = tomopy.find_center_vo(self.projections)
+
+            
 
     def reconstruct(self, algorithm):
-        """
-        Performs reconstruction of the projections, utilizing GPU acceleration if available.
-        """
-        print("Finding center of rotation")
-        print("Middle of image: ", self.image_size[1] // 2)
-        rotation_center = tomopy.find_center_vo(self.projections)
-        print("Estimated center of rotation: ", rotation_center)
+        #Check if data has been centered yet
+        if self.rotation_center == 0:
+            self.center_projections()
 
+        #Check which algorithm is being used
+        print("\n")
         if algorithm == 'gpu':
             if torch.cuda.is_available():
                 print("Using GPU-accelerated reconstruction.")
@@ -208,7 +219,7 @@ class tomoData:
                 }
                 self.recon = tomopy.recon(self.projections,
                                         self.ang,
-                                        center=rotation_center,
+                                        center=self.rotation_center,
                                         algorithm=tomopy.astra,
                                         options=options,
                                         ncore=1)
@@ -216,12 +227,12 @@ class tomoData:
                 raise ValueError("GPU is available, but the selected algorithm is not GPU-accelerated.")
         elif algorithm == 'svmbir':
             print("Using SVMBIR-based reconstruction.")
-            self.recon = svmbir.recon(self.projections, self.ang, verbose=2)
+            self.recon = svmbir.recon(self.projections, self.ang, verbose=1)
         else:
             print("Using CPU-based reconstruction. Algorithm: ", algorithm)
             self.recon = tomopy.recon(self.projections,
                                       self.ang,
-                                      center=rotation_center,
+                                      center=self.rotation_center,
                                       algorithm=algorithm,
                                       sinogram_order=False)
 
