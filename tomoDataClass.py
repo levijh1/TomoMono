@@ -24,7 +24,7 @@ class tomoData:
         Initializes the TomoData object with the provided dataset.
         
         Parameters:
-        - data (np.array): The tomographic data as a 3D numpy array.
+        - data (np.array): The tomographic data as a 3D numpy array. The first dimension being the projection number.
         - total_angles (int): Total number of angles where measurements were taken
         """
         self.num_angles = data.shape[0]
@@ -194,10 +194,14 @@ class tomoData:
             rotation_center = tomopy.find_center_vo(self.projections)
             x_shift = (self.image_size[1]//2 - rotation_center)
             y_shift = 0
-            for m in tqdm(range(self.num_angles), desc='Center projections'):
-                self.projections[m] = shift(self.projections[m], shift=[y_shift, x_shift], mode='nearest')
-            
-            self.rotation_center = tomopy.find_center_vo(self.projections)
+            if x_shift > 1:
+                for m in tqdm(range(self.num_angles), desc='Center projections'):
+                    self.projections[m] = shift(self.projections[m], shift=[y_shift, x_shift], mode='nearest')
+                
+                self.rotation_center = tomopy.find_center_vo(self.projections)
+
+            else:
+                self.rotation_center = rotation_center    
 
             
 
@@ -224,7 +228,7 @@ class tomoData:
                                         options=options,
                                         ncore=1)
             else: 
-                raise ValueError("GPU is available, but the selected algorithm is not GPU-accelerated.")
+                raise ValueError("GPU is noy available, but the selected algorithm is was 'gpu'.")
         elif algorithm == 'svmbir':
             print("Using SVMBIR-based reconstruction.")
             self.recon = svmbir.recon(self.projections, self.ang, verbose=1)
