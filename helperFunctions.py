@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from IPython.display import display, clear_output
 import ipywidgets as widgets
 import time
+import sys
 
 
 def FFT2(input):
@@ -69,6 +70,22 @@ class MoviePlotter:
             plt.colorbar(label='Intensity')
             plt.title(f"Frame {frame}")
             plt.show()
+
+# Custom logger class
+class DualLogger:
+    def __init__(self, filepath, mode='a'):
+        self.terminal = sys.stdout
+        self.log = open(filepath, mode)
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.log.write(message)
+
+    def flush(self):
+        self.log.flush()
+
+    def close(self):
+        self.log.close()
 
 # # Fourier Transform Cross Correlation Method
 # def XCA(m):

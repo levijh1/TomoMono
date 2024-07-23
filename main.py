@@ -5,41 +5,46 @@ if __name__ == '__main__':
     from tiffConverter import convert_to_numpy, convert_to_tiff
     from datetime import datetime
     import torch
-    import tomopy
-    import matplotlib.pyplot as plt
-    import os
     import argparse
+    from helperFunctions import DualLogger
+
+    # Configuration flags
+    log = True  # Enable logging to file
+    saveToFile = True  # Enable saving data to file
 
     # Start the timer for execution duration tracking
     start_time = time.time()
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")  # Timestamp for file naming
 
-    # Configuration flags
-    log = False  # Enable logging to file
-    saveToFile = True  # Enable saving data to file
-
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description='Run reconstruction algorithms.')
     parser.add_argument('--algorithms', nargs='+', help='List of algorithms to use for reconstruction', required=False,
-                         default=[['art', 'bart','fbp', 'gridrec', 'mlem', 'osem', 'ospml_hybrid', 'ospml_quad', 'pml_hybrid', 'pml_quad', 'sirt', 'tv', 'grad', 'tikh', 'gpu', 'svmbir']])
+                        #  default=[['art', 'bart','fbp', 'gridrec', 'mlem', 'osem', 'ospml_hybrid', 'ospml_quad', 'pml_hybrid', 'pml_quad', 'sirt', 'tv', 'grad', 'tikh', 'gpu', 'svmbir']])
+                        default = ['gpu'])
     args = parser.parse_args()
     algorithms = args.algorithms
-    print(f"Algorithms: {algorithms}")
 
     # Setup logging if enabled
     if log:
-        log_file = open(f'logs/output_tomoMono{timestamp}.txt', 'w')
-        sys.stdout = log_file  # Redirect standard output to log file
-        sys.stderr = log_file  # Redirect standard error to log file
+        sys.stdout = DualLogger(f'logs/output_tomoMono{timestamp}.txt', 'w')
+
+
+
+
+
+
+
+
+    print("Running TomoMono Script!")
+    print(f"Algorithms: {algorithms}")
 
     # Check for GPU availability
     if torch.cuda.is_available():
         print("GPU is available")
 
+    # # Importing data
 
-
-
-    # # The following commented-out code block is for importing and processing model data
+    # # The following commented-out code block is for importing and processing example data from Tomopy
     # numAngles = 800
     # shepp3d = tomopy.shepp3d(size=128)
     # ang = tomopy.angles(nang=numAngles, ang1=0, ang2=360)
@@ -67,6 +72,7 @@ if __name__ == '__main__':
     # tomo.rotate_correlate_align()
     # tomo.tomopy_align(iterations = 10)
     # tomo.optical_flow_align()
+    # tomo.center_projections()
     # # tomo.makeScriptProjMovie()
 
     # # #Save the aligned data
@@ -79,14 +85,14 @@ if __name__ == '__main__':
 
 
     # Use pre-aligned data to reconstruct
-    tif_file = "alignedProjections/aligned_foamTomo20240718-165515.tif"
-    obj, scale_info = convert_to_numpy(tif_file)
+    prealigned_tif_file = "alignedProjections/aligned_foamTomo20240718-165515.tif"
+    obj, scale_info = convert_to_numpy(prealigned_tif_file)
     tomo = tomoDataClass.tomoData(obj)
 
 
-    #Reconstruction Process
+    # Reconstruction Process
     print("Reconstructing")
-    # tomo.normalize()
+    tomo.normalize()
     for alg in algorithms:
         try:
             tomo.reconstruct(algorithm=alg)
@@ -94,7 +100,7 @@ if __name__ == '__main__':
             print(f"Failed to reconstruct using {alg}: {e}")
             continue
         if saveToFile:
-            convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_notNormalized_{timestamp}_{alg}.tif", scale_info)
+            convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_{timestamp}_{alg}.tif", scale_info)
 
 
 
@@ -105,7 +111,7 @@ if __name__ == '__main__':
     print(f"Script completed in {end_time - start_time} seconds.")
 
     if log:
-        log_file.close()
+        sys.stdout.close()
         sys.stdout = sys.__stdout__
         sys.stderr = sys.__stderr__
 
