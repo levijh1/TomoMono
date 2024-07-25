@@ -201,7 +201,8 @@ class tomoData:
                 self.rotation_center = tomopy.find_center_vo(self.projections)
 
             else:
-                self.rotation_center = rotation_center    
+                self.rotation_center = rotation_center
+            print("Aligned projections shifted by {} pixels".format(x_shift))   
 
             
 
@@ -209,15 +210,16 @@ class tomoData:
         #Check if data has been centered yet
         if self.rotation_center == 0:
             self.center_projections()
+            self.makeScriptProjMovie()
 
         #Check which algorithm is being used
         print("\n")
-        if algorithm == 'gpu':
+        if algorithm.endswith("CUDA"):
             if torch.cuda.is_available():
                 print("Using GPU-accelerated reconstruction.")
                 options = {
                     'proj_type': 'cuda',
-                    'method': 'SIRT_CUDA',
+                    'method': algorithm,
                     'num_iter': 200,
                     'extra_options': {}
                 }
@@ -228,7 +230,7 @@ class tomoData:
                                         options=options,
                                         ncore=1)
             else: 
-                raise ValueError("GPU is noy available, but the selected algorithm is was 'gpu'.")
+                raise ValueError("GPU is not available, but the selected algorithm is was 'gpu'.")
         elif algorithm == 'svmbir':
             print("Using SVMBIR-based reconstruction.")
             self.recon = svmbir.recon(self.projections, self.ang, verbose=1)

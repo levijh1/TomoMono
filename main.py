@@ -20,7 +20,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run reconstruction algorithms.')
     parser.add_argument('--algorithms', nargs='+', help='List of algorithms to use for reconstruction', required=False,
                         #  default=[['art', 'bart','fbp', 'gridrec', 'mlem', 'osem', 'ospml_hybrid', 'ospml_quad', 'pml_hybrid', 'pml_quad', 'sirt', 'tv', 'grad', 'tikh', 'gpu', 'svmbir']])
-                        default = ['gpu'])
+                        default = ['FP_CUDA', 'BP_CUDA', "FBP_CUDA", "SIRT_CUDA", "SART_CUDA", "CGLS_CUDA", "EM_CUDA", "svmbir"])
     args = parser.parse_args()
     algorithms = args.algorithms
 
