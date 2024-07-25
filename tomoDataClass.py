@@ -33,6 +33,7 @@ class tomoData:
         self.ang = tomopy.angles(nang=self.num_angles, ang1=0, ang2=(360 / total_angles) * self.num_angles)
         self.projections = np.copy(data)
         self.rotation_center = 0
+        self.center_offset = 0
     
     def get_recon(self):
         """Returns the reconstructed 3D Model."""
@@ -192,6 +193,7 @@ class tomoData:
     def center_projections(self):
             print("Finding center of rotation for projections")
             rotation_center = tomopy.find_center_vo(self.projections)
+            print("Original center: {}".format(rotation_center))
             x_shift = (self.image_size[1]//2 - rotation_center)
             y_shift = 0
             if x_shift > 1:
@@ -199,18 +201,20 @@ class tomoData:
                     self.projections[m] = shift(self.projections[m], shift=[y_shift, x_shift], mode='nearest')
                 
                 self.rotation_center = tomopy.find_center_vo(self.projections)
+                print("Aligned projections shifted by {} pixels".format(x_shift))   
 
-            else:
-                self.rotation_center = rotation_center
-            print("Aligned projections shifted by {} pixels".format(x_shift))   
-
+            #Delete me
+            x_shift = (self.image_size[1]//2 - self.rotation_center)
+            self.center_offset = abs(x_shift)
+            print("Projections are already centered at pixel {}".format(self.rotation_center))
+            print("But it is still offset by {} pixels".format(self.center_offset))
+            self.rotation_center = rotation_center
             
 
     def reconstruct(self, algorithm):
         #Check if data has been centered yet
         if self.rotation_center == 0:
             self.center_projections()
-            self.makeScriptProjMovie()
 
         #Check which algorithm is being used
         print("\n")
@@ -233,7 +237,8 @@ class tomoData:
                 raise ValueError("GPU is not available, but the selected algorithm is was 'gpu'.")
         elif algorithm == 'svmbir':
             print("Using SVMBIR-based reconstruction.")
-            self.recon = svmbir.recon(self.projections, self.ang, verbose=1)
+            print("center_offset assumed to be : {}".format(self.center_offset))
+            self.recon = svmbir.recon(self.projections, self.ang, center_offset = self.center_offset, verbose=1)
         else:
             print("Using CPU-based reconstruction. Algorithm: ", algorithm)
             self.recon = tomopy.recon(self.projections,

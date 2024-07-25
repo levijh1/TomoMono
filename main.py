@@ -20,7 +20,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run reconstruction algorithms.')
     parser.add_argument('--algorithms', nargs='+', help='List of algorithms to use for reconstruction', required=False,
                         #  default=[['art', 'bart','fbp', 'gridrec', 'mlem', 'osem', 'ospml_hybrid', 'ospml_quad', 'pml_hybrid', 'pml_quad', 'sirt', 'tv', 'grad', 'tikh', 'gpu', 'svmbir']])
-                        default = ['FP_CUDA', 'BP_CUDA', "FBP_CUDA", "SIRT_CUDA", "SART_CUDA", "CGLS_CUDA", "EM_CUDA", "svmbir"])
+                        # default = ['FP_CUDA', 'BP_CUDA', "FBP_CUDA", "SIRT_CUDA", "SART_CUDA", "CGLS_CUDA", "EM_CUDA", "svmbir"])
+                        default = ["svmbir"])
+
     args = parser.parse_args()
     algorithms = args.algorithms
 
@@ -92,6 +94,15 @@ if __name__ == '__main__':
 
     # Reconstruction Process
     print("Reconstructing")
+    for alg in algorithms:
+        try:
+            tomo.reconstruct(algorithm=alg)
+        except Exception as e:
+            print(f"Failed to reconstruct using {alg}: {e}")
+            continue
+        if saveToFile:
+            convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}.tif", scale_info)
+
     tomo.normalize()
     for alg in algorithms:
         try:
@@ -100,7 +111,7 @@ if __name__ == '__main__':
             print(f"Failed to reconstruct using {alg}: {e}")
             continue
         if saveToFile:
-            convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_{timestamp}_{alg}.tif", scale_info)
+            convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_normalized_{timestamp}_{alg}.tif", scale_info)
 
 
 
