@@ -6,7 +6,12 @@ if __name__ == '__main__':
     from datetime import datetime
     import torch
     import argparse
-    from helperFunctions import DualLogger
+    from helperFunctions import DualLogger, subpixel_shift
+    from tqdm import tqdm
+    from scipy.ndimage import shift
+    import tomopy
+    import numpy as np
+
 
     # Configuration flags
     log = True  # Enable logging to file
@@ -20,7 +25,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run reconstruction algorithms.')
     parser.add_argument('--algorithms', nargs='+', help='List of algorithms to use for reconstruction', required=False,
                         #  default=[['art', 'bart','fbp', 'gridrec', 'mlem', 'osem', 'ospml_hybrid', 'ospml_quad', 'pml_hybrid', 'pml_quad', 'sirt', 'tv', 'grad', 'tikh', 'gpu', 'svmbir']])
-                        # default = ['FP_CUDA', 'BP_CUDA', "FBP_CUDA", "SIRT_CUDA", "SART_CUDA", "CGLS_CUDA", "EM_CUDA", "svmbir"])
+                        # default = ['FP_CUDA', 'BP_CUDA', "FBP_CUDA", "SIRT_CUDA", "SART_CUDA", "CGLS_CUDA", "EM_CUDA"])
                         default = ["svmbir"])
 
     args = parser.parse_args()
@@ -54,65 +59,86 @@ if __name__ == '__main__':
     # tomo = tomoDataClass.tomoData(obj, numAngles)
     # tomo.jitter()  # Apply jitter to the data
 
-    # # Import foam data
-    # numAngles = 800
-    # tif_file = "data/fullTomoReconstructions2.tif"
-    # obj, scale_info = convert_to_numpy(tif_file)
-    # obj = obj[0:numAngles]
-    # print(obj.shape)
-    # tomo = tomoDataClass.tomoData(obj)
-    # tomo.crop(900,550)
-    # # tomo.makeScriptProjMovie()
-
+    # Import foam data
+    numAngles = 800
+    tif_file = "data/fullTomoReconstructions2.tif"
+    obj, scale_info = convert_to_numpy(tif_file)
+    obj = obj[0:numAngles]
+    print(obj.shape)
+    tomo = tomoDataClass.tomoData(obj)
+    tomo.crop_center(900,550)
 
 
 
 
     # # Alignment Process
-    # print("Starting alignment")
-    # # tomo.cross_correlate_align()
-    # tomo.rotate_correlate_align()
-    # tomo.tomopy_align(iterations = 10)
-    # tomo.optical_flow_align()
-    # tomo.center_projections()
-    # # tomo.makeScriptProjMovie()
+    print("Starting alignment")
+    tomo.track_shifts()
+    tomo.cross_correlate_align()
+    tomo.vertical_mass_fluctuation_align()
+    tomo.tomopy_align(iterations = 10)
+    tomo.optical_flow_align()
+    tomo.center_projections()
+    print(tomo.tracked_shifts)
+    tomo.makeScriptProjMovie()
 
-    # # #Save the aligned data
-    # if saveToFile:
-    #     convert_to_tiff(tomo.get_projections(), f"alignedProjections/aligned_foamTomo{timestamp}.tif", scale_info)
-    #     # convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon{timestamp}.tif", scale_info)
+    for m in tqdm(range(tomo.num_angles), desc='Center projections'):
+        tomo.originalProjections[m] = subpixel_shift(tomo.originalProjections[m], tomo.tracked_shifts[m,0], tomo.tracked_shifts[m,1])
+    tomo.projections = tomo.originalProjections
+    tomo.makeScriptProjMovie()
+
+    # tomo.projections = tomo.data
+    # tomo.crop_center(900,550)
+
+    # tomo.makeScriptProjMovie()
+    # #Save the aligned data
+    if saveToFile:
+        convert_to_tiff(tomo.get_projections(), f"alignedProjections/aligned_foamTomo{timestamp}.tif", scale_info)
+        np.save(f'shiftValues_{timestamp}.npy', tomo.tracked_shifts)
 
 
 
 
 
-    # Use pre-aligned data to reconstruct
-    prealigned_tif_file = "alignedProjections/aligned_foamTomo20240718-165515.tif"
-    obj, scale_info = convert_to_numpy(prealigned_tif_file)
-    tomo = tomoDataClass.tomoData(obj)
+    # # Use pre-aligned data to reconstruct
+    # prealigned_tif_file = "alignedProjections/aligned_foamTomo20240718-165515.tif"
+    # obj, scale_info = convert_to_numpy(prealigned_tif_file)
+    # tomo = tomoDataClass.tomoData(obj)
 
 
-    # Reconstruction Process
-    print("Reconstructing")
-    for alg in algorithms:
-        try:
-            tomo.reconstruct(algorithm=alg)
-        except Exception as e:
-            print(f"Failed to reconstruct using {alg}: {e}")
-            continue
-        if saveToFile:
-            convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}.tif", scale_info)
+    # # # Reconstruction Process
+    # print("Reconstructing")
+    # tomo.crop_bottom_center(402, 512)
+    # tomo.makeScriptProjMovie()
+    # for alg in algorithms:
+    #     try:
+    #         tomo.reconstruct(algorithm=alg)
+    #     except Exception as e:
+    #         print(f"Failed to reconstruct using {alg}: {e}")
+    #         continue
+    #     if saveToFile:
+    #         convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}.tif", scale_info)
+    # tomo.normalize()
+    # for alg in algorithms:
+    #     try:
+    #         tomo.reconstruct(algorithm=alg)
+    #     except Exception as e:
+    #         print(f"Failed to reconstruct using {alg}: {e}")
+    #         continue
+    #     if saveToFile:
+    #         convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_normalized_{timestamp}_{alg}.tif", scale_info)
 
-    tomo.normalize()
-    for alg in algorithms:
-        try:
-            tomo.reconstruct(algorithm=alg)
-        except Exception as e:
-            print(f"Failed to reconstruct using {alg}: {e}")
-            continue
-        if saveToFile:
-            convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_normalized_{timestamp}_{alg}.tif", scale_info)
-
+    # ###DELETE LATER
+    # recon, recon_scale_info = convert_to_numpy(tomo.recon)
+    # num = tomo.num_angles
+    # ang = tomopy.angles(num, 0, 360*num/800) #First angle should theoretically be the same no matter how many angles I project through
+    # tomopyProjections = tomopy.project(tomo, ang)
+    # shiftedProjections = np.zeros_like(tomopyProjections)
+    # for m in tqdm(range(tomo.num_angles), desc='Shift projections from volume'):
+    #     shiftedProjections[m] = subpixel_shift(tomopyProjections[m], -tomo.tracked_shifts[m,0], -tomo.tracked_shifts[m,1])
+    # newTomo = tomoDataClass.tomoData(shiftedProjections)
+    # newTomo.makeScriptProjMovie()
+    # tomo.makeScriptProjMovie()
 
 
     # End the timer

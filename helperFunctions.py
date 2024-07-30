@@ -30,6 +30,40 @@ def add_noise(m):
   m = tomopy.prep.alignment.add_noise(m)
   return m
 
+def subpixel_shift(image, shift_y, shift_x):
+    """
+    Shift a 2D image using a phase ramp in the Fourier domain.
+
+    Parameters:
+    image (2D numpy array): The input image to be shifted.
+    shift_x (float): The shift in the x direction (horizontal shift).
+    shift_y (float): The shift in the y direction (vertical shift).
+
+    Returns:
+    shifted_image (2D numpy array): The shifted image.
+    """
+    # Fourier transform of the image
+    fft_image = np.fft.fft2(image)
+
+    # Get the image dimensions
+    rows, cols = image.shape
+
+    # Create frequency coordinate grids
+    u = np.fft.fftfreq(cols)  # Frequency coordinates along the x-axis
+    v = np.fft.fftfreq(rows)  # Frequency coordinates along the y-axis
+    U, V = np.meshgrid(u, v)  # 2D grid of frequency coordinates
+
+    # Calculate the phase ramp
+    phase_ramp = np.exp(-2j * np.pi * (shift_x * U + shift_y * V))
+
+    # Apply the phase ramp to the Fourier-transformed image
+    shifted_fft_image = fft_image * phase_ramp
+
+    # Inverse Fourier transform to get the shifted image
+    shifted_image = np.fft.ifft2(shifted_fft_image).real
+
+    return shifted_image
+
 class MoviePlotter:
     """Plots a sequence of images as a movie in a Jupyter Notebook with interactive controls using widgets.Play."""
     def __init__(self, x):
@@ -87,58 +121,3 @@ class DualLogger:
     def close(self):
         self.log.close()
 
-# # Fourier Transform Cross Correlation Method
-# def XCA(m):
-#     #Align first projection
-#     A = np.sum(m[0, :, :])
-#     coa = np.array([0, 0])
-#     for i in range(m[0].shape[0]):
-#       for j in range(m[0].shape[1]):
-#         coa = coa + m[0, j, i]*np.array([j,i])
-#     coa = coa / A
-#
-#     yshift0 = int(round(-(m[0].shape[0] / 2 - coa[0] - 1)))
-#     xshift0 = int(round(-(m[0].shape[1] / 2 - coa[1])))
-#     m[0] = np.roll(m[0, :, :], -xshift0, axis=1)
-#     m[0] = np.roll(m[0, :, :], -yshift0, axis=0)
-#
-#     ###Align all other projections to first projection
-#     for k in range(numangles-1):
-#       # Homemade cross correlation method
-#       CC = IFFT2(FFT2(m[k]) * FFT2(m[k + 1]))
-#       maxpoint = np.where(CC == CC.max())
-#       xshift = int(-(reconsize / 2 - maxpoint[1] - 1)[0])
-#       yshift = int(-(imagesize / 2 - maxpoint[0] - 1)[0])
-#
-#       # ## Premade Scipy cross correlation method
-#       # CC = sp.signal.correlate(m[k], m[k+1], mode='same', method='fft')
-#       # maxpoint = np.where(CC == CC.max())
-#       # xshift = int(reconsize / 2 - maxpoint[1])
-#       # yshift = int(imagesize / 2 - maxpoint[0])
-#
-#       m[k + 1, :, :] = np.roll(m[k + 1, :, :], -xshift, axis=1)
-#       m[k + 1, :, :] = np.roll(m[k + 1, :, :], -yshift, axis=0)
-#     return m
-#
-#
-# ##Multiplication and Summation Cross Correlation Method
-# for i in range(numangles):
-#   prj_integrated[i] = np.sum(prj_shifted[i], axis=0)
-#
-# for k in range(numangles):
-#   sums = []
-#   for i in range(-184,184):
-#     multiplied_function = []
-#     for j in range(184):
-#       if j+i < 0 or j+i > (184-1):
-#         multiplied_function.append(0)
-#       elif k == numangles-1:
-#         multiplied_function.append(prj_integrated[k,j] * prj_integrated[0,j+i])
-#       else:
-#         multiplied_function.append(prj_integrated[k,j] * prj_integrated[k+1,j+i])
-#     sums.append(sum(multiplied_function))
-#
-#   shiftnumber = -(sums.index(max(sums))-184)
-#   if k != numangles - 1:
-#     prj_integrated[k+1] = np.roll(prj_integrated[k + 1], shiftnumber)
-#     prj_aligned[k+1, :, :] = np.roll(prj_aligned[k + 1, :, :], shiftnumber, axis=1)
