@@ -209,7 +209,7 @@ class tomoData:
                 CC = sp.signal.correlate(sums[0], sums[k], mode='same', method='fft')
                 maxpoint = np.where(CC == CC.max())
                 yshift = int(self.image_size[0] / 2 - maxpoint[0])
-                self.projections[k] = np.roll(self.projections[k], -yshift, axis=0)
+                self.projections[k] = subpixel_shift(self.projections[k], -yshift, 0)
                 self.tracked_shifts[k,0] += yshift
 
         # return m
@@ -254,15 +254,16 @@ class tomoData:
             print("Finding center of rotation for projections")
             self.rotation_center = tomopy.find_center_vo(self.projections)
             print("Original center: {}".format(self.rotation_center))
-            x_shift = abs((self.image_size[1]//2 - self.rotation_center))
+            print("Center of frame: {}".format(self.image_size[1]//2))
+            x_shift = (self.image_size[1]/2 - self.rotation_center)
             y_shift = 0
-            if x_shift > 1:
+            if abs(x_shift) > 1:
                 for m in tqdm(range(self.num_angles), desc='Center projections'):
                     self.projections[m] = subpixel_shift(self.projections[m], y_shift, x_shift)
                 
                 self.rotation_center = tomopy.find_center_vo(self.projections)
                 print("Aligned projections shifted by {} pixels".format(x_shift))
-                x_shift = abs((self.image_size[1]//2 - self.rotation_center))
+                x_shift = (self.image_size[1]//2 - self.rotation_center)
    
             #Check how well center_projections actually performed
             self.center_offset = abs(x_shift)
@@ -275,7 +276,7 @@ class tomoData:
 
     def reconstruct(self, algorithm, snr_db):
         #Check if data has been centered yet
-        if self.rotation_center == 0:
+        if self.center_offset > 1:
             self.center_projections()
 
         #Check which algorithm is being used
