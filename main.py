@@ -59,65 +59,68 @@ if __name__ == '__main__':
     # tomo = tomoDataClass.tomoData(obj, numAngles)
     # tomo.jitter()  # Apply jitter to the data
 
-    # Import foam data
-    numAngles = 800
-    tif_file = "data/fullTomoReconstructions2.tif"
-    obj, scale_info = convert_to_numpy(tif_file)
-    obj = obj[0:numAngles]
-    print(obj.shape)
-    tomo = tomoDataClass.tomoData(obj)
-    tomo.crop_center(900,550)
-
-
-
-
-    # # Alignment Process
-    print("Starting alignment")
-    tomo.track_shifts()
-    tomo.cross_correlate_align()
-    tomo.vertical_mass_fluctuation_align()
-    tomo.tomopy_align(iterations = 10)
-    tomo.optical_flow_align()
-    tomo.center_projections()
-    print(tomo.tracked_shifts)
-    tomo.makeScriptProjMovie()
-
-    for m in tqdm(range(tomo.num_angles), desc='Center projections'):
-        tomo.originalProjections[m] = subpixel_shift(tomo.originalProjections[m], tomo.tracked_shifts[m,0], tomo.tracked_shifts[m,1])
-    tomo.projections = tomo.originalProjections
-    tomo.makeScriptProjMovie()
-
-    # tomo.projections = tomo.data
+    # # Import foam data
+    # numAngles = 800
+    # tif_file = "data/fullTomoReconstructions2.tif"
+    # obj, scale_info = convert_to_numpy(tif_file)
+    # obj = obj[0:numAngles]
+    # print(obj.shape)
+    # tomo = tomoDataClass.tomoData(obj)
     # tomo.crop_center(900,550)
 
+
+
+
+    # # # Alignment Process
+    # print("Starting alignment")
+    # tomo.track_shifts()
+    # tomo.cross_correlate_align()
+    # tomo.vertical_mass_fluctuation_align()
+    # tomo.tomopy_align(iterations = 10)
+    # tomo.optical_flow_align()
+    # tomo.center_projections()
+    # print(tomo.tracked_shifts)
     # tomo.makeScriptProjMovie()
-    # #Save the aligned data
-    if saveToFile:
-        convert_to_tiff(tomo.get_projections(), f"alignedProjections/aligned_foamTomo{timestamp}.tif", scale_info)
-        np.save(f'shiftValues_{timestamp}.npy', tomo.tracked_shifts)
 
-
-
-
-
-    # # Use pre-aligned data to reconstruct
-    # prealigned_tif_file = "alignedProjections/aligned_foamTomo20240718-165515.tif"
-    # obj, scale_info = convert_to_numpy(prealigned_tif_file)
-    # tomo = tomoDataClass.tomoData(obj)
-
-
-    # # # Reconstruction Process
-    # print("Reconstructing")
-    # tomo.crop_bottom_center(402, 512)
+    # for m in tqdm(range(tomo.num_angles), desc='Center projections'):
+    #     tomo.originalProjections[m] = subpixel_shift(tomo.originalProjections[m], tomo.tracked_shifts[m,0], tomo.tracked_shifts[m,1])
+    # tomo.projections = tomo.originalProjections
     # tomo.makeScriptProjMovie()
-    # for alg in algorithms:
-    #     try:
-    #         tomo.reconstruct(algorithm=alg)
-    #     except Exception as e:
-    #         print(f"Failed to reconstruct using {alg}: {e}")
-    #         continue
-    #     if saveToFile:
-    #         convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}.tif", scale_info)
+
+    # # tomo.projections = tomo.data
+    # # tomo.crop_center(900,550)
+
+    # # tomo.makeScriptProjMovie()
+    # # #Save the aligned data
+    # if saveToFile:
+    #     convert_to_tiff(tomo.get_projections(), f"alignedProjections/aligned_foamTomo{timestamp}.tif", scale_info)
+    #     np.save(f'shiftValues_{timestamp}.npy', tomo.tracked_shifts)
+
+
+
+
+
+    # Use pre-aligned data to reconstruct
+    prealigned_tif_file = "alignedProjections/aligned_foamTomo20240718-165515.tif"
+    obj, scale_info = convert_to_numpy(prealigned_tif_file)
+    tomo = tomoDataClass.tomoData(obj)
+    tomo.center_projections()
+
+
+    # # Reconstruction Process
+    print("Reconstructing")
+    tomo.crop_bottom_center(402, 512)
+    # tomo.makeScriptProjMovie()
+    for alg in algorithms:
+        for snr in [10, 20, 30, 40, 50, 60]:
+            print(f"snr = {snr}")
+            try:
+                tomo.reconstruct(algorithm=alg, snr_db = snr)
+            except Exception as e:
+                print(f"Failed to reconstruct using {alg}: {e}")
+                continue
+            if saveToFile:
+                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}.tif", scale_info)
     # tomo.normalize()
     # for alg in algorithms:
     #     try:

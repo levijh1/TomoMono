@@ -29,6 +29,8 @@ class tomoData:
         self.projections = np.copy(data)
         self.rotation_center = 0
         self.center_offset = 0
+        self.originalProjections = self.projections.copy()
+        self.tracked_shifts = np.zeros((self.num_angles,2))
     
     def get_recon(self):
         """Returns the reconstructed 3D Model."""
@@ -252,25 +254,26 @@ class tomoData:
             print("Finding center of rotation for projections")
             self.rotation_center = tomopy.find_center_vo(self.projections)
             print("Original center: {}".format(self.rotation_center))
-            x_shift = (self.image_size[1]//2 - self.rotation_center)
+            x_shift = abs((self.image_size[1]//2 - self.rotation_center))
             y_shift = 0
             if x_shift > 1:
                 for m in tqdm(range(self.num_angles), desc='Center projections'):
                     self.projections[m] = subpixel_shift(self.projections[m], y_shift, x_shift)
                 
                 self.rotation_center = tomopy.find_center_vo(self.projections)
-                print("Aligned projections shifted by {} pixels".format(x_shift))   
-
+                print("Aligned projections shifted by {} pixels".format(x_shift))
+                x_shift = abs((self.image_size[1]//2 - self.rotation_center))
+   
             #Check how well center_projections actually performed
             self.center_offset = abs(x_shift)
-            print("Projections are already centered at pixel {}".format(self.rotation_center))
+            print("Projections are currently centered at pixel {}".format(self.rotation_center))
             print("But it is still offset by {} pixels".format(self.center_offset))
 
             #Track whatever shift we added
             self.tracked_shifts[:,1] += x_shift
             
 
-    def reconstruct(self, algorithm):
+    def reconstruct(self, algorithm, snr_db):
         #Check if data has been centered yet
         if self.rotation_center == 0:
             self.center_projections()
@@ -297,7 +300,7 @@ class tomoData:
         elif algorithm == 'svmbir':
             print("Using SVMBIR-based reconstruction.")
             print("center_offset assumed to be : {}".format(self.center_offset))
-            self.recon = svmbir.recon(self.projections, self.ang, center_offset = self.center_offset, verbose=1)
+            self.recon = svmbir.recon(self.projections, self.ang, center_offset = self.center_offset, snr_db=snr_db, verbose=1)
         else:
             print("Using CPU-based reconstruction. Algorithm: ", algorithm)
             self.recon = tomopy.recon(self.projections,
