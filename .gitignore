@@ -1,4 +1,7 @@
 logs/
+shift_values/
+reconstructions/
+alignedProjections/
 
 #tif or tiff files
 *.tif

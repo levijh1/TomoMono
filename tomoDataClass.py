@@ -300,6 +300,8 @@ class tomoData:
         elif algorithm == 'svmbir':
             print("Using SVMBIR-based reconstruction.")
             print("center_offset assumed to be : {}".format(self.center_offset))
+            if snr_db == None:
+                snr_db = 30
             self.recon = svmbir.recon(self.projections, self.ang, center_offset = self.center_offset, snr_db=snr_db, verbose=1)
         else:
             print("Using CPU-based reconstruction. Algorithm: ", algorithm)
