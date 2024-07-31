@@ -212,7 +212,6 @@ class tomoData:
                 self.projections[k] = subpixel_shift(self.projections[k], -yshift, 0)
                 self.tracked_shifts[k,0] += yshift
 
-        # return m
     def tomopy_align(self, iterations = 10):
         """
         Aligns projections using tomopy's join repojection Alignment algorithm
@@ -287,7 +286,7 @@ class tomoData:
                 options = {
                     'proj_type': 'cuda',
                     'method': algorithm,
-                    'num_iter': 200,
+                    'num_iter': 400,
                     'extra_options': {}
                 }
                 self.recon = tomopy.recon(self.projections,
@@ -297,7 +296,7 @@ class tomoData:
                                         options=options,
                                         ncore=1)
             else: 
-                raise ValueError("GPU is not available, but the selected algorithm is was 'gpu'.")
+                raise ValueError("GPU is not available, but the selected algorithm was 'gpu'.")
         elif algorithm == 'svmbir':
             print("Using SVMBIR-based reconstruction.")
             print("center_offset assumed to be : {}".format(self.center_offset))
@@ -312,5 +311,5 @@ class tomoData:
                                       algorithm=algorithm,
                                       sinogram_order=False)
 
-        self.recon = tomopy.circ_mask(self.recon, axis=0, ratio=0.90)
+        self.recon = tomopy.circ_mask(self.recon, axis=0, ratio=0.98)
         print("Reconstruction completed.")

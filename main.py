@@ -25,8 +25,8 @@ if __name__ == '__main__':
     parser.add_argument('--algorithms', nargs='+', help='List of algorithms to use for reconstruction', required=False,
                         #  default=[['art', 'bart','fbp', 'gridrec', 'mlem', 'osem', 'ospml_hybrid', 'ospml_quad', 'pml_hybrid', 'pml_quad', 'sirt', 'tv', 'grad', 'tikh', 'gpu', 'svmbir']])
                         # default = ['FP_CUDA', 'BP_CUDA', "FBP_CUDA", "SIRT_CUDA", "SART_CUDA", "CGLS_CUDA", "EM_CUDA"])
-                        default = ["FBP_CUDA", "SIRT_CUDA", "svmbir"])
-                        # default = ['svmbir']
+                        default = ["FBP_CUDA", "SIRT_CUDA"])
+                        # default = ['art'])
 
 
     args = parser.parse_args()
@@ -43,47 +43,12 @@ if __name__ == '__main__':
 
 
 
-    print("Running TomoMono Script!")
+    print("Running TomoMono 3D Reconstruction Script!")
     print(f"Algorithms: {algorithms}")
 
     # Check for GPU availability
     if torch.cuda.is_available():
         print("GPU is available")
-
-    
-
-
-
-    # # # Alignment Process
-
-    # # Import foam data
-    # numAngles = 800
-    # tif_file = "data/fullTomoReconstructions2.tif"
-    # obj, scale_info = convert_to_numpy(tif_file)
-    # obj = obj[0:numAngles]
-    # print(obj.shape)
-    # tomo = tomoDataClass.tomoData(obj)
-    # tomo.crop_center(900,550)
-
-    # print("Starting alignment")
-    # tomo.track_shifts()
-    # tomo.cross_correlate_align()
-    # # tomo.vertical_mass_fluctuation_align()
-    # tomo.center_projections()
-    # tomo.tomopy_align(iterations = 10)
-    # tomo.optical_flow_align()
-    # tomo.center_projections()
-    # print(tomo.tracked_shifts)
-    # #Apply changes on unchanged projections
-    # for m in tqdm(range(tomo.num_angles), desc='Center projections'):
-    #     tomo.originalProjections[m] = subpixel_shift(tomo.originalProjections[m], tomo.tracked_shifts[m,0], tomo.tracked_shifts[m,1])
-    # tomo.projections = tomo.originalProjections
-    # # tomo.makeScriptProjMovie()
-
-    # # #Save the aligned data
-    # if saveToFile:
-    #     convert_to_tiff(tomo.get_projections(), f"alignedProjections/aligned_foamTomo{timestamp}.tif", scale_info)
-    #     np.save(f'shiftValues_{timestamp}.npy', tomo.tracked_shifts)
 
 
 
@@ -93,18 +58,16 @@ if __name__ == '__main__':
 
     # # Reconstruction Process
     # Use pre-aligned data to reconstruct
-    prealigned_tif_file = "alignedProjections/aligned_foamTomo20240730-164635.tif"
+    prealigned_tif_file = "alignedProjections/aligned_foamTomo20240730-164635.tif" #Without rotational alignment
+    # prealigned_tif_file = "alignedProjections/aligned_foamTomo20240718-165515.tif"
+
     obj, scale_info = convert_to_numpy(prealigned_tif_file)
     tomo = tomoDataClass.tomoData(obj)
     tomo.center_projections()
 
     print("Reconstructing")
-    tomo.crop_bottom_center(400, 520)
-    tomo.makeScriptProjMovie()
     for alg in algorithms:
         snr = None
-        # for snr in [10, 20, 30, 40, 50, 60]:
-        #     print(f"snr = {snr}")
         try:
             tomo.reconstruct(algorithm=alg, snr_db = snr)
         except Exception as e:
@@ -115,6 +78,36 @@ if __name__ == '__main__':
                 convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}.tif", scale_info)
             else:
                 convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}_snr{snr}.tif", scale_info)
+        
+            print("Reconstructing")
+
+    tomo.crop_bottom_center(400, 550)
+    for alg in algorithms:
+        snr = None
+        try:
+            tomo.reconstruct(algorithm=alg, snr_db = snr)
+        except Exception as e:
+            print(f"Failed to reconstruct using {alg}: {e}")
+            continue
+        if saveToFile:
+            if snr == None:
+                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}.tif", scale_info)
+            else:
+                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}_snr{snr}.tif", scale_info)
+
+    # #Optional SNR Test
+    # for alg in algorithms:
+    #     snr = None
+    #     try:
+    #         tomo.reconstruct(algorithm=alg, snr_db = snr)
+    #     except Exception as e:
+    #         print(f"Failed to reconstruct using {alg}: {e}")
+    #         continue
+    #     if saveToFile:
+    #         if snr == None:
+    #             convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}.tif", scale_info)
+    #         else:
+    #             convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}_snr{snr}.tif", scale_info)
 
 
     # End the timer
