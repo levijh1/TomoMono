@@ -91,9 +91,9 @@ if __name__ == '__main__':
             continue
         if saveToFile:
             if snr == None:
-                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}.tif", scale_info)
+                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}_cropped.tif", scale_info)
             else:
-                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}_snr{snr}.tif", scale_info)
+                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}_snr{snr}_cropped.tif", scale_info)
 
     # #Optional SNR Test
     # for alg in algorithms:

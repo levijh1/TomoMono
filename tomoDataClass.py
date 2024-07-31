@@ -275,8 +275,7 @@ class tomoData:
 
     def reconstruct(self, algorithm, snr_db):
         #Check if data has been centered yet
-        if self.center_offset > 1:
-            self.center_projections()
+        self.center_projections()
 
         #Check which algorithm is being used
         print("\n")
