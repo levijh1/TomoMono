@@ -25,8 +25,8 @@ if __name__ == '__main__':
     parser.add_argument('--algorithms', nargs='+', help='List of algorithms to use for reconstruction', required=False,
                         #  default=[['art', 'bart','fbp', 'gridrec', 'mlem', 'osem', 'ospml_hybrid', 'ospml_quad', 'pml_hybrid', 'pml_quad', 'sirt', 'tv', 'grad', 'tikh', 'gpu', 'svmbir']])
                         # default = ['FP_CUDA', 'BP_CUDA', "FBP_CUDA", "SIRT_CUDA", "SART_CUDA", "CGLS_CUDA", "EM_CUDA"])
-                        # default = ["FBP_CUDA", "SIRT_CUDA"])
-                        default = ['svmbir'])
+                        default = ["SIRT_CUDA", "svmbir"])
+                        # default = ['svmbir'])
 
 
     args = parser.parse_args()
@@ -53,8 +53,8 @@ if __name__ == '__main__':
 
     # # Reconstruction Process
     # Use pre-aligned data to reconstruct
-    prealigned_tif_file = "alignedProjections/aligned_foamTomo20240730-164635.tif" #Without rotational alignment
-    # prealigned_tif_file = "alignedProjections/aligned_foamTomo20240718-165515.tif"
+    # prealigned_tif_file = "alignedProjections/aligned_foamTomo20240731-115419.tif" #Without rotational alignment
+    prealigned_tif_file = "data/TomoReconstructions90p.tif"
 
     obj, scale_info = convert_to_numpy(prealigned_tif_file)
     tomo = tomoDataClass.tomoData(obj)
@@ -63,6 +63,7 @@ if __name__ == '__main__':
     tomo.crop_bottom_center(400, 550)
 
     print("Reconstructing")
+    tomo.normalize()
     for alg in algorithms:
         snr = None
         try:
@@ -72,9 +73,9 @@ if __name__ == '__main__':
             continue
         if saveToFile:
             if snr == None:
-                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}.tif", scale_info)
+                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_Normalized_90p_{timestamp}_{alg}.tif", scale_info)
             else:
-                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}_snr{snr}.tif", scale_info)
+                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_Normalized_90p_{timestamp}_{alg}_snr{snr}.tif", scale_info)
         
             print("Reconstructing")
 

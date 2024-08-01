@@ -26,7 +26,8 @@ class tomoData:
         self.num_angles = data.shape[0]
         self.image_size = data.shape[1:]
         self.data = data
-        self.ang = tomopy.angles(nang=self.num_angles, ang1=0, ang2=(360 / total_angles) * self.num_angles)
+        # self.ang = tomopy.angles(nang=self.num_angles, ang1=0, ang2=(360 / total_angles) * self.num_angles)
+        self.ang = np.load('/Users/levih/Desktop/TomoMono/data/angles_90p.npy')
         self.projections = np.copy(data)
         self.rotation_center = 0
         self.center_offset = 0
@@ -276,8 +277,8 @@ class tomoData:
 
     def reconstruct(self, algorithm, snr_db):
         
-        recon_location = "/Users/levih/Desktop/TomoMono/reconstructions/foamRecon_notNormalized_20240731-164829_SIRT_CUDA.tif"
-        tomo, tomo_scale_info = convert_to_numpy(recon_location)
+        # recon_location = "/reconstructions/foamRecon_NotNormalized_20240731-164829_SIRT_CUDA.tif"
+        # tomo, tomo_scale_info = convert_to_numpy(recon_location)
 
         #Check if data has been centered yet
         self.center_projections()
@@ -298,7 +299,7 @@ class tomoData:
                                         center=self.rotation_center,
                                         algorithm=tomopy.astra,
                                         options=options,
-                                        init_recon=tomo,
+                                        # init_recon=tomo,
                                         ncore=1)
             else: 
                 raise ValueError("GPU is not available, but the selected algorithm was 'gpu'.")
@@ -315,7 +316,7 @@ class tomoData:
                                       self.ang,
                                       center=self.rotation_center,
                                       algorithm=algorithm,
-                                      init_recon=tomo,
+                                    #   init_recon=tomo,
                                       sinogram_order=False)
 
         self.recon = tomopy.circ_mask(self.recon, axis=0, ratio=0.98)
