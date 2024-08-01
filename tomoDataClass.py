@@ -27,7 +27,7 @@ class tomoData:
         self.image_size = data.shape[1:]
         self.data = data
         # self.ang = tomopy.angles(nang=self.num_angles, ang1=0, ang2=(360 / total_angles) * self.num_angles)
-        self.ang = np.load('/Users/levih/Desktop/TomoMono/data/angles_90p.npy')
+        self.ang = np.load('data/angles_90p.npy')
         self.projections = np.copy(data)
         self.rotation_center = 0
         self.center_offset = 0
@@ -277,8 +277,8 @@ class tomoData:
 
     def reconstruct(self, algorithm, snr_db):
         
-        # recon_location = "/reconstructions/foamRecon_NotNormalized_20240731-164829_SIRT_CUDA.tif"
-        # tomo, tomo_scale_info = convert_to_numpy(recon_location)
+        recon_location = "/reconstructions/foamRecon_Normalized_20240801-132117_svmbir.tif"
+        tomo, tomo_scale_info = convert_to_numpy(recon_location)
 
         #Check if data has been centered yet
         self.center_projections()
@@ -299,7 +299,7 @@ class tomoData:
                                         center=self.rotation_center,
                                         algorithm=tomopy.astra,
                                         options=options,
-                                        # init_recon=tomo,
+                                        init_recon=tomo,
                                         ncore=1)
             else: 
                 raise ValueError("GPU is not available, but the selected algorithm was 'gpu'.")
@@ -309,7 +309,7 @@ class tomoData:
             if snr_db == None:
                 self.recon = svmbir.recon(self.projections, self.ang, center_offset = self.center_offset, init_image = tomo, verbose=1)
             else:
-                self.recon = svmbir.recon(self.projections, self.ang, center_offset = self.center_offset, snr_db=snr_db, verbose=1)
+                self.recon = svmbir.recon(self.projections, self.ang, center_offset = self.center_offset, init_image = tomo, snr_db=snr_db, verbose=1)
         else:
             print("Using CPU-based reconstruction. Algorithm: ", algorithm)
             self.recon = tomopy.recon(self.projections,

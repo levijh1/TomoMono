@@ -26,7 +26,7 @@ if __name__ == '__main__':
                         #  default=[['art', 'bart','fbp', 'gridrec', 'mlem', 'osem', 'ospml_hybrid', 'ospml_quad', 'pml_hybrid', 'pml_quad', 'sirt', 'tv', 'grad', 'tikh', 'gpu', 'svmbir']])
                         # default = ['FP_CUDA', 'BP_CUDA', "FBP_CUDA", "SIRT_CUDA", "SART_CUDA", "CGLS_CUDA", "EM_CUDA"])
                         default = ["SIRT_CUDA", "svmbir"])
-                        # default = ['svmbir'])
+                        # default = ['SIRT_CUDA'])
 
 
     args = parser.parse_args()
@@ -53,8 +53,8 @@ if __name__ == '__main__':
 
     # # Reconstruction Process
     # Use pre-aligned data to reconstruct
-    # prealigned_tif_file = "alignedProjections/aligned_foamTomo20240731-115419.tif" #Without rotational alignment
-    prealigned_tif_file = "data/TomoReconstructions90p.tif"
+    prealigned_tif_file = "alignedProjections/aligned_foamTomo20240731-115419.tif" #Without rotational alignment
+    # prealigned_tif_file = "data/TomoReconstructions90p.tif"
 
     obj, scale_info = convert_to_numpy(prealigned_tif_file)
     tomo = tomoDataClass.tomoData(obj)
@@ -73,9 +73,9 @@ if __name__ == '__main__':
             continue
         if saveToFile:
             if snr == None:
-                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_Normalized_90p_{timestamp}_{alg}.tif", scale_info)
+                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_Normalized_initRecon_{timestamp}_{alg}.tif", scale_info)
             else:
-                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_Normalized_90p_{timestamp}_{alg}_snr{snr}.tif", scale_info)
+                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_Normalized_initRecon_{timestamp}_{alg}_snr{snr}.tif", scale_info)
         
             print("Reconstructing")
 
