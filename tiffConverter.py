@@ -56,3 +56,31 @@ def convert_to_tiff(numpy_data, file_location, scale_info=None):
     else:
         # Save without resolution information if not provided
         tifffile.imsave(file_location, numpy_data)
+
+
+def convert_to_2Dtiff(numpy_data, file_location, scale_info=None):
+    """
+    Saves a 2D numpy array as a TIFF file, including scale information if provided.
+    
+    Parameters:
+    - numpy_data: 2D numpy array to be saved.
+    - file_location: Path and filename for the output TIFF file.
+    - scale_info: Optional dictionary containing 'XResolution', 'YResolution', and 'Unit'.
+                  If provided, these values are used to set the resolution of the TIFF file.
+    """
+    if numpy_data.ndim != 2:
+        raise ValueError("Input array must be 2D.")
+
+    numpy_data = np.array([numpy_data])
+
+    # Convert scale information to appropriate units for TIFF metadata
+    if scale_info:
+        xres = scale_info.get('XResolution', 1)  # Default resolution is 1 if not specified
+        yres = scale_info.get('YResolution', 1)
+        unit = scale_info.get('Unit', 'MICRON')  # Default unit is inches
+
+        # Save the numpy array as a TIFF with resolution information
+        tifffile.imsave(file_location, numpy_data, resolution=(xres, yres, unit))
+    else:
+        # Save without resolution information if not provided
+        tifffile.imsave(file_location, numpy_data)
