@@ -63,34 +63,34 @@ if __name__ == '__main__':
     tomo.crop_bottom_center(400, 550)
 
     print("Reconstructing")
-    # for alg in algorithms:
-        # snr = None
-        # try:
-        #     tomo.reconstruct(algorithm=alg, snr_db = snr)
-        # except Exception as e:
-        #     print(f"Failed to reconstruct using {alg}: {e}")
-        #     continue
-        # if saveToFile:
-        #     if snr == None:
-        #         convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}.tif", scale_info)
-        #     else:
-        #         convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}_snr{snr}.tif", scale_info)
-        
-        #     print("Reconstructing")
-
-    tomo.normalize()
     for alg in algorithms:
-        for snr in [10,20,30,40,50,60]:
-            try:
-                tomo.reconstruct(algorithm=alg, snr_db = snr)
-            except Exception as e:
-                print(f"Failed to reconstruct using {alg}: {e}")
-                continue
-            if saveToFile:
-                if snr == None:
-                    convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}.tif", scale_info)
-                else:
-                    convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}_snr{snr}.tif", scale_info)
+        snr = None
+        try:
+            tomo.reconstruct(algorithm=alg, snr_db = snr)
+        except Exception as e:
+            print(f"Failed to reconstruct using {alg}: {e}")
+            continue
+        if saveToFile:
+            if snr == None:
+                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}.tif", scale_info)
+            else:
+                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}_snr{snr}.tif", scale_info)
+        
+            print("Reconstructing")
+
+    # tomo.normalize()
+    # for alg in algorithms:
+    #     for snr in [10,20,30,40,50,60]:
+    #         try:
+    #             tomo.reconstruct(algorithm=alg, snr_db = snr)
+    #         except Exception as e:
+    #             print(f"Failed to reconstruct using {alg}: {e}")
+    #             continue
+    #         if saveToFile:
+    #             if snr == None:
+    #                 convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}.tif", scale_info)
+    #             else:
+    #                 convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}_snr{snr}.tif", scale_info)
 
 
     # End the timer

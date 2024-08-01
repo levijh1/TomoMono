@@ -11,6 +11,7 @@ from tqdm import tqdm
 from scipy.signal import correlate
 from scipy.ndimage import shift, center_of_mass, rotate
 import svmbir
+from tiffConverter import convert_to_numpy
 
 class tomoData:
 
@@ -274,6 +275,10 @@ class tomoData:
             
 
     def reconstruct(self, algorithm, snr_db):
+        
+        recon_location = "/Users/levih/Desktop/TomoMono/reconstructions/foamRecon_notNormalized_20240731-164829_SIRT_CUDA.tif"
+        tomo, tomo_scale_info = convert_to_numpy(recon_location)
+
         #Check if data has been centered yet
         self.center_projections()
 
@@ -293,6 +298,7 @@ class tomoData:
                                         center=self.rotation_center,
                                         algorithm=tomopy.astra,
                                         options=options,
+                                        init_recon=tomo,
                                         ncore=1)
             else: 
                 raise ValueError("GPU is not available, but the selected algorithm was 'gpu'.")
@@ -300,14 +306,16 @@ class tomoData:
             print("Using SVMBIR-based reconstruction.")
             print("center_offset assumed to be : {}".format(self.center_offset))
             if snr_db == None:
-                snr_db = 30
-            self.recon = svmbir.recon(self.projections, self.ang, center_offset = self.center_offset, snr_db=snr_db, verbose=1)
+                self.recon = svmbir.recon(self.projections, self.ang, center_offset = self.center_offset, init_image = tomo, verbose=1)
+            else:
+                self.recon = svmbir.recon(self.projections, self.ang, center_offset = self.center_offset, snr_db=snr_db, verbose=1)
         else:
             print("Using CPU-based reconstruction. Algorithm: ", algorithm)
             self.recon = tomopy.recon(self.projections,
                                       self.ang,
                                       center=self.rotation_center,
                                       algorithm=algorithm,
+                                      init_recon=tomo,
                                       sinogram_order=False)
 
         self.recon = tomopy.circ_mask(self.recon, axis=0, ratio=0.98)
