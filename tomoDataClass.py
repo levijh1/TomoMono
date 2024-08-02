@@ -26,8 +26,8 @@ class tomoData:
         self.num_angles = data.shape[0]
         self.image_size = data.shape[1:]
         self.data = data
-        # self.ang = tomopy.angles(nang=self.num_angles, ang1=0, ang2=(360 / total_angles) * self.num_angles)
-        self.ang = np.load('data/angles_90p.npy')
+        self.ang = tomopy.angles(nang=self.num_angles, ang1=0, ang2=(360 / total_angles) * self.num_angles)
+        # self.ang = np.load('data/angles_90p.npy')
         self.projections = np.copy(data)
         self.rotation_center = 0
         self.center_offset = 0
@@ -277,7 +277,7 @@ class tomoData:
 
     def reconstruct(self, algorithm, snr_db):
         
-        recon_location = "/reconstructions/foamRecon_Normalized_20240801-132117_svmbir.tif"
+        recon_location = "reconstructions/foamRecon_Normalized_20240801-132117_svmbir.tif"
         tomo, tomo_scale_info = convert_to_numpy(recon_location)
 
         #Check if data has been centered yet
