@@ -258,7 +258,7 @@ class tomoData:
             print("Center of frame: {}".format(self.image_size[1]//2))
             x_shift = (self.image_size[1]/2 - self.rotation_center)
             y_shift = 0
-            if abs(x_shift) > 1:
+            if abs(x_shift) > 2:
                 for m in tqdm(range(self.num_angles), desc='Center projections'):
                     self.projections[m] = subpixel_shift(self.projections[m], y_shift, x_shift)
                 
@@ -277,8 +277,8 @@ class tomoData:
 
     def reconstruct(self, algorithm, snr_db):
         
-        recon_location = "reconstructions/foamRecon_Normalized_20240801-132117_svmbir.tif"
-        tomo, tomo_scale_info = convert_to_numpy(recon_location)
+        # recon_location = "reconstructions/foamRecon_Normalized_20240801-132117_svmbir.tif"
+        # tomo, tomo_scale_info = convert_to_numpy(recon_location)
 
         #Check if data has been centered yet
         self.center_projections()
@@ -299,7 +299,7 @@ class tomoData:
                                         center=self.rotation_center,
                                         algorithm=tomopy.astra,
                                         options=options,
-                                        init_recon=tomo,
+                                        # init_recon=tomo,
                                         ncore=1)
             else: 
                 raise ValueError("GPU is not available, but the selected algorithm was 'gpu'.")
