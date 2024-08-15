@@ -276,7 +276,7 @@ class tomoData:
             
 
     def reconstruct(self, algorithm, snr_db):
-        
+        ##Optional thing you can do if you want to initialize the reconstruction with a guess prior to beginning to reconstruct
         # recon_location = "reconstructions/foamRecon_Normalized_20240801-132117_svmbir.tif"
         # tomo, tomo_scale_info = convert_to_numpy(recon_location)
 

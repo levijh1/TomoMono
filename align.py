@@ -44,9 +44,20 @@ if __name__ == '__main__':
     tomo.crop_center(900,550)
 
 
+
+    #Start tracking shifts made by each alignment algorithm to apply shifts all at once at the end
+    tomo.track_shifts() 
+
     #Actually align data
+    """ Choose whatever alignment algorithms you want to use. Options include:
+    - cross_correlate_align
+    - rotate_correlate_align
+    - vertical_mass_fluctuation_align
+    - tomopy_align (joint reprojection algorithm)
+    - optical_flow_align
+    - center_projections"""
+
     print("Starting alignment")
-    tomo.track_shifts()
     tomo.cross_correlate_align()
     tomo.center_projections()
     # tomo.tomopy_align(iterations = 10)
@@ -59,7 +70,7 @@ if __name__ == '__main__':
         tomo.originalProjections[m] = subpixel_shift(tomo.originalProjections[m], tomo.tracked_shifts[m,0], tomo.tracked_shifts[m,1])
     tomo.projections = tomo.originalProjections
 
-    tomo.makeScriptProjMovie()
+    # tomo.makeScriptProjMovie()
 
 
     # #Save the aligned data

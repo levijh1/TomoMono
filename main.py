@@ -27,10 +27,11 @@ if __name__ == '__main__':
                         # default = ['FP_CUDA', 'BP_CUDA', "FBP_CUDA", "SIRT_CUDA", "SART_CUDA", "CGLS_CUDA", "EM_CUDA"])
                         # default = ["SIRT_CUDA", "svmbir"])
                         default = ['SIRT_CUDA'])
-
-
     args = parser.parse_args()
     algorithms = args.algorithms
+
+    #Or just specify the exact algorithms you want to use here
+    # algorithms = ['SIRT_CUDA', 'svmbir']
 
     # Setup logging if enabled
     if log:
@@ -59,7 +60,6 @@ if __name__ == '__main__':
     obj, scale_info = convert_to_numpy(prealigned_tif_file)
     tomo = tomoDataClass.tomoData(obj)
     tomo.center_projections()
-
     tomo.crop_bottom_center(400, 630)
 
     print("Reconstructing")
@@ -75,8 +75,7 @@ if __name__ == '__main__':
             if snr == None:
                 convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_Normalized_{timestamp}_{alg}.tif", scale_info)
             else:
-                # convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_Normalized_initRecon_{timestamp}_{alg}_snr{snr}.tif", scale_info)
-                continue
+                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_Normalized_initRecon_{timestamp}_{alg}_snr{snr}.tif", scale_info)
         
             print("Reconstructing")
 
