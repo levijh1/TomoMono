@@ -60,14 +60,14 @@ dragonfly
 These dependencies can be installed using pip or conda.
 
 
-##Usage 
+## Usage 
 The main functionality is demonstrated in the 'align.py' and 'main.py' python files. These files guide you through loading data, performing reconstructions, and visualizing results
 
-##Contributing
+## Contributing
 Contributions are welcome! Please fork the repository, create a new branch, and submit a pull request with your changes.
 
-##License
+## License
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-##Contact
+## Contact
 For any questions or inquiries, please contact the repository owner, Levi Hancock.
