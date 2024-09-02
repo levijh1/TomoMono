@@ -214,13 +214,13 @@ class tomoData:
                 self.projections[k] = subpixel_shift(self.projections[k], -yshift, 0)
                 self.tracked_shifts[k,0] += yshift
 
-    def tomopy_align(self, iterations = 10):
+    def tomopy_align(self, iterations = 10, alg = "sirt"):
         """
         Aligns projections using tomopy's join repojection Alignment algorithm
         """
         print("Tomopy Joint Reprojection Alignment of Projections (" + str(iterations) + " iterations)")
         scale = max(abs(self.projections.max()), abs(self.projections.min()))
-        align_info = tomopy.prep.alignment.align_joint(self.projections, self.ang, algorithm='sirt', iters=iterations, debug=True)[1:3]
+        align_info = tomopy.prep.alignment.align_joint(self.projections, self.ang, algorithm=alg, iters=iterations, debug=True)[1:3]
         align_info = np.array(align_info)
         self.tracked_shifts[:,0] += align_info[0] * scale
         self.tracked_shifts[:,1] += align_info[1] * scale

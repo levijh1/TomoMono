@@ -36,7 +36,7 @@ if __name__ == '__main__':
 
     # Import foam data
     numAngles = 800
-    tif_file = "data/fullTomoReconstructions2.tif"
+    tif_file = "data/fullTomoReconstructions_8_28_24.tif"
     obj, scale_info = convert_to_numpy(tif_file)
     obj = obj[0:numAngles]
     print(obj.shape)
@@ -56,27 +56,30 @@ if __name__ == '__main__':
     - tomopy_align (joint reprojection algorithm)
     - optical_flow_align
     - center_projections"""
+    
+    ##TODO: Try with out optical flow
+    ##TODO: Try with vertical mass fluct instead of rotate_correlation
 
-    print("Starting alignment")
-    tomo.cross_correlate_align()
-    tomo.center_projections()
-    # tomo.tomopy_align(iterations = 10)
-    tomo.optical_flow_align()
-    tomo.center_projections()
-    print(tomo.tracked_shifts)
+    for alg in ['sirt', 'tv']:
+        print("Starting alignment")
+        tomo.cross_correlate_align()
+        tomo.rotate_correlate_align()
+        tomo.center_projections()
+        # tomo.vertical_mass_fluctuation_align()
+        tomo.tomopy_align(iterations = 15, alg = alg)
+        tomo.optical_flow_align()
+        tomo.center_projections()
+        # print(tomo.tracked_shifts)
 
-    #Apply changes on unchanged projections
-    for m in tqdm(range(tomo.num_angles), desc='Center projections'):
-        tomo.originalProjections[m] = subpixel_shift(tomo.originalProjections[m], tomo.tracked_shifts[m,0], tomo.tracked_shifts[m,1])
-    tomo.projections = tomo.originalProjections
+        #Apply changes on unchanged projections
+        for m in tqdm(range(tomo.num_angles), desc='Center projections'):
+            tomo.originalProjections[m] = subpixel_shift(tomo.originalProjections[m], tomo.tracked_shifts[m,0], tomo.tracked_shifts[m,1])
+        tomo.projections = tomo.originalProjections
 
-    # tomo.makeScriptProjMovie()
-
-
-    # #Save the aligned data
-    if saveToFile:
-        convert_to_tiff(tomo.get_projections(), f"alignedProjections/aligned_foamTomo{timestamp}.tif", scale_info)
-        np.save(f'shiftValues_{timestamp}.npy', tomo.tracked_shifts)
+        # #Save the aligned data
+        if saveToFile:
+            convert_to_tiff(tomo.get_projections(), f"alignedProjections/aligned_og_rotAligned_{alg}_{timestamp}.tif", scale_info)
+            np.save(f'shift_values/shiftValues_{timestamp}.npy', tomo.tracked_shifts)
 
 
     # End the timer
