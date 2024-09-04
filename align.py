@@ -4,7 +4,7 @@ if __name__ == '__main__':
     import tomoDataClass
     from tiffConverter import convert_to_numpy, convert_to_tiff
     from datetime import datetime
-    import torch
+    # import torch
     import argparse
     from helperFunctions import DualLogger, subpixel_shift
     from tqdm import tqdm
@@ -13,7 +13,7 @@ if __name__ == '__main__':
 
 
     # Configuration flags
-    log = False  # Enable logging to file
+    log = True  # Enable logging to file
     saveToFile = True  # Enable saving data to file
 
     # Start the timer for execution duration tracking
@@ -29,9 +29,9 @@ if __name__ == '__main__':
 
     print("Running Image Registration Script")
 
-    # Check for GPU availability
-    if torch.cuda.is_available():
-        print("GPU is available")
+    # # Check for GPU availability
+    # if torch.cuda.is_available():
+    #     print("GPU is available")
 
 
     # Import foam data
@@ -63,23 +63,23 @@ if __name__ == '__main__':
     for alg in ['sirt', 'tv']:
         print("Starting alignment")
         tomo.cross_correlate_align()
-        tomo.rotate_correlate_align()
+        tomo.vertical_mass_fluctuation_align(5)
+        # tomo.rotate_correlate_align()
         tomo.center_projections()
-        # tomo.vertical_mass_fluctuation_align()
-        tomo.tomopy_align(iterations = 15, alg = alg)
+        tomo.tomopy_align(iterations = 5, alg = alg)
         tomo.optical_flow_align()
         tomo.center_projections()
         # print(tomo.tracked_shifts)
 
-        #Apply changes on unchanged projections
-        for m in tqdm(range(tomo.num_angles), desc='Center projections'):
-            tomo.originalProjections[m] = subpixel_shift(tomo.originalProjections[m], tomo.tracked_shifts[m,0], tomo.tracked_shifts[m,1])
-        tomo.projections = tomo.originalProjections
+        # #Apply changes on unchanged projections
+        # for m in tqdm(range(tomo.num_angles), desc='Center projections'):
+        #     tomo.originalProjections[m] = subpixel_shift(tomo.originalProjections[m], tomo.tracked_shifts[m,0], tomo.tracked_shifts[m,1])
+        # tomo.projections = tomo.originalProjections
 
         # #Save the aligned data
         if saveToFile:
-            convert_to_tiff(tomo.get_projections(), f"alignedProjections/aligned_og_rotAligned_{alg}_{timestamp}.tif", scale_info)
-            np.save(f'shift_values/shiftValues_{timestamp}.npy', tomo.tracked_shifts)
+            convert_to_tiff(tomo.get_projections(), f"alignedProjections/aligned_iterateVMF_{alg}_{timestamp}.tif", scale_info)
+            # np.save(f'shift_values/shiftValues_{timestamp}.npy', tomo.tracked_shifts)
 
 
     # End the timer

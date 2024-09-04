@@ -5,12 +5,12 @@ import scipy as sp
 from helperFunctions import MoviePlotter, subpixel_shift
 from pltwidget import runwidget
 from skimage.transform import warp
-import torch
+# import torch
 from skimage.registration import optical_flow_tvl1
 from tqdm import tqdm
 from scipy.signal import correlate
 from scipy.ndimage import shift, center_of_mass, rotate
-import svmbir
+# import svmbir
 from tiffConverter import convert_to_numpy
 
 class tomoData:
@@ -130,31 +130,50 @@ class tomoData:
     def makeScriptReconMovie(self):
         runwidget(self.recon)
 
-    def cross_correlate_align(self):
+    def cross_correlate_align(self, tolerance=5, max_iterations=10):
         """
         Aligns projections using cross-correlation to find the shift between consecutive images.
+        Iterates until the average shift in pixels is less than the specified tolerance.
         """
         num_rows, num_cols = self.projections[0].shape
-        for m in tqdm(range(1, self.num_angles + 1), desc='Cross-Correlation Alignment of Projections'):
-            # Handle circular indexing for the last projection
-            img1 = self.projections[m - 1]
-            img2 = self.projections[m % self.num_angles]
+        for iteration in tqdm(range(max_iterations), desc='Cross-Correlation Alignment Iterations'):
+            total_shift = 0
+            for m in tqdm(range(1, self.num_angles + 1), desc=f'Iteration {iteration + 1}'):
+                # Handle circular indexing for the last projection
+                img1 = self.projections[m - 1]
+                img2 = self.projections[m % self.num_angles]
 
-            # Compute the cross-correlation between two consecutive images
-            correlation = correlate(img1, img2, mode='same')
+                # Compute the cross-correlation between two consecutive images
+                correlation = correlate(img1, img2, mode='same')
+                
+                # Find the index of the maximum correlation value
+                y_shift, x_shift = np.unravel_index(np.argmax(correlation), correlation.shape)
+                
+                # Calculate the shifts, considering the center of the images as the origin
+                y_shift -= num_rows // 2
+                x_shift -= num_cols // 2
+
+                # Apply the calculated shift to align the images
+                self.projections[m % self.num_angles] = shift(img2, shift=[y_shift, x_shift], mode='nearest')
+
+                # Store the shifts
+                self.tracked_shifts[m % self.num_angles][0] = y_shift
+                self.tracked_shifts[m % self.num_angles][1] = x_shift
+
+                # Accumulate the total shift magnitude for this iteration
+                total_shift += np.sqrt(y_shift**2 + x_shift**2)
             
-            # Find the index of the maximum correlation value
-            y_shift, x_shift = np.unravel_index(np.argmax(correlation), correlation.shape)
-            
-            # Calculate the shifts, considering the center of the images as the origin
-            y_shift -= num_rows // 2
-            x_shift -= num_cols // 2
+            # Calculate the average shift for this iteration
+            average_shift = total_shift / self.num_angles
+            print(f"Average pixel shift of iteration {iteration}: {average_shift}")
 
-            # Apply the calculated shift to align the images
-            self.projections[m % self.num_angles] = shift(img2, shift=[y_shift, x_shift], mode='nearest')
+            # Check if the average shift is below the tolerance
+            if average_shift < tolerance:
+                print(f'Convergence reached after {iteration + 1} iterations.')
+                break
+        else:
+            print(f'Maximum iterations reached without convergence.')
 
-            self.tracked_shifts[m % self.num_angles][0] = y_shift
-            self.tracked_shifts[m % self.num_angles][1] = x_shift
 
 
     def find_optimal_rotation(self, img1, img2, angle_range=[-10, 10], angle_step=1):
@@ -166,7 +185,7 @@ class tomoData:
         - img2: The second projection image, which will be rotated to find the optimal alignment.
         - angle_range: A tuple (min_angle, max_angle) defining the range of angles to test.
         - angle_step: The granularity of angles to test within the range.
-        
+            
         Returns:
         - optimal_angle: The angle that maximizes the similarity between the two projections.
         - max_similarity: The maximum similarity score achieved.
@@ -199,20 +218,36 @@ class tomoData:
             self.projections[i] = rotate(self.projections[i], -angle/2, reshape=False, mode='nearest')
             self.projections[(i+400)%800] = rotate(self.projections[(i+400)%800], angle/2, reshape=False, mode='nearest')
 
-    def vertical_mass_fluctuation_align(self):
+    def vertical_mass_fluctuation_align(self, numIterations):
         """
-        This function aligns 2D projection images vertically based on their center-of-mass fluctuations by cross-correlating each projection with the reference projection and shifting accordingly.
+        Aligns 2D projection images vertically based on their center-of-mass fluctuations by cross-correlating each projection with the reference projection and shifting accordingly.
+        The iteration stops when the average shift in pixels is less than 0.5.
         """
         print("Vertical Mass Fluctuation Alignment")
-        sums = []
-        for k in range(self.num_angles):
-            sums.append(np.sum(self.projections[k], axis=1).tolist())
-            if k > 0:
-                CC = sp.signal.correlate(sums[0], sums[k], mode='same', method='fft')
-                maxpoint = np.where(CC == CC.max())
-                yshift = int(self.image_size[0] / 2 - maxpoint[0])
-                self.projections[k] = subpixel_shift(self.projections[k], -yshift, 0)
-                self.tracked_shifts[k,0] += yshift
+        
+        for i in range(numIterations):
+            sums = []
+            shifts = []
+            
+            for k in range(self.num_angles):
+                sums.append(np.sum(self.projections[k], axis=1).tolist())
+                if k > 0:
+                    CC = sp.signal.correlate(sums[0], sums[k], mode='same', method='fft')
+                    maxpoint = np.where(CC == CC.max())
+                    yshift = int(self.image_size[0] / 2 - maxpoint[0])
+                    self.projections[k] = subpixel_shift(self.projections[k], -yshift, 0)
+                    self.tracked_shifts[k, 0] += yshift
+                    shifts.append(abs(yshift))
+            
+            # Check for convergence
+            if len(shifts) > 0:
+                average_shift = np.mean(shifts)
+                print(f"Iteration {i+1}: Average shift = {average_shift:.2f} pixels")
+                if average_shift < 0.5:
+                    print("Convergence reached: Average shift is less than 0.5 pixels.")
+                    break
+            else:
+                print("No shifts calculated, possibly on the first iteration.")
 
     def tomopy_align(self, iterations = 10, alg = "sirt"):
         """
@@ -285,31 +320,33 @@ class tomoData:
 
         #Check which algorithm is being used
         print("\n")
-        if algorithm.endswith("CUDA"):
-            if torch.cuda.is_available():
-                print("Using GPU-accelerated reconstruction.")
-                options = {
-                    'proj_type': 'cuda',
-                    'method': algorithm,
-                    'num_iter': 400,
-                    'extra_options': {}
-                }
-                self.recon = tomopy.recon(self.projections,
-                                        self.ang,
-                                        center=self.rotation_center,
-                                        algorithm=tomopy.astra,
-                                        options=options,
-                                        # init_recon=tomo,
-                                        ncore=1)
-            else: 
-                raise ValueError("GPU is not available, but the selected algorithm was 'gpu'.")
-        elif algorithm == 'svmbir':
+        # if algorithm.endswith("CUDA"):
+            # if torch.cuda.is_available():
+            #     print("Using GPU-accelerated reconstruction.")
+            #     options = {
+            #         'proj_type': 'cuda',
+            #         'method': algorithm,
+            #         'num_iter': 400,
+            #         'extra_options': {}
+            #     }
+            #     self.recon = tomopy.recon(self.projections,
+            #                             self.ang,
+            #                             center=self.rotation_center,
+            #                             algorithm=tomopy.astra,
+            #                             options=options,
+            #                             # init_recon=tomo,
+            #                             ncore=1)
+            # else: 
+            #     raise ValueError("GPU is not available, but the selected algorithm was 'gpu'.")
+        if algorithm == 'svmbir':
             print("Using SVMBIR-based reconstruction.")
             print("center_offset assumed to be : {}".format(self.center_offset))
             if snr_db == None:
-                self.recon = svmbir.recon(self.projections, self.ang, center_offset = self.center_offset, init_image = tomo, verbose=1)
+                ...
+                # self.recon = svmbir.recon(self.projections, self.ang, center_offset = self.center_offset, init_image = tomo, verbose=1)
             else:
-                self.recon = svmbir.recon(self.projections, self.ang, center_offset = self.center_offset, init_image = tomo, snr_db=snr_db, verbose=1)
+                ...
+                # self.recon = svmbir.recon(self.projections, self.ang, center_offset = self.center_offset, init_image = tomo, snr_db=snr_db, verbose=1)
         else:
             print("Using CPU-based reconstruction. Algorithm: ", algorithm)
             self.recon = tomopy.recon(self.projections,
