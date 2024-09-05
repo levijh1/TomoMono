@@ -13,7 +13,7 @@ if __name__ == '__main__':
 
 
     # Configuration flags
-    log = True  # Enable logging to file
+    log = False  # Enable logging to file
     saveToFile = True  # Enable saving data to file
 
     # Start the timer for execution duration tracking
@@ -65,9 +65,11 @@ if __name__ == '__main__':
         tomo.cross_correlate_align()
         tomo.vertical_mass_fluctuation_align(5)
         # tomo.rotate_correlate_align()
+        # tomo.cross_correlate_align()
+        # tomo.vertical_mass_fluctuation_align(5)
         tomo.center_projections()
         tomo.tomopy_align(iterations = 5, alg = alg)
-        tomo.optical_flow_align()
+        # tomo.optical_flow_align()
         tomo.center_projections()
         # print(tomo.tracked_shifts)
 

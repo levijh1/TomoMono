@@ -130,7 +130,7 @@ class tomoData:
     def makeScriptReconMovie(self):
         runwidget(self.recon)
 
-    def cross_correlate_align(self, tolerance=5, max_iterations=10):
+    def cross_correlate_align(self, tolerance=5, max_iterations=1):
         """
         Aligns projections using cross-correlation to find the shift between consecutive images.
         Iterates until the average shift in pixels is less than the specified tolerance.
@@ -248,6 +248,24 @@ class tomoData:
                     break
             else:
                 print("No shifts calculated, possibly on the first iteration.")
+        
+
+        #Equalize with opposite angle
+        print("Matching height of opposite angles")
+        sums = []
+        shifts = []
+        
+        for k in range(self.num_angles):
+            sums.append(np.sum(self.projections[k], axis=1).tolist())
+        for i in range(self.num_angles//2):
+            CC = sp.signal.correlate(sums[i], sums[(i+400)%800], mode='same', method='fft')
+            maxpoint = np.where(CC == CC.max())
+            yshift = int(self.image_size[0] / 2 - maxpoint[0])
+            self.projections[i] = subpixel_shift(self.projections[i], -yshift/2, 0)
+            self.projections[(i+400)%800] = subpixel_shift(self.projections[(i+400)%800], yshift/2, 0)
+            self.tracked_shifts[k, 0] += yshift/2
+            self.tracked_shifts[(i+400)%800,0] -= yshift/2
+            shifts.append(abs(yshift))
 
     def tomopy_align(self, iterations = 10, alg = "sirt"):
         """
