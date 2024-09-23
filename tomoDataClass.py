@@ -5,12 +5,12 @@ import scipy as sp
 from helperFunctions import MoviePlotter, subpixel_shift
 from pltwidget import runwidget
 from skimage.transform import warp
-# import torch
+import torch
 from skimage.registration import optical_flow_tvl1
 from tqdm import tqdm
 from scipy.signal import correlate
 from scipy.ndimage import shift, center_of_mass, rotate
-# import svmbir
+import svmbir
 from tiffConverter import convert_to_numpy
 
 class tomoData:
@@ -50,7 +50,7 @@ class tomoData:
         for i in range(self.num_angles):  # Now includes the first image as well
             x_shift = 8 * random.random() - 4
             y_shift = 8 * random.random() - 4
-            self.prj_jitter[i] = sp.ndimage.shift(self.prj_jitter[i], (x_shift, y_shift), mode="wrap")
+            self.prj_jitter[i] = sp.ndimage.shift(self.prj_jitter[i], (x_shift, y_shift), mode="constant")
         self.projections = self.prj_jitter
 
     def crop_center(self, new_x, new_y):
@@ -129,8 +129,13 @@ class tomoData:
 
     def makeScriptReconMovie(self):
         runwidget(self.recon)
+        
+    def bilateralFilter(self, d = 15, sigmaColor = 0.3, sigmaSpace = 100):
+        self.filteredProjections = self.projections.copy()
+        for i in range(self.filteredProjections.shape[0]):
+            self.filteredProjections[i] = cv2.bilateralFilter(self.projections[i], d=d, sigmaColor=sigmaColor, sigmaSpace=sigmaSpace)
 
-    def cross_correlate_align(self, tolerance=5, max_iterations=1):
+    def cross_correlate_align(self, tolerance=1, max_iterations=15):
         """
         Aligns projections using cross-correlation to find the shift between consecutive images.
         Iterates until the average shift in pixels is less than the specified tolerance.
@@ -154,7 +159,8 @@ class tomoData:
                 x_shift -= num_cols // 2
 
                 # Apply the calculated shift to align the images
-                self.projections[m % self.num_angles] = shift(img2, shift=[y_shift, x_shift], mode='nearest')
+                # self.projections[m % self.num_angles] = shift(img2, shift=[y_shift, x_shift], mode='nearest')
+                self.projections[m % self.num_angles] = subpixel_shift(img2, yshift, x_shift)
 
                 # Store the shifts
                 self.tracked_shifts[m % self.num_angles][0] = y_shift
@@ -338,33 +344,31 @@ class tomoData:
 
         #Check which algorithm is being used
         print("\n")
-        # if algorithm.endswith("CUDA"):
-            # if torch.cuda.is_available():
-            #     print("Using GPU-accelerated reconstruction.")
-            #     options = {
-            #         'proj_type': 'cuda',
-            #         'method': algorithm,
-            #         'num_iter': 400,
-            #         'extra_options': {}
-            #     }
-            #     self.recon = tomopy.recon(self.projections,
-            #                             self.ang,
-            #                             center=self.rotation_center,
-            #                             algorithm=tomopy.astra,
-            #                             options=options,
-            #                             # init_recon=tomo,
-            #                             ncore=1)
-            # else: 
-            #     raise ValueError("GPU is not available, but the selected algorithm was 'gpu'.")
-        if algorithm == 'svmbir':
+        if algorithm.endswith("CUDA"):
+            if torch.cuda.is_available():
+                print("Using GPU-accelerated reconstruction.")
+                options = {
+                    'proj_type': 'cuda',
+                    'method': algorithm,
+                    'num_iter': 400,
+                    'extra_options': {}
+                }
+                self.recon = tomopy.recon(self.projections,
+                                        self.ang,
+                                        center=self.rotation_center,
+                                        algorithm=tomopy.astra,
+                                        options=options,
+                                        # init_recon=tomo,
+                                        ncore=1)
+            else: 
+                raise ValueError("GPU is not available, but the selected algorithm was 'gpu'.")
+        elif algorithm == 'svmbir':
             print("Using SVMBIR-based reconstruction.")
             print("center_offset assumed to be : {}".format(self.center_offset))
             if snr_db == None:
-                ...
-                # self.recon = svmbir.recon(self.projections, self.ang, center_offset = self.center_offset, init_image = tomo, verbose=1)
+                self.recon = svmbir.recon(self.projections, self.ang, center_offset = self.center_offset, verbose=1)
             else:
-                ...
-                # self.recon = svmbir.recon(self.projections, self.ang, center_offset = self.center_offset, init_image = tomo, snr_db=snr_db, verbose=1)
+                self.recon = svmbir.recon(self.projections, self.ang, center_offset = self.center_offset, snr_db=snr_db, verbose=1)
         else:
             print("Using CPU-based reconstruction. Algorithm: ", algorithm)
             self.recon = tomopy.recon(self.projections,

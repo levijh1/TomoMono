@@ -13,7 +13,7 @@ if __name__ == '__main__':
 
 
     # Configuration flags
-    log = False  # Enable logging to file
+    log = True  # Enable logging to file
     saveToFile = True  # Enable saving data to file
 
     # Start the timer for execution duration tracking
@@ -60,7 +60,7 @@ if __name__ == '__main__':
     ##TODO: Try with out optical flow
     ##TODO: Try with vertical mass fluct instead of rotate_correlation
 
-    for alg in ['sirt', 'tv']:
+    for alg in ['sirt']:
         print("Starting alignment")
         tomo.cross_correlate_align()
         tomo.vertical_mass_fluctuation_align(5)
@@ -68,8 +68,8 @@ if __name__ == '__main__':
         # tomo.cross_correlate_align()
         # tomo.vertical_mass_fluctuation_align(5)
         tomo.center_projections()
-        tomo.tomopy_align(iterations = 5, alg = alg)
-        # tomo.optical_flow_align()
+        tomo.tomopy_align(iterations = 15, alg = alg)
+        tomo.optical_flow_align()
         tomo.center_projections()
         # print(tomo.tracked_shifts)
 
@@ -80,7 +80,7 @@ if __name__ == '__main__':
 
         # #Save the aligned data
         if saveToFile:
-            convert_to_tiff(tomo.get_projections(), f"alignedProjections/aligned_iterateVMF_{alg}_{timestamp}.tif", scale_info)
+            convert_to_tiff(tomo.get_projections(), f"alignedProjections/aligned_iterateVMF_optFlow_{alg}_{timestamp}.tif", scale_info)
             # np.save(f'shift_values/shiftValues_{timestamp}.npy', tomo.tracked_shifts)
 
 

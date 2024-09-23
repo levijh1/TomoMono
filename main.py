@@ -6,9 +6,8 @@ if __name__ == '__main__':
     from datetime import datetime
     import torch
     import argparse
-    from helperFunctions import DualLogger, subpixel_shift
+    from helperFunctions import DualLogger
     from tqdm import tqdm
-    from scipy.ndimage import shift
     import numpy as np
 
 
@@ -25,7 +24,7 @@ if __name__ == '__main__':
     parser.add_argument('--algorithms', nargs='+', help='List of algorithms to use for reconstruction', required=False,
                         #  default=[['art', 'bart','fbp', 'gridrec', 'mlem', 'osem', 'ospml_hybrid', 'ospml_quad', 'pml_hybrid', 'pml_quad', 'sirt', 'tv', 'grad', 'tikh', 'gpu', 'svmbir']])
                         # default = ['FP_CUDA', 'BP_CUDA', "FBP_CUDA", "SIRT_CUDA", "SART_CUDA", "CGLS_CUDA", "EM_CUDA"])
-                        default = ["SIRT_CUDA", "svmbir", 'tv'])
+                        default = ["SIRT_CUDA", "tv", "svmbir"])
                         # default = ['SIRT_CUDA'])
     args = parser.parse_args()
     algorithms = args.algorithms
@@ -57,12 +56,9 @@ if __name__ == '__main__':
     # prealigned_tif_file = "alignedProjections/aligned_foamTomo20240731-115419.tif" #Without rotational alignment
     # prealigned_tif_file = "alignedProjections/aligned_foamTomo20240718-165515.tif" #With rotational alignment
 
-    # prealigned_tif_file = "alignedProjections/aligned_foamTomo_og_20240828-212339.tif"
-    # prealigned_tif_file = "alignedProjections/aligned_foamTomo_noOpticalFlow_20240828-212608.tif"
-    prealigned_tif_file = "alignedProjections/aligned_foamTomo_tvTomopy_20240828-213357.tif"
+    prealigned_tif_file = "alignedProjections/aligned_iterateVMF_sirt_20240905-133258.tif"
+    # prealigned_tif_file = "alignedProjections/aligned_iterateVMF_optFlow_sirt_20240905-223101.tif"
 
-    
-    
     obj, scale_info = convert_to_numpy(prealigned_tif_file)
     tomo = tomoDataClass.tomoData(obj)
     tomo.center_projections()
@@ -78,9 +74,9 @@ if __name__ == '__main__':
             continue
         if saveToFile:
             if snr == None:
-                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_tvTomopy_{timestamp}_{alg}.tif", scale_info)
+                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}.tif", scale_info)
             else:
-                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_initRecon_{timestamp}_{alg}_snr{snr}.tif", scale_info)
+                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}_snr{snr}.tif", scale_info)
             
     tomo.normalize()
     for alg in algorithms:
@@ -92,9 +88,9 @@ if __name__ == '__main__':
             continue
         if saveToFile:
             if snr == None:
-                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_Normalized_tvTomopy_{timestamp}_{alg}.tif", scale_info)
+                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_Normalized_{timestamp}_{alg}.tif", scale_info)
             else:
-                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_Normalized_initRecon_{timestamp}_{alg}_snr{snr}.tif", scale_info)
+                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_Normalized_{timestamp}_{alg}_snr{snr}.tif", scale_info)
         
 
 
