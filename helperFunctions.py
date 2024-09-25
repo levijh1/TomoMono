@@ -32,7 +32,7 @@ def add_noise(m):
 
 def subpixel_shift(image, shift_y, shift_x):
     """
-    Shift a 2D image using a phase ramp in the Fourier domain.
+    Shift a 2D image using a phase ramp in the Fourier domain and pad out-of-bounds regions with zeros.
 
     Parameters:
     image (2D numpy array): The input image to be shifted.
@@ -40,7 +40,7 @@ def subpixel_shift(image, shift_y, shift_x):
     shift_y (float): The shift in the y direction (vertical shift).
 
     Returns:
-    shifted_image (2D numpy array): The shifted image.
+    shifted_image (2D numpy array): The shifted image with out-of-bounds areas padded with zeros.
     """
     # Fourier transform of the image
     fft_image = np.fft.fft2(image)
@@ -53,7 +53,7 @@ def subpixel_shift(image, shift_y, shift_x):
     v = np.fft.fftfreq(rows)  # Frequency coordinates along the y-axis
     U, V = np.meshgrid(u, v)  # 2D grid of frequency coordinates
 
-    # Calculate the phase ramp
+    # Calculate the phase ramp for shifting
     phase_ramp = np.exp(-2j * np.pi * (shift_x * U + shift_y * V))
 
     # Apply the phase ramp to the Fourier-transformed image
@@ -62,6 +62,28 @@ def subpixel_shift(image, shift_y, shift_x):
     # Inverse Fourier transform to get the shifted image
     shifted_image = np.fft.ifft2(shifted_fft_image).real
 
+    # Create a mask of valid regions
+    mask = np.ones_like(image)
+
+    # Calculate how much to pad with zeros based on shift
+    pad_x_left = int(np.ceil(shift_x)) if shift_x > 0 else 0
+    pad_x_right = int(np.ceil(-shift_x)) if shift_x < 0 else 0
+    pad_y_top = int(np.ceil(shift_y)) if shift_y > 0 else 0
+    pad_y_bottom = int(np.ceil(-shift_y)) if shift_y < 0 else 0
+
+    # Apply zero padding based on shifts
+    if pad_y_top != 0:
+        mask[:pad_y_top, :] = 0  # Top padding
+    if pad_y_bottom != 0:
+        mask[-pad_y_bottom:, :] = 0  # Bottom padding
+    if pad_x_left != 0:
+        mask[:, :pad_x_left] = 0  # Left padding
+    if pad_x_right != 0:
+        mask[:, -pad_x_right:] = 0  # Right padding
+
+    # Apply the mask to the shifted image
+    shifted_image *= mask
+    
     return shifted_image
 
 class MoviePlotter:

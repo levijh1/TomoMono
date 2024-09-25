@@ -15,6 +15,12 @@ def runwidget(m):
 
     def update_line(indx):
         ax.clear()
+
+        # zplot = m[indx].T
+        # nem = 100
+        # q = np.quantile(zplot[nem:-nem, nem:-nem], [0.01,0.99])
+        # plt.imshow(m[indx], cmap='bone', vmin=q[0], vmax=q[1])
+        
         ax.imshow(m[indx], vmin=np.min(m), vmax=np.max(m), cmap='gray')
         plt.title(f"Frame {indx}")
         plt.draw()
