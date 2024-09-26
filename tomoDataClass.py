@@ -423,4 +423,4 @@ class tomoData:
                                       sinogram_order=False)
 
         self.recon = tomopy.circ_mask(self.recon, axis=0, ratio=0.98)
-        
+        print("Reconstruction completed.")
