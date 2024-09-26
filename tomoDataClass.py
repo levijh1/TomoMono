@@ -5,14 +5,15 @@ import scipy as sp
 from helperFunctions import MoviePlotter, subpixel_shift
 from pltwidget import runwidget
 from skimage.transform import warp
-import torch
+# import torch
 from skimage.registration import optical_flow_tvl1
 from tqdm import tqdm
 from scipy.signal import correlate
 from scipy.ndimage import shift, center_of_mass, rotate
-import svmbir
+# import svmbir
 from tiffConverter import convert_to_numpy
 import cv2
+import matplotlib.pyplot as plt
 
 
 class tomoData:
@@ -37,6 +38,8 @@ class tomoData:
 
     def reset_workingProjections(self):
         self.workingProjections = np.copy(self.data)
+        self.crop_center(900,650)
+
     
     def get_recon(self):
         """Returns the reconstructed 3D Model."""
@@ -161,13 +164,14 @@ class tomoData:
         Aligns projections using cross-correlation to find the shift between consecutive images.
         Iterates until the average shift in pixels is less than the specified tolerance.
         """
-        num_rows, num_cols = self.workingProjections[0].shape
+
         for iteration in tqdm(range(max_iterations), desc='Cross-Correlation Alignment Iterations'):
             total_shift = 0
             for m in tqdm(range(1, self.num_angles + 1), desc=f'Iteration {iteration + 1}'):
                 # Handle circular indexing for the last projection
-                img1 = self.workingProjections[m - 1]
-                img2 = self.workingProjections[m % self.num_angles]
+                img1 = self.workingProjections[m - 1][200:-50,120:-120]
+                img2 = self.workingProjections[m % self.num_angles][200:-50,120:-120]
+                num_rows, num_cols = img1.shape
 
                 # Compute the cross-correlation between two consecutive images
                 correlation = correlate(img1, img2, mode='same')
@@ -180,7 +184,7 @@ class tomoData:
                 x_shift -= num_cols // 2
 
                 # Apply the calculated shift to align the images
-                self.workingProjections[m % self.num_angles] = subpixel_shift(img2, y_shift, x_shift)
+                self.workingProjections[m % self.num_angles] = subpixel_shift(self.workingProjections[m % self.num_angles], y_shift, x_shift)
 
                 # Store the shifts
                 self.tracked_shifts[m % self.num_angles][0] += y_shift
@@ -224,7 +228,7 @@ class tomoData:
             rotated_img2 = rotate(img2, angle, reshape=False, mode='constant')
             
             # Compute the similarity (cross-correlation) between img1 and the rotated img2
-            similarity = np.max(correlate(img1, rotated_img2, mode='same'))
+            similarity = np.max(correlate(img1[200:-50,120:-120], rotated_img2[200:-50,120:-120], mode='same'))
             
             # Update the optimal angle if the current similarity is the highest found so far
             if similarity > max_similarity:
@@ -276,7 +280,7 @@ class tomoData:
             shifts = []
             
             for k in range(self.num_angles):
-                sums.append(np.sum(self.workingProjections[k], axis=1).tolist())
+                sums.append(np.sum(self.workingProjections[k][200:-50,120:-120], axis=1).tolist())
                 if k > 0:
                     CC = sp.signal.correlate(sums[0], sums[k], mode='same', method='fft')
                     maxpoint = np.where(CC == CC.max())
@@ -319,7 +323,7 @@ class tomoData:
         """
         print("Tomopy Joint Reprojection Alignment of Projections (" + str(iterations) + " iterations)")
         scale = max(abs(self.workingProjections.max()), abs(self.workingProjections.min()))
-        align_info = tomopy.prep.alignment.align_joint(self.workingProjections, self.ang, algorithm=alg, iters=iterations, debug=True)[1:3]
+        align_info = tomopy.prep.alignment.align_joint(self.workingProjections[:,200:-50,120:-120], self.ang, algorithm=alg, iters=iterations, debug=True)[1:3]
         align_info = np.array(align_info)
         self.tracked_shifts[:,0] += align_info[0] * scale
         self.tracked_shifts[:,1] += align_info[1] * scale
@@ -419,4 +423,4 @@ class tomoData:
                                       sinogram_order=False)
 
         self.recon = tomopy.circ_mask(self.recon, axis=0, ratio=0.98)
-        print("Reconstruction completed.")
+        
