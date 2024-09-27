@@ -5,12 +5,12 @@ import scipy as sp
 from helperFunctions import MoviePlotter, subpixel_shift
 from pltwidget import runwidget
 from skimage.transform import warp
-# import torch
+import torch
 from skimage.registration import optical_flow_tvl1
 from tqdm import tqdm
 from scipy.signal import correlate
 from scipy.ndimage import shift, center_of_mass, rotate
-# import svmbir
+import svmbir
 from tiffConverter import convert_to_numpy
 import cv2
 import matplotlib.pyplot as plt
@@ -155,9 +155,8 @@ class tomoData:
         
     def bilateralFilter(self, d = 15, sigmaColor = 0.3, sigmaSpace = 100):
         print("Bilateral filter being applied")
-        self.filteredProjections = self.workingProjections.copy()
-        for i in tqdm(range(self.filteredProjections.shape[0]), desc="Applying bilateral filter to projections"):
-            self.filteredProjections[i] = cv2.bilateralFilter(self.workingProjections[i], d=d, sigmaColor=sigmaColor, sigmaSpace=sigmaSpace)
+        for i in tqdm(range(self.workingProjections.shape[0]), desc="Applying bilateral filter to projections"):
+            self.workingProjections[i] = cv2.bilateralFilter(self.workingProjections[i], d=d, sigmaColor=sigmaColor, sigmaSpace=sigmaSpace)
 
     def cross_correlate_align(self, tolerance=1, max_iterations=15):
         """
@@ -225,7 +224,7 @@ class tomoData:
 
         for angle in np.arange(angle_range[0],angle_range[1] + angle_step, angle_step):
             # Rotate img2 by the current angle
-            rotated_img2 = rotate(img2, angle, reshape=False, mode='constant')
+            rotated_img2 = rotate(np.copy(img2), angle, reshape=False, mode='constant')
             
             # Compute the similarity (cross-correlation) between img1 and the rotated img2
             similarity = np.max(correlate(img1[200:-50,120:-120], rotated_img2[200:-50,120:-120], mode='same'))
@@ -253,7 +252,7 @@ class tomoData:
             
             # Calculate the average shift for this iteration
             average_angle_rotation = total_angle_rotation / (self.num_angles//2)
-            print(f"Average pixel rotation of iteration {iteration}: {average_angle_rotation}")
+            print(f"Average degree rotation of iteration {iteration}: {average_angle_rotation}")
 
             # Check if the average shift is below the tolerance
             if average_angle_rotation < tolerance:
@@ -263,8 +262,8 @@ class tomoData:
 
     def unrotate(self):
         for i in tqdm(range(self.num_angles//2), desc=f'Un-rotate image'):
-            self.finalProjections[i] = rotate(self.workingProjections[i], -self.tracked_rotations[i], reshape=False, mode='constant')
-            self.finalProjections[(i+self.num_angles//2)%self.num_angles] = rotate(self.workingProjections[(i+self.num_angles//2)%self.num_angles], -self.tracked_rotations[(i+self.num_angles//2)%self.num_angles], reshape=False, mode='constant')
+            self.finalProjections[i] = rotate(self.finalProjections[i], -self.tracked_rotations[i], reshape=False, mode='constant')
+            self.finalProjections[(i+self.num_angles//2)%self.num_angles] = rotate(self.finalProjections[(i+self.num_angles//2)%self.num_angles], -self.tracked_rotations[(i+self.num_angles//2)%self.num_angles], reshape=False, mode='constant')
             
 
 

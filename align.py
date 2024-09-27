@@ -4,7 +4,7 @@ if __name__ == '__main__':
     import tomoDataClass
     from tiffConverter import convert_to_numpy, convert_to_tiff
     from datetime import datetime
-    # import torch
+    import torch
     import argparse
     from helperFunctions import DualLogger, subpixel_shift
     from tqdm import tqdm
@@ -13,8 +13,8 @@ if __name__ == '__main__':
 
 
     # Configuration flags
-    log = False  # Enable logging to file
-    saveToFile = False  # Enable saving data to file
+    log = True  # Enable logging to file
+    saveToFile = True  # Enable saving data to file
 
     # Start the timer for execution duration tracking
     start_time = time.time()
@@ -34,7 +34,7 @@ if __name__ == '__main__':
     tif_file = "data/fullTomoReconstructions_8_28_24.tif"
     obj, scale_info = convert_to_numpy(tif_file)
     # obj = obj[0:numAngles]
-    # obj = obj[::20]
+    obj = obj[::40]
     print(obj.shape)
     tomo = tomoDataClass.tomoData(obj)
     # tomo.crop_center(900,550)
@@ -80,6 +80,7 @@ if __name__ == '__main__':
         convert_to_tiff(tomo.get_finalProjections(), f"alignedProjections/aligned_baseCase_Filter_{timestamp}.tif", scale_info)
 
 
+
         # # #Rotational Alignment
         # tomo.reset_workingProjections()
         # tomo.track_shifts()
@@ -115,6 +116,7 @@ if __name__ == '__main__':
         # convert_to_tiff(tomo.get_finalProjections(), f"alignedProjections/aligned_rotate_Filter_{timestamp}.tif", scale_info)
 
 
+
         # # #Unrotate (without filter)
         # tomo.reset_workingProjections()
         # tomo.track_shifts()
@@ -132,7 +134,7 @@ if __name__ == '__main__':
 
         # tomo.unrotate()
         # convert_to_tiff(tomo.get_finalProjections(), f"alignedProjections/aligned_unRotate_noFilter_{timestamp}.tif", scale_info)
-        
+
 
         # # #Unrotate (with filter)
         # tomo.reset_workingProjections()
@@ -151,6 +153,7 @@ if __name__ == '__main__':
         # tomo.optical_flow_align()
 
         # tomo.unrotate()
+        # tomo.makeScriptProjMovie()
         # convert_to_tiff(tomo.get_finalProjections(), f"alignedProjections/aligned_unRotate_Filter_{timestamp}.tif", scale_info)
 
 
