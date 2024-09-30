@@ -163,7 +163,6 @@ class tomoData:
         Aligns projections using cross-correlation to find the shift between consecutive images.
         Iterates until the average shift in pixels is less than the specified tolerance.
         """
-
         for iteration in tqdm(range(max_iterations), desc='Cross-Correlation Alignment Iterations'):
             total_shift = 0
             for m in tqdm(range(1, self.num_angles + 1), desc=f'Iteration {iteration + 1}'):
@@ -194,7 +193,7 @@ class tomoData:
             
             # Calculate the average shift for this iteration
             average_shift = total_shift / self.num_angles
-            print(f"Average pixel shift of iteration {iteration}: {average_shift}")
+            print(f"\nAverage pixel shift of iteration {iteration}: {average_shift}")
 
             # Check if the average shift is below the tolerance
             if average_shift < tolerance:
@@ -358,7 +357,7 @@ class tomoData:
             self.rotation_center = tomopy.find_center_vo(self.workingProjections)
             print("Original center: {}".format(self.rotation_center))
             print("Center of frame: {}".format(self.image_size[1]//2))
-            x_shift = (self.image_size[1]/2 - self.rotation_center)
+            x_shift = (self.image_size[1]/2 - (self.rotation_center))
             y_shift = 0
             if abs(x_shift) > 2:
                 for m in tqdm(range(self.num_angles), desc='Center projections'):
@@ -366,10 +365,10 @@ class tomoData:
                 
                 self.rotation_center = tomopy.find_center_vo(self.workingProjections)
                 print("Aligned projections shifted by {} pixels".format(x_shift))
-                x_shift = (self.image_size[1]//2 - self.rotation_center)
+                x_shift_check = (self.image_size[1]//2 - (self.rotation_center))
    
             #Check how well center_projections actually performed
-            self.center_offset = abs(x_shift)
+            self.center_offset = abs(x_shift_check)
             print("Projections are currently centered at pixel {}".format(self.rotation_center))
             print("But it is still offset by {} pixels".format(self.center_offset))
 
