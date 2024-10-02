@@ -63,8 +63,8 @@ if __name__ == '__main__':
         tomo.center_projections()
         tomo.tomopy_align(iterations = 15, alg = alg)
         tomo.make_updates_shift()
-        # tomo.optical_flow_align()
-        convert_to_tiff(tomo.get_finalProjections(), f"alignedProjections/aligned_baseCase_noFilter_noOptFlow_{timestamp}.tif", scale_info)
+        tomo.optical_flow_align()
+        convert_to_tiff(tomo.get_finalProjections(), f"alignedProjections/aligned_baseCase_noFilter_optFlowRestrict_{timestamp}.tif", scale_info)
 
 
         # #Base Case with Filter
@@ -76,8 +76,8 @@ if __name__ == '__main__':
         tomo.center_projections()
         tomo.tomopy_align(iterations = 15, alg = alg)
         tomo.make_updates_shift()
-        # tomo.optical_flow_align()
-        convert_to_tiff(tomo.get_finalProjections(), f"alignedProjections/aligned_baseCase_Filter_noOptFlow_{timestamp}.tif", scale_info)
+        tomo.optical_flow_align()
+        convert_to_tiff(tomo.get_finalProjections(), f"alignedProjections/aligned_baseCase_Filter_optFlowRestrict_{timestamp}.tif", scale_info)
 
 
 
@@ -97,8 +97,8 @@ if __name__ == '__main__':
 
         tomo.tomopy_align(iterations = 15, alg = alg)
         tomo.make_updates_shift()
-        # tomo.optical_flow_align()
-        convert_to_tiff(tomo.get_finalProjections(), f"alignedProjections/aligned_rotate_noFilter_noOptFlow_{timestamp}.tif", scale_info)
+        tomo.optical_flow_align()
+        convert_to_tiff(tomo.get_finalProjections(), f"alignedProjections/aligned_rotate_noFilter_optFlowRestrict_{timestamp}.tif", scale_info)
 
 
         # #Rotational Alignment with Filter
@@ -118,8 +118,8 @@ if __name__ == '__main__':
 
         tomo.tomopy_align(iterations = 15, alg = alg)
         tomo.make_updates_shift()
-        # tomo.optical_flow_align()
-        convert_to_tiff(tomo.get_finalProjections(), f"alignedProjections/aligned_rotate_Filter_noOptFlow_{timestamp}.tif", scale_info)
+        tomo.optical_flow_align()
+        convert_to_tiff(tomo.get_finalProjections(), f"alignedProjections/aligned_rotate_Filter_optFlowRestrict_{timestamp}.tif", scale_info)
 
 
 
@@ -139,10 +139,10 @@ if __name__ == '__main__':
 
         tomo.tomopy_align(iterations = 15, alg = alg)
         tomo.make_updates_shift()
-        # tomo.optical_flow_align()
+        tomo.optical_flow_align()
 
         tomo.unrotate()
-        convert_to_tiff(tomo.get_finalProjections(), f"alignedProjections/aligned_unRotate_noFilter_noOptFlow_{timestamp}.tif", scale_info)
+        convert_to_tiff(tomo.get_finalProjections(), f"alignedProjections/aligned_unRotate_noFilter_optFlowRestrict_{timestamp}.tif", scale_info)
 
 
         # #Unrotate (with filter)
@@ -162,11 +162,11 @@ if __name__ == '__main__':
 
         tomo.tomopy_align(iterations = 15, alg = alg)
         tomo.make_updates_shift()
-        # tomo.optical_flow_align()
+        tomo.optical_flow_align()
 
         tomo.unrotate()
         tomo.makeScriptProjMovie()
-        convert_to_tiff(tomo.get_finalProjections(), f"alignedProjections/aligned_unRotate_Filter_noOptFlow_{timestamp}.tif", scale_info)
+        convert_to_tiff(tomo.get_finalProjections(), f"alignedProjections/aligned_unRotate_Filter_optFlowRestrict_{timestamp}.tif", scale_info)
 
 
 

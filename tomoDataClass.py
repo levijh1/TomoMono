@@ -335,19 +335,33 @@ class tomoData:
 
         WARNING: Does not have ability to be tracked my track_shifts
         """
-        num_rows, num_cols = self.finalProjections[0].shape
+#         num_rows, num_cols = self.finalProjections[0].shape
+#         row_coords, col_coords = np.meshgrid(np.arange(num_rows), np.arange(num_cols), indexing='ij')
+#         for m in tqdm(range(1, self.num_angles + 1), desc='Optical Flow Alignment of Projections'):
+#             # Handle circular indexing for the last projection
+#             prev_img = self.finalProjections[m - 1]
+#             current_img = self.finalProjections[m % self.num_angles]
+
+#             # Compute optical flow between two consecutive images
+#             v, u = optical_flow_tvl1(prev_img, current_img)
+
+#             # Apply the flow vectors to align the current image
+#             aligned_img = warp(current_img, np.array([row_coords + v, col_coords + u]), mode='edge')
+#             self.finalProjections[m % self.num_angles] = aligned_img
+
+        num_rows, num_cols = self.finalProjections[0,200:-50,120:-120].shape
         row_coords, col_coords = np.meshgrid(np.arange(num_rows), np.arange(num_cols), indexing='ij')
         for m in tqdm(range(1, self.num_angles + 1), desc='Optical Flow Alignment of Projections'):
             # Handle circular indexing for the last projection
-            prev_img = self.finalProjections[m - 1]
-            current_img = self.finalProjections[m % self.num_angles]
+            prev_img = self.finalProjections[m - 1][200:-50,120:-120]
+            current_img = self.finalProjections[m % self.num_angles][200:-50,120:-120]
 
             # Compute optical flow between two consecutive images
             v, u = optical_flow_tvl1(prev_img, current_img)
 
             # Apply the flow vectors to align the current image
             aligned_img = warp(current_img, np.array([row_coords + v, col_coords + u]), mode='edge')
-            self.finalProjections[m % self.num_angles] = aligned_img
+            self.finalProjections[m % self.num_angles][200:-50,120:-120] = aligned_img
     
     def center_projections(self):
             """"
