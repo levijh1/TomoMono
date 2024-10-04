@@ -58,8 +58,8 @@ class tomoData:
         """
         self.prj_jitter = self.workingProjections.copy()
         for i in range(self.num_angles):  # Now includes the first image as well
-            x_shift = 8 * random.random() - 4
-            y_shift = 8 * random.random() - 4
+            x_shift = 4 * random.random() - 2
+            y_shift = 4 * random.random() - 2
             self.prj_jitter[i] = sp.ndimage.shift(self.prj_jitter[i], (x_shift, y_shift), mode="constant")
         self.workingProjections = self.prj_jitter
 
@@ -127,6 +127,7 @@ class tomoData:
     def make_updates_shift(self):
         for m in tqdm(range(self.num_angles), desc='Apply shifts to final projections'):
             self.finalProjections[m] = subpixel_shift(self.finalProjections[m], self.tracked_shifts[m,0], self.tracked_shifts[m,1])
+            # self.finalProjections[m] = shift(self.finalProjections[m], shift=[round(self.tracked_shifts[m,0]), round(self.tracked_shifts[m,1])], mode='nearest')
         self.tracked_shifts = np.zeros((self.num_angles,2))
 
     def make_updates_rotate(self):
@@ -145,7 +146,8 @@ class tomoData:
         MoviePlotter(self.finalProjections)
 
     def makeScriptProjMovie(self):
-        runwidget(self.finalProjections)
+        toShow = self.finalProjections[:,150:-100,150:-150]
+        runwidget(toShow)
 
     def makeNotebookReconMovie(self):
         MoviePlotter(self.recon)
@@ -167,9 +169,58 @@ class tomoData:
             total_shift = 0
             for m in tqdm(range(1, self.num_angles + 1), desc=f'Iteration {iteration + 1}'):
                 # Handle circular indexing for the last projection
-                img1 = self.workingProjections[m - 1][200:-50,120:-120]
-                img2 = self.workingProjections[m % self.num_angles][200:-50,120:-120]
+                img1 = self.workingProjections[m - 1][150:-50,120:-120]
+                img2 = self.workingProjections[m % self.num_angles][150:-50,120:-120]
                 num_rows, num_cols = img1.shape
+
+                # Compute the cross-correlation between two consecutive images
+                correlation = correlate(img1, img2, mode='same')
+                
+                # Find the index of the maximum correlation value
+                y_shift, x_shift = np.unravel_index(np.argmax(correlation), correlation.shape)
+                
+                # Calculate the shifts, considering the center of the images as the origin
+                y_shift -= num_rows // 2
+                x_shift -= num_cols // 2
+
+                # Apply the calculated shift to align the images
+                self.workingProjections[m % self.num_angles] = subpixel_shift(self.workingProjections[m % self.num_angles], y_shift, x_shift)
+
+                # Store the shifts
+                self.tracked_shifts[m % self.num_angles][0] += y_shift
+                self.tracked_shifts[m % self.num_angles][1] += x_shift
+
+                # Accumulate the total shift magnitude for this iteration
+                total_shift += np.sqrt(y_shift**2 + x_shift**2)
+            
+            # Calculate the average shift for this iteration
+            average_shift = total_shift / self.num_angles
+            print(f"\nAverage pixel shift of iteration {iteration}: {average_shift}")
+
+            # Check if the average shift is below the tolerance
+            if average_shift < tolerance:
+                print(f'Convergence reached after {iteration + 1} iterations.')
+                break
+        print(f'Maximum iterations reached without convergence.')
+
+
+    def cross_correlate_tip(self, tolerance=0.5, max_iterations=15):
+        """
+        Aligns projections using cross-correlation to find the shift between consecutive images.
+        Iterates until the average shift in pixels is less than the specified tolerance.
+        """
+        for iteration in tqdm(range(max_iterations), desc='Cross-Correlation Alignment Iterations'):
+            total_shift = 0
+            for m in tqdm(range(1, self.num_angles + 1), desc=f'Iteration {iteration + 1}'):
+                # Handle circular indexing for the last projection
+                img1 = self.workingProjections[m - 1][150:230, 350:-350]
+                img2 = self.workingProjections[m % self.num_angles][150:230, 350:-350]
+                num_rows, num_cols = img1.shape
+
+                # plt.imshow(self.workingProjections[m-1])
+                # plt.show()
+                # plt.imshow(img1)
+                # plt.show()
 
                 # Compute the cross-correlation between two consecutive images
                 correlation = correlate(img1, img2, mode='same')
@@ -265,6 +316,43 @@ class tomoData:
             self.finalProjections[(i+self.num_angles//2)%self.num_angles] = rotate(self.finalProjections[(i+self.num_angles//2)%self.num_angles], -self.tracked_rotations[(i+self.num_angles//2)%self.num_angles], reshape=False, mode='constant')
             
 
+    def PMA(self, iterations = 10):
+        m = self.workingProjections
+        scale = m.max()
+        m = m / scale
+        for k in tqdm(range(iterations), desc = 'PMA Algorithm iterations'):
+            m = self.workingProjections
+            recon_iterated = tomopy.recon(tomo=m, theta=self.ang, algorithm='sirt')
+            iterated = tomopy.project(recon_iterated, self.ang, pad=False)
+            iterated = iterated / iterated.max()
+            for i in range(self.num_angles):
+
+                img1 = iterated[i][200:-50,120:-120]
+                img2 = m[i][200:-50,120:-120]
+                # img1 = iterated[i]
+                # img2 = m[i]
+                num_rows, num_cols = img1.shape
+
+                # Compute the cross-correlation between two consecutive images
+                correlation = correlate(img1, img2, mode='same')
+                
+                # Find the index of the maximum correlation value
+                y_shift, x_shift = np.unravel_index(np.argmax(correlation), correlation.shape)
+                
+                # Calculate the shifts, considering the center of the images as the origin
+                y_shift -= num_rows // 2
+                x_shift -= num_cols // 2
+
+                print(x_shift, y_shift)
+
+                # Apply the calculated shift to align the images
+                self.workingProjections[i % self.num_angles] = subpixel_shift(self.workingProjections[i % self.num_angles], y_shift, x_shift)
+
+                # Store the shifts
+                self.tracked_shifts[i % self.num_angles][0] += y_shift
+                self.tracked_shifts[i % self.num_angles][1] += x_shift
+        m = m * scale
+        self.workingProjections = m
 
     def vertical_mass_fluctuation_align(self, numIterations=5):
         """
@@ -273,29 +361,29 @@ class tomoData:
         """
         print("Vertical Mass Fluctuation Alignment")
         
-        for i in range(numIterations):
-            sums = []
-            shifts = []
+        # for i in range(numIterations):
+        #     sums = []
+        #     shifts = []
             
-            for k in range(self.num_angles):
-                sums.append(np.sum(self.workingProjections[k][200:-50,120:-120], axis=1).tolist())
-                if k > 0:
-                    CC = sp.signal.correlate(sums[0], sums[k], mode='same', method='fft')
-                    maxpoint = np.where(CC == CC.max())
-                    yshift = int(self.image_size[0] / 2 - maxpoint[0])
-                    self.workingProjections[k] = subpixel_shift(self.workingProjections[k], -yshift, 0)
-                    self.tracked_shifts[k, 0] += yshift
-                    shifts.append(abs(yshift))
+        #     for k in range(self.num_angles):
+        #         sums.append(np.sum(self.workingProjections[k][200:-50,120:-120], axis=1).tolist())
+        #         if k > 0:
+        #             CC = sp.signal.correlate(sums[0], sums[k], mode='same', method='fft')
+        #             maxpoint = np.where(CC == CC.max())
+        #             yshift = int(self.image_size[0] / 2 - maxpoint[0])
+        #             self.workingProjections[k] = subpixel_shift(self.workingProjections[k], -yshift, 0)
+        #             self.tracked_shifts[k, 0] += yshift
+        #             shifts.append(abs(yshift))
             
-            # Check for convergence
-            if len(shifts) > 0:
-                average_shift = np.mean(shifts)
-                print(f"Iteration {i+1}: Average shift = {average_shift:.2f} pixels")
-                if average_shift < 0.5:
-                    print("Convergence reached: Average shift is less than 0.5 pixels.")
-                    break
-            else:
-                print("No shifts calculated, possibly on the first iteration.")
+        #     # Check for convergence
+        #     if len(shifts) > 0:
+        #         average_shift = np.mean(shifts)
+        #         print(f"Iteration {i+1}: Average shift = {average_shift:.2f} pixels")
+        #         if average_shift < 0.5:
+        #             print("Convergence reached: Average shift is less than 0.5 pixels.")
+        #             break
+        #     else:
+        #         print("No shifts calculated, possibly on the first iteration.")
         
 
         #Equalize with opposite angle
@@ -315,19 +403,26 @@ class tomoData:
             self.tracked_shifts[(i+self.num_angles//2)%self.num_angles,0] -= yshift/2
             shifts.append(abs(yshift))
 
-    def tomopy_align(self, iterations = 10, alg = "sirt"):
+
+    def tomopy_align(self, iterations = 15, alg = "sirt"):
         """
         Aligns projections using tomopy's join repojection Alignment algorithm
         """
         print("Tomopy Joint Reprojection Alignment of Projections (" + str(iterations) + " iterations)")
-        scale = max(abs(self.workingProjections.max()), abs(self.workingProjections.min()))
-        align_info = tomopy.prep.alignment.align_joint(self.workingProjections[:,200:-50,120:-120], self.ang, algorithm=alg, iters=iterations, debug=True)[1:3]
-        align_info = np.array(align_info)
-        self.tracked_shifts[:,0] += align_info[0] * scale
-        self.tracked_shifts[:,1] += align_info[1] * scale
+
+        center = tomopy.find_center_vo(self.workingProjections)
+        # align_info = tomopy.prep.alignment.align_joint(self.workingProjections[:,200:-50,120:-120], self.ang, algorithm='sirt', iters=iterations, debug=True)[1:3]
+        proj, sy, sx, _ = tomopy.prep.alignment.align_joint(self.workingProjections, self.ang, algorithm='sirt', iters=iterations, center = center, debug=True)
+
+        print(sy)
+        print(sx)
+
+        self.tracked_shifts[:,0] += sy
+        self.tracked_shifts[:,1] += sx
 
 
-        self.workingProjections = tomopy.shift_images(self.workingProjections, align_info[0], align_info[1])
+        self.workingProjections = tomopy.shift_images(proj, sy, sx)
+
 
     def optical_flow_align(self):
         """
@@ -335,33 +430,20 @@ class tomoData:
 
         WARNING: Does not have ability to be tracked my track_shifts
         """
-#         num_rows, num_cols = self.finalProjections[0].shape
-#         row_coords, col_coords = np.meshgrid(np.arange(num_rows), np.arange(num_cols), indexing='ij')
-#         for m in tqdm(range(1, self.num_angles + 1), desc='Optical Flow Alignment of Projections'):
-#             # Handle circular indexing for the last projection
-#             prev_img = self.finalProjections[m - 1]
-#             current_img = self.finalProjections[m % self.num_angles]
-
-#             # Compute optical flow between two consecutive images
-#             v, u = optical_flow_tvl1(prev_img, current_img)
-
-#             # Apply the flow vectors to align the current image
-#             aligned_img = warp(current_img, np.array([row_coords + v, col_coords + u]), mode='edge')
-#             self.finalProjections[m % self.num_angles] = aligned_img
-
-        num_rows, num_cols = self.finalProjections[0,200:-50,120:-120].shape
+        num_rows, num_cols = self.finalProjections[0].shape
         row_coords, col_coords = np.meshgrid(np.arange(num_rows), np.arange(num_cols), indexing='ij')
         for m in tqdm(range(1, self.num_angles + 1), desc='Optical Flow Alignment of Projections'):
             # Handle circular indexing for the last projection
-            prev_img = self.finalProjections[m - 1][200:-50,120:-120]
-            current_img = self.finalProjections[m % self.num_angles][200:-50,120:-120]
+            prev_img = self.finalProjections[m - 1]
+            current_img = self.finalProjections[m % self.num_angles]
 
             # Compute optical flow between two consecutive images
             v, u = optical_flow_tvl1(prev_img, current_img)
 
             # Apply the flow vectors to align the current image
-            aligned_img = warp(current_img, np.array([row_coords + v, col_coords + u]), mode='edge')
-            self.finalProjections[m % self.num_angles][200:-50,120:-120] = aligned_img
+            aligned_img = warp(current_img, np.array([row_coords + v, col_coords + u]), mode='constant')
+            # aligned_img[60:,250:-250] = current_img[60:,250:-250]
+            self.finalProjections[m % self.num_angles] = aligned_img
     
     def center_projections(self):
             """"
@@ -373,7 +455,8 @@ class tomoData:
             print("Center of frame: {}".format(self.image_size[1]//2))
             x_shift = (self.image_size[1]/2 - (self.rotation_center))
             y_shift = 0
-            if abs(x_shift) > 2:
+            x_shift_check = 3
+            if abs(x_shift_check) > 2:
                 for m in tqdm(range(self.num_angles), desc='Center projections'):
                     self.workingProjections[m] = subpixel_shift(self.workingProjections[m], y_shift, x_shift)
                 
