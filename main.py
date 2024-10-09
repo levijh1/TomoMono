@@ -52,46 +52,42 @@ if __name__ == '__main__':
 
 
     # # Reconstruction Process
-    # Use pre-aligned data to reconstruct
-    # prealigned_tif_file = "alignedProjections/aligned_foamTomo20240731-115419.tif" #Without rotational alignment
-    # prealigned_tif_file = "alignedProjections/aligned_foamTomo20240718-165515.tif" #With rotational alignment
+    alignedTifFileLocations = [("baseCase", "alignedProjections/aligned_baseCase_Filter_XCtip_20241004-100555.tif")
+                               # ,("rotate", "alignedProjections/aligned_rotate_Filter_XCtip_20241004-100555.tif")
+                               # ,("unrotate", "alignedProjections/aligned_unRotate_Filter_XCtip_20241004-100555.tif")
+                              ]
+    for case, prealigned_tif_file in alignedTifFileLocations:
+        print("Reconstructing")
+        algorithms = ["SIRT_CUDA", "svmbir"]
+        for alg in algorithms:
+            obj, scale_info = convert_to_numpy(prealigned_tif_file)
+            tomo = tomoDataClass.tomoData(obj)
+            tomo.center_projections()
+            tomo.crop_bottom_center(500, 630)
+            if alg == "SIRT_CUDA":
+                try:
+                    tomo.reconstruct(algorithm=alg, snr_db = None)
+                    if saveToFile:
+                        convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{case}_{timestamp}_{alg}.tif", scale_info)
+                        
+                    tomo.normalize()
+                    tomo.reconstruct(algorithm=alg, snr_db = None)
+                    if saveToFile:
+                        convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_Normalized_{case}_{timestamp}_{alg}.tif", scale_info)
+                except Exception as e:
+                    print(f"Failed to reconstruct using {alg}: {e}")
+                    continue
 
-    prealigned_tif_file = "alignedProjections/aligned_iterateVMF_sirt_20240905-133258.tif"
-    # prealigned_tif_file = "alignedProjections/aligned_iterateVMF_optFlow_sirt_20240905-223101.tif"
-
-    obj, scale_info = convert_to_numpy(prealigned_tif_file)
-    tomo = tomoDataClass.tomoData(obj)
-    tomo.center_projections()
-    tomo.crop_bottom_center(400, 630)
-
-    print("Reconstructing")
-    for alg in algorithms:
-        snr = None
-        try:
-            tomo.reconstruct(algorithm=alg, snr_db = snr)
-        except Exception as e:
-            print(f"Failed to reconstruct using {alg}: {e}")
-            continue
-        if saveToFile:
-            if snr == None:
-                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}.tif", scale_info)
-            else:
-                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{timestamp}_{alg}_snr{snr}.tif", scale_info)
-            
-    tomo.normalize()
-    for alg in algorithms:
-        snr = None
-        try:
-            tomo.reconstruct(algorithm=alg, snr_db = snr)
-        except Exception as e:
-            print(f"Failed to reconstruct using {alg}: {e}")
-            continue
-        if saveToFile:
-            if snr == None:
-                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_Normalized_{timestamp}_{alg}.tif", scale_info)
-            else:
-                convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_Normalized_{timestamp}_{alg}_snr{snr}.tif", scale_info)
-        
+            elif alg == "svmbir":
+                tomo.normalize()
+                for snr in [20,25,30,35,40]:
+                    try:
+                        tomo.reconstruct(algorithm=alg, snr_db = snr)
+                        if saveToFile:
+                            convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_Normalized_{timestamp}_{alg}{snr}.tif", scale_info)
+                    except Exception as e:
+                        print(f"Failed to reconstruct using {alg}: {e}")
+                        continue
 
 
 

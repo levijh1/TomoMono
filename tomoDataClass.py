@@ -209,7 +209,7 @@ class tomoData:
         Aligns projections using cross-correlation to find the shift between consecutive images.
         Iterates until the average shift in pixels is less than the specified tolerance.
         """
-        for iteration in tqdm(range(max_iterations), desc='Cross-Correlation Alignment Iterations'):
+        for iteration in tqdm(range(max_iterations), desc='Cross-Correlation of the pillar tip iterations'):
             total_shift = 0
             for m in tqdm(range(1, self.num_angles + 1), desc=f'Iteration {iteration + 1}'):
                 # Handle circular indexing for the last projection
