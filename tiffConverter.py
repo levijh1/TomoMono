@@ -29,6 +29,7 @@ def convert_to_numpy(file_location):
     elif tif_data.ndim > 3:
         raise ValueError("Unsupported TIFF dimensions: expected 2D or 3D, got higher.")
 
+    print(tif_data.dtype)
     return tif_data, scale_info
 
 
@@ -42,8 +43,8 @@ def convert_to_tiff(numpy_data, file_location, scale_info=None):
     - scale_info: Optional dictionary containing 'XResolution', 'YResolution', and 'Unit'.
                   If provided, these values are used to set the resolution of the TIFF file.
     """
-    if numpy_data.ndim != 3:
-        raise ValueError("Input array must be 3D.")
+    # if numpy_data.ndim != 3:
+    #     raise ValueError("Input array must be 3D.")
 
     # Convert scale information to appropriate units for TIFF metadata
     if scale_info:

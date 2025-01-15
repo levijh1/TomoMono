@@ -63,7 +63,7 @@ if __name__ == '__main__':
             obj, scale_info = convert_to_numpy(prealigned_tif_file)
             tomo = tomoDataClass.tomoData(obj)
             tomo.center_projections()
-            tomo.crop_bottom_center(500, 630)
+            tomo.crop_bottom_center(500, 750)
             if alg == "SIRT_CUDA":
                 try:
                     tomo.reconstruct(algorithm=alg, snr_db = None)
