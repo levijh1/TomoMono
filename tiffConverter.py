@@ -29,7 +29,7 @@ def convert_to_numpy(file_location):
     elif tif_data.ndim > 3:
         raise ValueError("Unsupported TIFF dimensions: expected 2D or 3D, got higher.")
 
-    print(tif_data.dtype)
+    # print(tif_data.dtype)
     return tif_data, scale_info
 
 

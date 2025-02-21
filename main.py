@@ -34,7 +34,7 @@ if __name__ == '__main__':
 
     # Setup logging if enabled
     if log:
-        sys.stdout = DualLogger(f'logs/output_tomoMono{timestamp}.txt', 'w')
+        sys.stdout = DualLogger(f'logs/time_test_output_tomoMono{timestamp}.txt', 'w')
 
 
 
@@ -76,7 +76,7 @@ if __name__ == '__main__':
                     # tomo.reconstruct(algorithm=alg, snr_db = None)
                     # if saveToFile:
                     #     convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_Normalized_{case}_{timestamp}_{alg}.tif", scale_info)
-                    print(f"{alg} Algorithm completed reconstruction in {alg_end_time - alg_start_time} seconds."
+                    print(f"{alg} Algorithm completed reconstruction in {alg_end_time - alg_start_time} seconds.")
                 except Exception as e:
                     print(f"Failed to reconstruct using {alg}: {e}")
                     continue
@@ -98,7 +98,7 @@ if __name__ == '__main__':
                     alg_end_time = time.time()
                     if saveToFile:
                         convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_Normalized_{timestamp}_{alg}{snr}.tif", scale_info)
-                    print(f"{alg} Algorithm completed reconstruction in {alg_end_time - alg_start_time} seconds."
+                    print(f"{alg} Algorithm completed reconstruction in {alg_end_time - alg_start_time} seconds.")
                 except Exception as e:
                     print(f"Failed to reconstruct using {alg}: {e}")
                     continue
