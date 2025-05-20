@@ -64,17 +64,19 @@ if __name__ == '__main__':
             tomo = tomoDataClass.tomoData(obj)
             tomo.center_projections()
             tomo.crop_bottom_center(500, 750)
+            
             if alg == "SIRT_CUDA":
-                normalized = False
+                isNormalized = "NotNormalized"
             if alg == "svmbir":
                 tomo.normalize()
-                normalized = True
+                isNormalized = "Normalized"
+                
             try:
                 alg_start_time = time.time()
                 tomo.reconstruct(algorithm=alg, snr_db = None)
                 alg_end_time = time.time()
                 if saveToFile:
-                    convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{case}_{timestamp}_{alg}.tif", scale_info)
+                    convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_{isNormalized}_{case}_{timestamp}_{alg}.tif", scale_info)
             except Exception as e:
                 print(f"Failed to reconstruct using {alg}: {e}")
                 continue

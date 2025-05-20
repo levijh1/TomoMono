@@ -152,6 +152,7 @@ class tomoData:
         self.workingProjections = (self.workingProjections - np.min(self.workingProjections)) / (np.max(self.workingProjections) - np.min(self.workingProjections))
 
     def standardize(self):
+        """Values in terms of number of standard deviations from the mean"""
         self.workingProjections = (self.workingProjections-np.mean(self.workingProjections))/np.std(self.workingProjections)
         self.workingProjections *= -1
 
