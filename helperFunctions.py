@@ -62,27 +62,27 @@ def subpixel_shift(image, shift_y, shift_x):
     # Inverse Fourier transform to get the shifted image
     shifted_image = np.fft.ifft2(shifted_fft_image).real
 
-    # Create a mask of valid regions
-    mask = np.ones_like(image)
+    # # Create a mask of valid regions
+    # mask = np.ones_like(image)
 
-    # Calculate how much to pad with zeros based on shift
-    pad_x_left = int(np.ceil(shift_x)) if shift_x > 0 else 0
-    pad_x_right = int(np.ceil(-shift_x)) if shift_x < 0 else 0
-    pad_y_top = int(np.ceil(shift_y)) if shift_y > 0 else 0
-    pad_y_bottom = int(np.ceil(-shift_y)) if shift_y < 0 else 0
+    # # Calculate how much to pad with zeros based on shift
+    # pad_x_left = int(np.ceil(shift_x)) if shift_x > 0 else 0
+    # pad_x_right = int(np.ceil(-shift_x)) if shift_x < 0 else 0
+    # pad_y_top = int(np.ceil(shift_y)) if shift_y > 0 else 0
+    # pad_y_bottom = int(np.ceil(-shift_y)) if shift_y < 0 else 0
 
-    # Apply zero padding based on shifts
-    if pad_y_top != 0:
-        mask[:pad_y_top, :] = 0  # Top padding
-    if pad_y_bottom != 0:
-        mask[-pad_y_bottom:, :] = 0  # Bottom padding
-    if pad_x_left != 0:
-        mask[:, :pad_x_left] = 0  # Left padding
-    if pad_x_right != 0:
-        mask[:, -pad_x_right:] = 0  # Right padding
+    # # Apply zero padding based on shifts
+    # if pad_y_top != 0:
+    #     mask[:pad_y_top, :] = 0  # Top padding
+    # if pad_y_bottom != 0:
+    #     mask[-pad_y_bottom:, :] = 0  # Bottom padding
+    # if pad_x_left != 0:
+    #     mask[:, :pad_x_left] = 0  # Left padding
+    # if pad_x_right != 0:
+    #     mask[:, -pad_x_right:] = 0  # Right padding
 
-    # Apply the mask to the shifted image
-    shifted_image *= mask
+    # # Apply the mask to the shifted image
+    # shifted_image *= mask
     
     return shifted_image
 
@@ -122,6 +122,7 @@ class MoviePlotter:
         with self.output:
             self.output.clear_output(wait=True)  # Clear the previous frame
             # Plot with global color normalization
+            # plt.imshow(self.x[frame])
             plt.imshow(self.x[frame], vmin=self.global_min, vmax=self.global_max, cmap='gray')
             plt.colorbar(label='Intensity')
             plt.title(f"Frame {frame}")

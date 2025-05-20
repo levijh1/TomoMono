@@ -12,25 +12,25 @@ if __name__ == '__main__':
 
 
     # Configuration flags
-    log = True  # Enable logging to file
+    log = False  # Enable logging to file
     saveToFile = True  # Enable saving data to file
 
     # Start the timer for execution duration tracking
     start_time = time.time()
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")  # Timestamp for file naming
 
-    # Parse command-line arguments
-    parser = argparse.ArgumentParser(description='Run reconstruction algorithms.')
-    parser.add_argument('--algorithms', nargs='+', help='List of algorithms to use for reconstruction', required=False,
-                        #  default=[['art', 'bart','fbp', 'gridrec', 'mlem', 'osem', 'ospml_hybrid', 'ospml_quad', 'pml_hybrid', 'pml_quad', 'sirt', 'tv', 'grad', 'tikh', 'gpu', 'svmbir']])
-                        # default = ['FP_CUDA', 'BP_CUDA', "FBP_CUDA", "SIRT_CUDA", "SART_CUDA", "CGLS_CUDA", "EM_CUDA"])
-                        default = ["SIRT_CUDA", "tv", "svmbir"])
-                        # default = ['SIRT_CUDA'])
-    args = parser.parse_args()
-    algorithms = args.algorithms
+    # # Parse command-line arguments
+    # parser = argparse.ArgumentParser(description='Run reconstruction algorithms.')
+    # parser.add_argument('--algorithms', nargs='+', help='List of algorithms to use for reconstruction', required=False,
+    #                     #  default=[['art', 'bart','fbp', 'gridrec', 'mlem', 'osem', 'ospml_hybrid', 'ospml_quad', 'pml_hybrid', 'pml_quad', 'sirt', 'tv', 'grad', 'tikh', 'gpu', 'svmbir']])
+    #                     # default = ['FP_CUDA', 'BP_CUDA', "FBP_CUDA", "SIRT_CUDA", "SART_CUDA", "CGLS_CUDA", "EM_CUDA"])
+    #                     default = ["SIRT_CUDA", "tv", "svmbir"])
+    #                     # default = ['SIRT_CUDA'])
+    # args = parser.parse_args()
+    # algorithms = args.algorithms
 
-    #Or just specify the exact algorithms you want to use here
-    # algorithms = ['SIRT_CUDA', 'svmbir']
+    # Or just specify the exact algorithms you want to use here
+    algorithms = ['SIRT_CUDA', 'svmbir']
 
     # Setup logging if enabled
     if log:
@@ -51,11 +51,11 @@ if __name__ == '__main__':
         print("GPU is available")
 
 
-    # # Reconstruction Process
-    alignedTifFileLocations = [("baseCase", "alignedProjections/aligned_baseCase_Filter_XCtip_20241004-100555.tif")
-                               # ,("rotate", "alignedProjections/aligned_rotate_Filter_XCtip_20241004-100555.tif")
-                               # ,("unrotate", "alignedProjections/aligned_unRotate_Filter_XCtip_20241004-100555.tif")
+    # # Reconstruction Process 
+    #Make sure they have different labels so that you don't overwrite data
+    alignedTifFileLocations = [("manuallyShifted", "alignedProjections/aligned_manually_3_3_25.tif")
                               ]
+    
     for case, prealigned_tif_file in alignedTifFileLocations:
         print("Reconstructing")
         algorithms = ["SIRT_CUDA", "svmbir"]
@@ -65,46 +65,25 @@ if __name__ == '__main__':
             tomo.center_projections()
             tomo.crop_bottom_center(500, 750)
             if alg == "SIRT_CUDA":
-                try:
-                    alg_start_time = time.time()
-                    tomo.reconstruct(algorithm=alg, snr_db = None)
-                    alg_end_time = time.time()
-                    if saveToFile:
-                        convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{case}_{timestamp}_{alg}.tif", scale_info)
-                        
-                    # tomo.normalize()
-                    # tomo.reconstruct(algorithm=alg, snr_db = None)
-                    # if saveToFile:
-                    #     convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_Normalized_{case}_{timestamp}_{alg}.tif", scale_info)
-                    print(f"{alg} Algorithm completed reconstruction in {alg_end_time - alg_start_time} seconds.")
-                except Exception as e:
-                    print(f"Failed to reconstruct using {alg}: {e}")
-                    continue
-
-            elif alg == "svmbir":
-                # tomo.normalize()
-                # for snr in [20,25,30,35,40]:
-                #     try:
-                #         tomo.reconstruct(algorithm=alg, snr_db = snr)
-                #         if saveToFile:
-                #             convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_Normalized_{timestamp}_{alg}{snr}.tif", scale_info)
-                #     except Exception as e:
-                #         print(f"Failed to reconstruct using {alg}: {e}")
-                #         continue
+                normalized = False
+            if alg == "svmbir":
                 tomo.normalize()
-                try:
-                    alg_start_time = time.time()
-                    tomo.reconstruct(algorithm=alg, snr_db = None)
-                    alg_end_time = time.time()
-                    if saveToFile:
-                        convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_Normalized_{timestamp}_{alg}{snr}.tif", scale_info)
-                    print(f"{alg} Algorithm completed reconstruction in {alg_end_time - alg_start_time} seconds.")
-                except Exception as e:
-                    print(f"Failed to reconstruct using {alg}: {e}")
-                    continue
+                normalized = True
+            try:
+                alg_start_time = time.time()
+                tomo.reconstruct(algorithm=alg, snr_db = None)
+                alg_end_time = time.time()
+                if saveToFile:
+                    convert_to_tiff(tomo.get_recon(), f"reconstructions/foamRecon_NotNormalized_{case}_{timestamp}_{alg}.tif", scale_info)
+            except Exception as e:
+                print(f"Failed to reconstruct using {alg}: {e}")
+                continue
+
+            print(f"{alg} Algorithm completed reconstruction in {alg_end_time - alg_start_time} seconds.")
 
 
 
+    
     # End the timer
     end_time = time.time()
 
