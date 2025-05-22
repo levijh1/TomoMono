@@ -4,7 +4,6 @@ if __name__ == '__main__':
     import tomoDataClass
     from tiffConverter import convert_to_numpy, convert_to_tiff
     from datetime import datetime
-    import torch
     import argparse
     from helperFunctions import DualLogger, subpixel_shift
     from tqdm import tqdm
@@ -33,8 +32,8 @@ if __name__ == '__main__':
 
 
     # Import foam data
-    tif_file = "data/fullTomoReconstructions_3_3_25.tif"
-    # tif_file = "data/fullTomoReconstructions_8_28_24.tif"
+    # tif_file = "data/fullTomoReconstructions_3_3_25.tif"
+    tif_file = "alignedProjections/aligned_manually_3_3_25.tif"
     obj, scale_info = convert_to_numpy(tif_file)
 
     print(obj.shape)
@@ -60,155 +59,22 @@ if __name__ == '__main__':
 
     print("Starting alignment")
 
-    
-    #PMA Alignment(test)
-    name = f"alignedProjections/aligned_baseCase_OldShifts_PMA_test{timestamp}.tif"
+    name = f"alignedProjections/aligned_manuallyPrepped_PMA_{timestamp}.tif"
     print("Creating aligned Projections: ", name)
     tomo.reset_workingProjections()
-    tomo.tracked_shifts = np.loadtxt('alignedProjections/OGShifts_fromToryRecons.txt', dtype=int)
-    
-    tomo.make_updates_shift()
-    tomo.PMA(max_iterations = 1, tolerance=0.01, algorithm="SIRT_CUDA", crop_bottom_center_y = 500, crop_bottom_center_x = 750)
+    tomo.PMA(max_iterations = 15, tolerance=0.01, algorithm="SIRT_CUDA", crop_bottom_center_y = 500, crop_bottom_center_x = 750)
     tomo.center_projections()
     tomo.make_updates_shift()
-
     convert_to_tiff(tomo.get_finalProjections(), name, scale_info)
-
-
-
-
-
-
     
-
-    
-
-
-    # # #Base Case
-    # tif_file = "data/fullTomoReconstructions_3_3_25.tif"
-    # obj, scale_info = convert_to_numpy(tif_file)
-    # tomo = tomoDataClass.tomoData(obj)
-    
-    # name = f"alignedProjections/aligned_baseCase_thresholded_{timestamp}.tif"
-    # print(f"\nStarting Registration: {name}")
-    # tomo.reset_workingProjections()
-    # tomo.track_shifts()
-    # # tomo.standardize()
-    # tomo.threshold()
-
-    # tomo.cross_correlate_align(tolerance=0.3, max_iterations = 20)
-    # tomo.center_projections()
-    # tomo.cross_correlate_tip(tolerance=0.05, max_iterations = 10)
-    # tomo.center_projections()
-    # tomo.make_updates_shift()
-    # convert_to_tiff(tomo.get_finalProjections(), name, scale_info)
-
-
-
-    # # #Base Case with Opt Flow
-    # name = f"alignedProjections/aligned_baseCase_optFlowChill_{timestamp}.tif"
-    # print(f"\nStarting Registration: {name}")
-    # tomo.reset_workingProjections()
-    # tomo.track_shifts()
-    # tomo.standardize()
-
-    # tomo.cross_correlate_align(tolerance=0.3, max_iterations = 20)
-    # tomo.cross_correlate_tip(tolerance=0.05, max_iterations = 10)
-    # tomo.center_projections()
-    # tomo.make_updates_shift()
-    
-    # tomo.optical_flow_align_chill()
-    # convert_to_tiff(tomo.get_finalProjections(), name, scale_info)
-
-
-
-    
-    # # #Unrotate
-    # name = f"alignedProjections/aligned_unRotate_{timestamp}.tif"
-    # print(f"\nStarting Registration: {name}")
-    # tomo.reset_workingProjections()
-    # tomo.track_shifts()
-    # tomo.standardize()
-
-    # tomo.cross_correlate_align(tolerance=0.3, max_iterations = 20)
-    # tomo.cross_correlate_tip(tolerance=0.05, max_iterations = 10)
-    # tomo.center_projections()
-    # tomo.make_updates_shift()
-
-
-    # tomo.rotate_correlate_align()
-    # tomo.make_updates_rotate()
-
-    # tomo.cross_correlate_align(tolerance=0.3, max_iterations = 20)
-    # tomo.cross_correlate_tip(tolerance=0.05, max_iterations = 10)
-    # tomo.center_projections()
-    # tomo.make_updates_shift()
-    # tomo.unrotate()
-    
-    # convert_to_tiff(tomo.get_finalProjections(), name, scale_info)
-
-
-    # # #Base Case (with PMA)
-    # name = f"alignedProjections/aligned_baseCase_PMA_{timestamp}.tif"
-    # print(f"\nStarting reconstruction: {name}")
-    # tomo.reset_workingProjections()
-    # tomo.track_shifts()
-    # tomo.standardize()
-
-    # tomo.cross_correlate_align(tolerance=0.3, max_iterations = 20)
-    # tomo.cross_correlate_tip(tolerance=0.05, max_iterations = 10)
-    # tomo.center_projections()
-    # tomo.PMA(max_iterations = 5, tolerance=0.1, algorithm="SIRT_CUDA")
-    # tomo.make_updates_shift()
-    
-    # convert_to_tiff(tomo.get_finalProjections(), name, scale_info)
-
-    
-    # # #Base Case (with PMA) (with opticalFlow)
-    # name = f"alignedProjections/aligned_baseCase_PMA_optFlow_{timestamp}.tif"
-    # print(f"\nStarting reconstruction: {name}")
-    # tomo.reset_workingProjections()
-    # tomo.track_shifts()
-    # tomo.standardize()
-
-    # tomo.cross_correlate_align(tolerance=0.3, max_iterations = 20)
-    # tomo.cross_correlate_tip(tolerance=0.05, max_iterations = 10)
-    # tomo.center_projections()
-    # tomo.PMA(max_iterations = 5, tolerance=0.1, algorithm="SIRT_CUDA")
-    # tomo.make_updates_shift()
-    
-    # tomo.optical_flow_align_chill()
-    # convert_to_tiff(tomo.get_finalProjections(), name, scale_info)
-
-
-
-    
-    # # #Unrotate (with PMA)
-    # name = f"alignedProjections/aligned_unRotate_PMA_{timestamp}.tif"
-    # print(f"\nStarting reconstruction: {name}")
-    # tomo.reset_workingProjections()
-    # tomo.track_shifts()
-    # tomo.standardize()
-
-    # tomo.cross_correlate_align(tolerance=0.3, max_iterations = 20)
-    # tomo.cross_correlate_tip(tolerance=0.05, max_iterations = 10)
-    # tomo.center_projections()
-    # tomo.make_updates_shift()
-
-
-    # tomo.rotate_correlate_align()
-    # tomo.make_updates_rotate()
-
-    # tomo.cross_correlate_align(tolerance=0.3, max_iterations = 20)
-    # tomo.cross_correlate_tip(tolerance=0.05, max_iterations = 10)
-    # tomo.center_projections()
-    # tomo.make_updates_shift()
-    # tomo.unrotate()
-
-    # tomo.PMA(max_iterations = 5, tolerance=0.1, algorithm="SIRT_CUDA")
-    # tomo.make_updates_shift()
-
-    # convert_to_tiff(tomo.get_finalProjections(), name, scale_info)
+    name = f"alignedProjections/aligned_manuallyPrepped_XCA&PMA_{timestamp}.tif"
+    print("Creating aligned Projections: ", name)
+    tomo.reset_workingProjections()
+    tomo.cross_correlate_align(tolerance=0.3, max_iterations = 20)
+    tomo.PMA(max_iterations = 15, tolerance=0.01, algorithm="SIRT_CUDA", crop_bottom_center_y = 500, crop_bottom_center_x = 750)
+    tomo.center_projections()
+    tomo.make_updates_shift()
+    convert_to_tiff(tomo.get_finalProjections(), name, scale_info)
 
 
     # End the timer
