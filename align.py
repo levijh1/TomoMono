@@ -2,10 +2,9 @@ if __name__ == '__main__':
     import time
     import sys
     import tomoDataClass
-    from tiffConverter import convert_to_numpy, convert_to_tiff
     from datetime import datetime
     import argparse
-    from helperFunctions import DualLogger, subpixel_shift
+    from helperFunctions import DualLogger, subpixel_shift, convert_to_numpy, convert_to_tiff
     from tqdm import tqdm
     from scipy.ndimage import shift
     import numpy as np
@@ -60,20 +59,40 @@ if __name__ == '__main__':
     print("Starting alignment")
 
     name = f"alignedProjections/aligned_manuallyPrepped_PMA_{timestamp}.tif"
-    print("Creating aligned Projections: ", name)
+    print("\n \n Creating aligned Projections: ", name)
     tomo.reset_workingProjections()
-    tomo.PMA(max_iterations = 15, tolerance=0.01, algorithm="SIRT_CUDA", crop_bottom_center_y = 500, crop_bottom_center_x = 750)
+    tomo.PMA(max_iterations = 15, tolerance=0.0001, algorithm="SIRT_CUDA", crop_bottom_center_y = 500, crop_bottom_center_x = 750)
     tomo.center_projections()
     tomo.make_updates_shift()
     convert_to_tiff(tomo.get_finalProjections(), name, scale_info)
     
     name = f"alignedProjections/aligned_manuallyPrepped_XCA&PMA_{timestamp}.tif"
-    print("Creating aligned Projections: ", name)
+    print("\n \n Creating aligned Projections: ", name)
     tomo.reset_workingProjections()
-    tomo.cross_correlate_align(tolerance=0.3, max_iterations = 20)
-    tomo.PMA(max_iterations = 15, tolerance=0.01, algorithm="SIRT_CUDA", crop_bottom_center_y = 500, crop_bottom_center_x = 750)
+    tomo.cross_correlate_align(tolerance=0.01, max_iterations = 20)
+    tomo.PMA(max_iterations = 15, tolerance=0.0001, algorithm="SIRT_CUDA", crop_bottom_center_y = 500, crop_bottom_center_x = 750)
     tomo.center_projections()
     tomo.make_updates_shift()
+    convert_to_tiff(tomo.get_finalProjections(), name, scale_info)
+
+    name = f"alignedProjections/aligned_manuallyPrepped_XCA&PMA_optFlow{timestamp}.tif"
+    print("\n \n Creating aligned Projections: ", name)
+    tomo.reset_workingProjections()
+    tomo.cross_correlate_align(tolerance=0.01, max_iterations = 20)
+    tomo.PMA(max_iterations = 15, tolerance=0.0001, algorithm="SIRT_CUDA", crop_bottom_center_y = 500, crop_bottom_center_x = 750)
+    tomo.center_projections()
+    tomo.make_updates_shift()
+    tomo.optical_flow_align()
+    convert_to_tiff(tomo.get_finalProjections(), name, scale_info)
+
+    name = f"alignedProjections/aligned_manuallyPrepped_XCA&PMA_optFlowChill{timestamp}.tif"
+    print("\n \n Creating aligned Projections: ", name)
+    tomo.reset_workingProjections()
+    tomo.cross_correlate_align(tolerance=0.01, max_iterations = 20)
+    tomo.PMA(max_iterations = 15, tolerance=0.0001, algorithm="SIRT_CUDA", crop_bottom_center_y = 500, crop_bottom_center_x = 750)
+    tomo.center_projections()
+    tomo.make_updates_shift()
+    tomo.optical_flow_align_chill()
     convert_to_tiff(tomo.get_finalProjections(), name, scale_info)
 
 

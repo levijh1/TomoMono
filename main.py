@@ -2,11 +2,10 @@ if __name__ == '__main__':
     import time
     import sys
     import tomoDataClass
-    from tiffConverter import convert_to_numpy, convert_to_tiff
     from datetime import datetime
     import torch
     import argparse
-    from helperFunctions import DualLogger
+    from helperFunctions import DualLogger, convert_to_numpy, convert_to_tiff
     from tqdm import tqdm
     import numpy as np
 
@@ -50,12 +49,14 @@ if __name__ == '__main__':
 
     # # Reconstruction Process 
     #Make sure they have different labels so that you don't overwrite data
-    alignedTifFileLocations = [("manuallyShifted", "alignedProjections/aligned_manually_3_3_25.tif")
+    alignedTifFileLocations = [("manualWithXCA&PMA", "alignedProjections/aligned_manuallyPrepped_XCA&PMA_20250522-145702.tif"),
+                               # ("manualWithPMA", "alignedProjections/aligned_manuallyPrepped_PMA_20250522-145702.tif"),
+                               # ("manualWithXCA&PMA&OptFlow", "alignedProjections/aligned_manuallyPrepped_XCA&PMA_optFlow20250522-145702.tif"),
+                               # ("manualWithXCA&PMA&OptFlowChill", "alignedProjections/aligned_manuallyPrepped_XCA&PMA_optFlowChill20250522-145702.tif")
                               ]
     
     for case, prealigned_tif_file in alignedTifFileLocations:
         print("Reconstructing")
-        algorithms = ["SIRT_CUDA", "svmbir"]
         for alg in algorithms:
             obj, scale_info = convert_to_numpy(prealigned_tif_file)
             tomo = tomoDataClass.tomoData(obj)
@@ -63,7 +64,8 @@ if __name__ == '__main__':
             tomo.crop_bottom_center(500, 750)
             
             if alg == "SIRT_CUDA":
-                isNormalized = "NotNormalized"
+                tomo.normalize()
+                isNormalized = "Normalized"
             if alg == "svmbir":
                 tomo.normalize()
                 isNormalized = "Normalized"

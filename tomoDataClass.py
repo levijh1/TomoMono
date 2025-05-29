@@ -2,8 +2,7 @@ import tomopy
 import numpy as np
 import random
 import scipy as sp
-from helperFunctions import MoviePlotter, subpixel_shift
-from pltwidget import runwidget
+from helperFunctions import MoviePlotter, subpixel_shift, runwidget, convert_to_numpy
 # from skimage.transform import warp
 import torch
 # from skimage.registration import optical_flow_tvl1
@@ -11,7 +10,6 @@ from tqdm import tqdm
 # from scipy.signal import correlate
 from scipy.ndimage import shift, center_of_mass, rotate
 import svmbir
-from tiffConverter import convert_to_numpy
 import cv2
 import matplotlib.pyplot as plt
 from alignment_methods import *
@@ -83,6 +81,7 @@ class tomoData:
         Returns:
         - np.array: Cropped 3D numpy array.
         """
+        print("\n")
         cropped_array = np.zeros((self.workingProjections.shape[0], new_y, new_x), dtype=self.workingProjections.dtype)
         
         for i, array in enumerate(tqdm(self.workingProjections, desc=f"Cropping projections to size: {new_x}x{new_y}")):
@@ -107,6 +106,7 @@ class tomoData:
         self.image_size = self.workingProjections.shape[1:]
 
     def crop_bottom_center(self, new_y, new_x):
+        print("\n")
         cropped_array = np.zeros((self.workingProjections.shape[0], new_y, new_x), dtype=self.workingProjections.dtype)
 
         print(f"Cropping projections to size: {new_x}x{new_y}")
@@ -127,6 +127,7 @@ class tomoData:
             cropped_array[i] = array[starty:endy, startx:endx]
         
         self.workingProjections = cropped_array
+        self.finalProjections = cropped_array
 
         self.image_size = self.workingProjections.shape[1:]
 
@@ -149,9 +150,13 @@ class tomoData:
         
 
     def normalize(self):
+        print("\n")
+        print("Normalizing projections")
         """Normalize all projections to be positive values between 1 and 0"""
         self.workingProjections = -self.workingProjections
         self.workingProjections = (self.workingProjections - np.min(self.workingProjections)) / (np.max(self.workingProjections) - np.min(self.workingProjections))
+
+        self.finalProjections = np.copy(self.workingProjections)
 
     def standardize(self):
         """Values in terms of number of standard deviations from the mean"""
@@ -177,33 +182,43 @@ class tomoData:
         runwidget(self.recon)
     
     def bilateralFilter(self, *args, **kwargs):
+        print("\n")
         return bilateralFilter(self, *args, **kwargs)
 
     def cross_correlate_align(self, *args, **kwargs):
+        print("\n")
         return cross_correlate_align(self, *args, **kwargs)
 
     def cross_correlate_tip(self, *args, **kwargs):
+        print("\n")
         return cross_correlate_tip(self, *args, **kwargs)
 
     def rotate_correlate_align(self, *args, **kwargs):
+        print("\n")
         return rotate_correlate_align(self, *args, **kwargs)
 
     def bilateralFilter(self, *args, **kwargs):
+        print("\n")
         return bilateralFilter(self, *args, **kwargs)
 
     def PMA(self, *args, **kwargs):
+        print("\n")
         return PMA(self, *args, **kwargs)
 
     def vertical_mass_fluctuation_align(tomo, *args, **kwargs):
+        print("\n")
         return vertical_mass_fluctuation_align(tomo, *args, **kwargs)
 
     def tomopy_align(self, *args, **kwargs):
+        print("\n")
         return tomopy_align(self, *args, **kwargs)
 
     def optical_flow_align(self, *args, **kwargs):
+        print("\n")
         return optical_flow_align(self, *args, **kwargs)
 
     def optical_flow_align_chill(self, *args, **kwargs):
+        print("\n")
         return optical_flow_align(self, *args, **kwargs)
 
     
@@ -211,9 +226,10 @@ class tomoData:
         """"
         This function determines and adjusts the center of rotation for 2D projection images by finding the initial center, shifting the projections to center them, and calculating any remaining offset.
         """
+        print("\n")
+        print("Centering Projections")
         self.center_offset = 10
         while self.center_offset > 1:
-            print("Finding center of rotation for projections")
             self.rotation_center = tomopy.find_center_vo(self.workingProjections)
             print("Original center: {}".format(self.rotation_center))
             print("Center of frame: {}".format(self.image_size[1]//2))
@@ -256,7 +272,7 @@ class tomoData:
                     'num_iter': 400,
                     'extra_options': {}
                 }
-                self.recon = tomopy.recon(self.workingProjections,
+                self.recon = tomopy.recon(self.finalProjections,
                                         self.ang,
                                         center=self.rotation_center,
                                         algorithm=tomopy.astra,
@@ -269,12 +285,12 @@ class tomoData:
             print("Using SVMBIR-based reconstruction.")
             print("center_offset assumed to be : {}".format(self.center_offset))
             if snr_db == None:
-                self.recon = svmbir.recon(self.workingProjections, self.ang, center_offset = self.center_offset, verbose=1)
+                self.recon = svmbir.recon(self.finalProjections, self.ang, center_offset = self.center_offset, verbose=1)
             else:
-                self.recon = svmbir.recon(self.workingProjections, self.ang, center_offset = self.center_offset, snr_db=snr_db, verbose=1)
+                self.recon = svmbir.recon(self.finalProjections, self.ang, center_offset = self.center_offset, snr_db=snr_db, verbose=1)
         else:
             print("Using CPU-based reconstruction. Algorithm: ", algorithm)
-            self.recon = tomopy.recon(self.workingProjections,
+            self.recon = tomopy.recon(self.finalProjections,
                                       self.ang,
                                       center=self.rotation_center,
                                       algorithm=algorithm,

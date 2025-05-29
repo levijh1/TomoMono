@@ -10,6 +10,8 @@ from scipy.ndimage import map_coordinates
 import torch
 import matplotlib.pyplot as plt
 from helperFunctions import MoviePlotter
+from skimage.transform import warp
+
 
 
         
@@ -63,7 +65,7 @@ def cross_correlate_align(tomo, tolerance=1, max_iterations=15, stepRatio=1):
     
         # Calculate the average shift for this iteration
         average_shift = total_shift / tomo.num_angles
-        print(f"\nAverage pixel shift of iteration {iteration+1}: {average_shift}")
+        print(f"Average pixel shift of iteration {iteration+1}: {average_shift}")
     
         # Check if the average shift is below the tolerance
         if average_shift < tolerance:
@@ -110,7 +112,7 @@ def cross_correlate_tip(tomo, tolerance=0.5, max_iterations=15, stepRatio = 1):
         
         # Calculate the average shift for this iteration
         average_shift = total_shift / tomo.num_angles
-        print(f"\nAverage pixel shift of iteration {iteration+1}: {average_shift}")
+        print(f"Average pixel shift of iteration {iteration+1}: {average_shift}")
 
         # Check if the average shift is below the tolerance
         if average_shift < tolerance:
@@ -248,8 +250,6 @@ def PMA(tomo, max_iterations = 5, tolerance = 0.1, algorithm = 'art', crop_botto
             #     plt.imshow(img2)
             #     plt.colorbar()
             #     plt.show()
-
-            #     print("\n")
             
             num_rows, num_cols = img1.shape
 
@@ -277,7 +277,7 @@ def PMA(tomo, max_iterations = 5, tolerance = 0.1, algorithm = 'art', crop_botto
         
         # Calculate the average shift for this iteration
         average_shift = total_shift / tomo.num_angles
-        print(f"\nAverage pixel shift of iteration {k}: {average_shift}")
+        print(f"Average pixel shift of iteration {k}: {average_shift}")
 
         average_x_shift = total_x_shift / tomo.num_angles
         print(f"Average x shift of iteration {k}: {average_x_shift}")
@@ -325,7 +325,7 @@ def vertical_mass_fluctuation_align(tomo, tolerance = 0.1, max_iterations=15):
         
         # Calculate the average shift for this iteration
         average_shift = total_shift / tomo.num_angles
-        print(f"\nAverage pixel shift of iteration {iteration}: {average_shift}")
+        print(f"Average pixel shift of iteration {iteration}: {average_shift}")
 
         # Check if the average shift is below the tolerance
         if average_shift < tolerance:
@@ -358,7 +358,7 @@ def tomopy_align(tomo, tolerance=0.1, max_iterations = 15, alg = "sirt"):
         # Calculate and return the overall average shift distance across all images
         avg_shifts = np.sqrt(sy**2 + sx**2)
         overall_avg_shift = np.mean(avg_shifts)
-        print(f"\nAverage pixel shift of tomopy_align for iteration {iteration}: {overall_avg_shift}")
+        print(f"Average pixel shift of tomopy_align for iteration {iteration}: {overall_avg_shift}")
 
         # Check if the average shift is below the tolerance
         if overall_avg_shift < tolerance:
@@ -374,12 +374,16 @@ def optical_flow_align(tomo):
 
     WARNING: Does not have ability to be tracked my track_shifts
     """
+    print("Executing optical flow alignment")
     num_rows, num_cols = tomo.finalProjections[0].shape
     row_coords, col_coords = np.meshgrid(np.arange(num_rows), np.arange(num_cols), indexing='ij')
-    for m in tqdm(range(1, tomo.num_angles + 1), desc='Optical Flow Alignment of Projections'):
+    # for m in tqdm(range(1, tomo.num_angles + 1), desc='Optical Flow Alignment of Projections'):
+    for m in tqdm(range(0,tomo.num_angles), desc='Optical Flow Alignment of Projections'):
         # Handle circular indexing for the last projection
-        prev_img = tomo.finalProjections[m - 1]
-        current_img = tomo.finalProjections[m % tomo.num_angles]
+        # prev_img = tomo.finalProjections[m-1]
+        prev_img = tomo.finalProjections[(m + 1) % tomo.num_angles]
+        # current_img = tomo.finalProjections[m % tomo.num_angles]
+        current_img = tomo.finalProjections[m]
 
         # Compute optical flow between two consecutive images
         v, u = optical_flow_tvl1(prev_img, current_img)
@@ -395,12 +399,15 @@ def optical_flow_align_chill(tomo):
 
     WARNING: Does not have ability to be tracked my track_shifts
     """
+    print("Executing optical flow alignment")
     num_rows, num_cols = tomo.finalProjections[0].shape
     row_coords, col_coords = np.meshgrid(np.arange(num_rows), np.arange(num_cols), indexing='ij')
-    for m in tqdm(range(1, tomo.num_angles + 1), desc='Optical Flow Alignment of Projections'):
+    for m in tqdm(range(1, tomo.num_angles + 1), desc='Chill Optical Flow Alignment of Projections'):
         # Handle circular indexing for the last projection
-        prev_img = tomo.finalProjections[m - 1]
-        current_img = tomo.finalProjections[m % tomo.num_angles]
+        # prev_img = tomo.finalProjections[m-1]
+        prev_img = tomo.finalProjections[(m + 1) % tomo.num_angles]
+        # current_img = tomo.finalProjections[m % tomo.num_angles]
+        current_img = tomo.finalProjections[m]
 
         # Compute optical flow between two consecutive images
         v, u = optical_flow_tvl1(prev_img, current_img, 
