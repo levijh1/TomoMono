@@ -3,107 +3,98 @@ if __name__ == '__main__':
     import sys
     import tomoDataClass
     from datetime import datetime
-    import argparse
-    from helperFunctions import DualLogger, subpixel_shift, convert_to_numpy, convert_to_tiff
-    from tqdm import tqdm
-    from scipy.ndimage import shift
-    import numpy as np
+    from helperFunctions import DualLogger, convert_to_tiff
     import tomopy
-    import matplotlib.pyplot as plt
 
+    # -------------------------
+    # CONFIGURATION FLAGS
+    # -------------------------
+    log = False           # Set to True to enable logging output to a file
+    saveToFile = True     # Set to True to save aligned projection data to a TIFF file
 
-    # Configuration flags
-    log = False  # Enable logging to file
-    saveToFile = True  # Enable saving data to file
+    # -------------------------
+    # SETUP: Timing & Logging
+    # -------------------------
+    start_time = time.time()  # Start execution timer
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")  # Generate timestamp for filenames
+    print("timestamp:", timestamp)
 
-    # Start the timer for execution duration tracking
-    start_time = time.time()
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")  # Timestamp for file naming
-    print("timestamp: ", timestamp)
-
-
-    # Setup logging if enabled
     if log:
+        # Redirect stdout/stderr to both console and log file
         sys.stdout = DualLogger(f'logs/output_tomoMono_align{timestamp}.txt', 'w')
-
 
     print("Running Image Registration Script")
 
-
-    # Import foam data
-    # tif_file = "data/fullTomoReconstructions_3_3_25.tif"
-    tif_file = "alignedProjections/aligned_manually_3_3_25.tif"
-    obj, scale_info = convert_to_numpy(tif_file)
-
-    print(obj.shape)
-    tomo = tomoDataClass.tomoData(obj)
-
-    # #Import model data
-    # numAngles = 800
-    # shepp3d = tomopy.shepp3d(size=128)
-    # ang = tomopy.angles(nang=numAngles, ang1=0, ang2=360)
-    # obj = tomopy.project(shepp3d, ang, pad=False)
+    # -------------------------
+    # DATA IMPORT (EXAMPLE FOR REAL DATA)
+    # -------------------------
+    # Uncomment the following lines to use experimental projection data from a TIFF file:
+    # tif_file = "alignedProjections/aligned_manually_3_3_25.tif"
+    # obj, scale_info = convert_to_numpy(tif_file)
+    # print(obj.shape)
     # tomo = tomoDataClass.tomoData(obj)
-    # tomo.jitter()
 
-    #Actually align data
-    """ Choose whatever alignment algorithms you want to use. Options include:
+    # -------------------------
+    # DATA IMPORT (EXAMPLE FOR SIMULATED DATA): Tomopy Simulated Projections (Shepp-Logan Phantom)
+    # -------------------------
+    numAngles = 800
+    shepp3d = tomopy.shepp3d(size=128)  # Generate 3D Shepp-Logan phantom
+    ang = tomopy.angles(nang=numAngles, ang1=0, ang2=360)  # Define projection angles
+    obj = tomopy.project(shepp3d, ang, pad=False)  # Create projection data
+    tomo = tomoDataClass.tomoData(obj)  # Wrap projections in tomoData class
+    scale_info = None
+    tomo.jitter(maxShift=5)  # Add random misalignment to simulate experimental shifts
+
+    # -------------------------
+    # ALIGNMENT INSTRUCTIONS
+    # -------------------------
+    """
+    Alignment Options (defined in alignment_methods.py):
     - cross_correlate_align
     - rotate_correlate_align
     - vertical_mass_fluctuation_align
-    - tomopy_align (joint reprojection algorithm)
-    - PMA (my own projection matching alignment algorithm)
+    - tomopy_align            # TomoPy’s implementation of joint reprojection alignment (PMA)
+    - PMA                     # Custom projection matching algorithm
     - optical_flow_align
-    - center_projections"""
+    - center_projections
+    """
 
     print("Starting alignment")
 
-    name = f"alignedProjections/aligned_manuallyPrepped_PMA_{timestamp}.tif"
-    print("\n \n Creating aligned Projections: ", name)
+    savePath = f"alignedProjections/aligned_manuallyPrepped_PMA_{timestamp}.tif"
+    print("\n\nCreating aligned projections:", savePath)
+
+    # Ensure alignment begins from original, unmodified projections
     tomo.reset_workingProjections()
-    tomo.PMA(max_iterations = 15, tolerance=0.0001, algorithm="SIRT_CUDA", crop_bottom_center_y = 500, crop_bottom_center_x = 750)
-    tomo.center_projections()
-    tomo.make_updates_shift()
-    convert_to_tiff(tomo.get_finalProjections(), name, scale_info)
-    
-    name = f"alignedProjections/aligned_manuallyPrepped_XCA&PMA_{timestamp}.tif"
-    print("\n \n Creating aligned Projections: ", name)
-    tomo.reset_workingProjections()
+
+    # -------------------------
+    # ALIGNMENT STRATEGY
+    # -------------------------
+    # Choose and configure alignment algorithm below:
     tomo.cross_correlate_align(tolerance=0.01, max_iterations = 20)
     tomo.PMA(max_iterations = 15, tolerance=0.0001, algorithm="SIRT_CUDA", crop_bottom_center_y = 500, crop_bottom_center_x = 750)
     tomo.center_projections()
     tomo.make_updates_shift()
-    convert_to_tiff(tomo.get_finalProjections(), name, scale_info)
 
-    name = f"alignedProjections/aligned_manuallyPrepped_XCA&PMA_optFlow{timestamp}.tif"
-    print("\n \n Creating aligned Projections: ", name)
-    tomo.reset_workingProjections()
-    tomo.cross_correlate_align(tolerance=0.01, max_iterations = 20)
-    tomo.PMA(max_iterations = 15, tolerance=0.0001, algorithm="SIRT_CUDA", crop_bottom_center_y = 500, crop_bottom_center_x = 750)
-    tomo.center_projections()
+    # Apply the computed shifts to original data to finalize alignment
     tomo.make_updates_shift()
-    tomo.optical_flow_align()
-    convert_to_tiff(tomo.get_finalProjections(), name, scale_info)
 
-    name = f"alignedProjections/aligned_manuallyPrepped_XCA&PMA_optFlowChill{timestamp}.tif"
-    print("\n \n Creating aligned Projections: ", name)
-    tomo.reset_workingProjections()
-    tomo.cross_correlate_align(tolerance=0.01, max_iterations = 20)
-    tomo.PMA(max_iterations = 15, tolerance=0.0001, algorithm="SIRT_CUDA", crop_bottom_center_y = 500, crop_bottom_center_x = 750)
-    tomo.center_projections()
-    tomo.make_updates_shift()
-    tomo.optical_flow_align_chill()
-    convert_to_tiff(tomo.get_finalProjections(), name, scale_info)
+    # -------------------------
+    # SAVE RESULTS (Optional)
+    # -------------------------
+    if saveToFile:
+        convert_to_tiff(tomo.get_finalProjections(), savePath, scale_info)
 
-
-    # End the timer
+    # -------------------------
+    # EXECUTION TIME REPORTING
+    # -------------------------
     end_time = time.time()
+    print(f"Script completed in {end_time - start_time:.2f} seconds.")
 
-    # Calculate and print the duration
-    print(f"Script completed in {end_time - start_time} seconds.")
-
+    # Restore original stdout/stderr if logging was enabled
     if log:
         sys.stdout.close()
         sys.stdout = sys.__stdout__
         sys.stderr = sys.__stderr__
+
 

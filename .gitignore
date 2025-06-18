@@ -1,7 +1,12 @@
-logs/
+logs/*
 shift_values/
-reconstructions/
-alignedProjections/
+reconstructions/*
+alignedProjections/*
+data/*
+figures/*
+FRC Scan Split Test/
+frcInfo/
+Run135Info
 
 #tif or tiff files
 *.tif

@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-# import tomopy
+import tomopy
 import numpy as np
 import matplotlib.pyplot as plt
 from IPython.display import display, clear_output
@@ -67,6 +67,7 @@ def subpixel_shift(image, shift_y, shift_x):
     # Inverse Fourier transform to get the shifted image
     shifted_image = np.fft.ifft2(shifted_fft_image).real
 
+    ###Uncomment this code if you want the shift to not wrap around the image and just be zeros at the edge instead
     # # Create a mask of valid regions
     # mask = np.ones_like(image)
 
@@ -126,8 +127,6 @@ class MoviePlotter:
     def update_plot(self, frame):
         with self.output:
             self.output.clear_output(wait=True)  # Clear the previous frame
-            # Plot with global color normalization
-            # plt.imshow(self.x[frame])
             plt.imshow(self.x[frame], vmin=self.global_min, vmax=self.global_max, cmap='gray')
             plt.colorbar(label='Intensity')
             plt.title(f"Frame {frame}")
