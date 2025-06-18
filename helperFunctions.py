@@ -127,7 +127,7 @@ class MoviePlotter:
     def update_plot(self, frame):
         with self.output:
             self.output.clear_output(wait=True)  # Clear the previous frame
-            plt.imshow(self.x[frame], vmin=self.global_min, vmax=self.global_max, cmap='gray')
+            plt.imshow(self.x[frame], vmin=self.global_min, vmax=self.global_max)
             plt.colorbar(label='Intensity')
             plt.title(f"Frame {frame}")
             plt.show()

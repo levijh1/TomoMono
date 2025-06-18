@@ -85,7 +85,10 @@ class tomoData:
         for i in range(1, self.num_angles-1):
             x_shift = multiplier * (random.random() - 0.5)
             y_shift = multiplier * (random.random() - 0.5)
-            self.data[i] = sp.ndimage.shift(self.data[i], (x_shift, y_shift), mode="constant")
+            # self.data[i] = sp.ndimage.shift(self.data[i], (x_shift, y_shift), mode="constant")
+            self.data[i] = subpixel_shift(self.data[i], y_shift, x_shift)
+            self.data[i] = self.data[i] * (self.data[i] > 0)
+
         self.workingProjections = self.data.copy()
         self.finalProjections = self.data.copy()
 
@@ -102,7 +105,6 @@ class tomoData:
         - new_x (int): Target width of the crop.
         - new_y (int): Target height of the crop.
         """
-        #TODO: FIX THIS FUNCTION TO BE MORE EFFICIENT
         y, x = self.workingProjections[0].shape
         startx = x // 2 - new_x // 2
         endx = startx + new_x
@@ -114,28 +116,48 @@ class tomoData:
         self.finalProjections = self.finalProjections[:,starty:endy, startx:endx]
         self.image_size = self.workingProjections.shape[1:]
 
+    # def crop_bottom_center(self, new_y, new_x):
+    #     """
+    #     Crops the center portion of the image without cutting off anything from the bottom.
+
+    #     Parameters:
+    #     - new_y (int): Target height of the crop.
+    #     - new_x (int): Target width of the crop.
+    #     """
+    #     cropped_array = np.zeros((self.workingProjections.shape[0], new_y, new_x), dtype=self.workingProjections.dtype)
+    #     print(f"Cropping projections to size: {new_x}x{new_y}")
+    #     for i, array in enumerate(self.workingProjections):
+    #         y, x = array.shape
+    #         startx = x // 2 - new_x // 2
+    #         endx = startx + new_x
+    #         starty = y - new_y
+    #         endy = y
+    #         startx, endx = max(0, startx), min(x, endx)
+    #         starty, endy = max(0, starty), min(y, endy)
+    #         cropped_array[i] = array[starty:endy, startx:endx]
+    #     self.workingProjections = cropped_array
+    #     self.finalProjections = cropped_array
+    #     self.image_size = self.workingProjections.shape[1:]
+
     def crop_bottom_center(self, new_y, new_x):
         """
-        Crops the center portion of the image without cutting off anything from the bottom.
+        Crops each 2D array in the 3D array to a specified size, aligned to the bottom and centered horizontally.
 
         Parameters:
         - new_y (int): Target height of the crop.
         - new_x (int): Target width of the crop.
         """
-        cropped_array = np.zeros((self.workingProjections.shape[0], new_y, new_x), dtype=self.workingProjections.dtype)
-        print(f"Cropping projections to size: {new_x}x{new_y}")
-        for i, array in enumerate(self.workingProjections):
-            y, x = array.shape
-            startx = x // 2 - new_x // 2
-            endx = startx + new_x
-            starty = y - new_y
-            endy = y
-            startx, endx = max(0, startx), min(x, endx)
-            starty, endy = max(0, starty), min(y, endy)
-            cropped_array[i] = array[starty:endy, startx:endx]
-        self.workingProjections = cropped_array
-        self.finalProjections = cropped_array
+        y, x = self.workingProjections[0].shape
+        startx = x // 2 - new_x // 2
+        endx = startx + new_x
+        starty = y - new_y
+        endy = y
+        startx, endx = max(0, startx), min(x, endx)
+        starty, endy = max(0, starty), min(y, endy)
+        self.workingProjections = self.workingProjections[:, starty:endy, startx:endx]
+        self.finalProjections = self.finalProjections[:, starty:endy, startx:endx]
         self.image_size = self.workingProjections.shape[1:]
+
 
     def track_shifts(self):
         """
@@ -163,13 +185,14 @@ class tomoData:
             self.finalProjections[m] = rotate(self.finalProjections[m], self.tracked_rotations[m], reshape=False, mode='constant')
         self.tracked_shifts = np.zeros((self.num_angles, 2))
 
-    def normalize(self):
+    def normalize(self, isPhaseData):
         """
         Normalizes all projections to be positive values between 0 and 1.
         """
         print("\n")
         print("Normalizing projections")
-        self.workingProjections = -self.workingProjections
+        if isPhaseData:
+            self.workingProjections = -self.workingProjections
         self.workingProjections = (self.workingProjections - np.min(self.workingProjections)) / (np.max(self.workingProjections) - np.min(self.workingProjections))
         self.finalProjections = np.copy(self.workingProjections)
 
@@ -268,8 +291,7 @@ class tomoData:
                 print("Aligned projections shifted by {} pixels".format(x_shift))
                 x_shift_check = (self.image_size[1] // 2 - (self.rotation_center))
             self.center_offset = abs(x_shift_check)
-            print("Projections are currently centered at pixel {}".format(self.rotation_center))
-            print("Residual offset: {} pixels".format(self.center_offset))
+            print(f"Projections are currently centered at pixel {self.rotation_center}. Residual offset: {self.center_offset}")
             self.tracked_shifts[:, 1] += x_shift
 
     def reconstruct(self, algorithm, snr_db=None):
