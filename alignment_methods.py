@@ -10,6 +10,7 @@ from skimage.transform import warp
 import cv2
 import scipy as sp
 import matplotlib.pyplot as plt
+from math import ceil
 
 def bilateralFilter(tomo, d=15, sigmaColor=0.3, sigmaSpace=100):
     """
@@ -50,12 +51,14 @@ def cross_correlate_align(tomo, tolerance=1, max_iterations=15, stepRatio=1, yRO
         total_shift = 0
         max_shift = 0
 
-        for m in tqdm(range(1, tomo.num_angles + 1), desc=f'Iteration {iteration + 1}/max_iterations'):
-            # Handle circular indexing for the last projection
+        for m in tqdm(range(1, tomo.num_angles + 1), desc=f'Iteration {iteration + 1}/{max_iterations}'):
             if xROI_Range == None and yROI_Range == None:
+                # If no ROI is specified, use the full image
                 img1 = tomo.workingProjections[m - 1]
-                img2 = tomo.workingProjections[m % tomo.num_angles]
+                img2 = tomo.workingProjections[m % tomo.num_angles] # Handle circular indexing for the last projection
             else:
+                # If ROI is specified, crop the images accordingly
+                # ROI can be set to lock in on regions of the image where image is sharpest (like the tip of a pillar)
                 img1 = tomo.workingProjections[m - 1][yROI_Range[0]:yROI_Range[1], xROI_Range[0]:xROI_Range[1]]
                 img2 = tomo.workingProjections[m % tomo.num_angles][yROI_Range[0]:yROI_Range[1], xROI_Range[0]:xROI_Range[1]]
             
@@ -179,6 +182,7 @@ def PMA(tomo, max_iterations=5, tolerance=0.1, algorithm='art', crop_bottom_cent
     Performs Projection Matching Alignment (PMA) by comparing 2D projections to simulated projections of the current 3D reconstruction and minimizing differences.
     Projections must be normalized for this method to work.
     Automatically centers projections before and after running the algorithm.
+    Since cropping is part of the algorith, it is recommended to use PMA as one of the last alignment algorithms.
 
     Source: Odstrčil. Alignment methods for nanotomography with deep subpixel accuracy.
     https://doi.org/10.1364/oe.27.036637
@@ -193,6 +197,8 @@ def PMA(tomo, max_iterations=5, tolerance=0.1, algorithm='art', crop_bottom_cent
     - isPhaseData (bool): Whether the data is phase data, which may require sign inversion.
     """
     print("Projection Matching Alignment (PMA)")
+
+    # Cropping will affect both workingProjections and finalProjections, Crop just to remove outside noise to improve 3D reconstructions
     tomo.crop_bottom_center(crop_bottom_center_y, crop_bottom_center_x)
     if standardize:
         tomo.standardize(isPhaseData=isPhaseData)
@@ -229,8 +235,8 @@ def PMA(tomo, max_iterations=5, tolerance=0.1, algorithm='art', crop_bottom_cent
                 sinogram_order=False
             )
 
-        recon_iterated = tomopy.circ_mask(recon_iterated, axis=0, ratio=0.95)
-        #TODO: Crop images to match the cropping done by this mask?
+        ratio = 0.95
+        recon_iterated = tomopy.circ_mask(recon_iterated, axis=0, ratio=ratio)
 
         iterated = tomopy.project(recon_iterated, tomo.ang, pad=False)
         if standardize:
@@ -239,8 +245,10 @@ def PMA(tomo, max_iterations=5, tolerance=0.1, algorithm='art', crop_bottom_cent
         total_x_shift = 0
         total_y_shift = 0
         for i in range(tomo.num_angles):
-            img1 = iterated[i]
-            img2 = tomo.workingProjections[i]
+            #Assign images to compare and crop images to match the cropping done by the circular mask
+            cropping = ceil((1-ratio) * tomo.image_size[0] / 2)
+            img1 = iterated[i][:,cropping:-cropping]
+            img2 = tomo.workingProjections[i][:,cropping:-cropping]
             num_rows, num_cols = img1.shape
 
             correlation = correlate(img1, img2, mode='same')
@@ -248,16 +256,16 @@ def PMA(tomo, max_iterations=5, tolerance=0.1, algorithm='art', crop_bottom_cent
             y_shift -= num_rows // 2
             x_shift -= num_cols // 2
 
-            # if i == 100:
-            #     plt.imshow(img1)
-            #     plt.colorbar()
-            #     plt.show()
-            #     plt.imshow(img2)
-            #     plt.colorbar()
-            #     plt.show()
-            #     plt.imshow(correlation)
-            #     plt.show()
-            #     print("Y shift:", y_shift, "X shift:", x_shift)
+            if i == 100:
+                plt.imshow(img1)
+                plt.colorbar()
+                plt.show()
+                plt.imshow(img2)
+                plt.colorbar()
+                plt.show()
+                plt.imshow(correlation)
+                plt.show()
+                print("Y shift:", y_shift, "X shift:", x_shift)
 
             tomo.workingProjections[i % tomo.num_angles] = subpixel_shift(
                 tomo.workingProjections[i % tomo.num_angles], y_shift, x_shift
@@ -273,7 +281,7 @@ def PMA(tomo, max_iterations=5, tolerance=0.1, algorithm='art', crop_bottom_cent
         average_y_shift = total_y_shift / tomo.num_angles
 
 
-        print(f"Average pixel shift of iteration {k} - total: {average_shift}, just in x: {average_x_shift}, just in y: {average_y_shift}")
+        print(f"Average pixel shift of iteration {k} - (x: {average_x_shift}, y: {average_y_shift}), Total: {average_shift}")
 
 
         if average_shift < tolerance:

@@ -1,73 +1,208 @@
 # TomoMono
 
-TomoMono is a Python-based tool designed for reconstructing and analyzing tomographic data. It leverages the capabilities of the TomoPy and SVMBIR libraries to perform advanced image processing and 3D reconstruction, specifically targeting applications in materials science and imaging studies.
+**TomoMono** is a Python-based toolkit for tomographic data alignment, reconstruction, and analysis. It leverages the TomoPy and SVMBIR libraries to provide a flexible, scriptable workflow for both simulated and experimental tomography data, with a focus on materials science and imaging research.
+
+---
+
+## Table of Contents
+
+- [Features](#features)
+- [Installation](#installation)
+  - [Conda Environment Setup](#conda-environment-setup)
+  - [Installing Dependencies](#installing-dependencies)
+- [Repository Structure](#repository-structure)
+- [Basic Usage](#basic-usage)
+- [Alignment Strategies](#alignment-strategies)
+- [Tomographic Reconstruction Algorithms](#tomographic-reconstruction-algorithms)
+- [Contributing](#contributing)
+- [License](#license)
+- [Contact](#contact)
+
+---
 
 ## Features
 
-- **2D and 3D Reconstruction**: Implements various algorithms like Filtered Back Projection (FBP), Algebraic Reconstruction Technique (ART), and Model-Based Iterative Reconstruction (MBIR) for accurate 3D reconstruction.
-- **Data Alignment**: Provides tools for correcting misalignments in projection data using cross-correlation and other techniques.
-- **Mass Density Calculation**: Computes electron and mass density based on phase shift measurements from X-ray ptychography data.
+- **Flexible Alignment**: Multiple alignment strategies for correcting projection misalignments, including cross-correlation, projection matching, optical flow, and more.
+- **3D Reconstruction**: Supports a variety of reconstruction algorithms, including GPU-accelerated and model-based iterative methods.
+- **Simulated & Real Data**: Easily switch between simulated phantoms and experimental datasets.
+- **Visualization**: Tools for visualizing projections and reconstructions interactively in Jupyter notebooks or scripts.
+- **Batch Processing**: Scripts for automated alignment and reconstruction pipelines.
+
+---
 
 ## Installation
 
-To get started with TomoMono, clone the repository and install the necessary dependencies:
+### Conda Environment Setup
+
+It is recommended to use a [conda](https://docs.conda.io/en/latest/) environment to manage dependencies and avoid conflicts:
 
 ```bash
+# Create a new conda environment named 'tomomono'
+conda create -n tomomono python=3.9
+conda activate tomomono
+```
+
+### Installing Dependencies
+
+After activating your environment, install all required dependencies using the provided `requirements.txt`:
+
+```bash
+# Clone the repository
 git clone https://github.com/levijh1/TomoMono.git
 cd TomoMono
+
+# Install dependencies
 pip install -r requirements.txt
 ```
 
+Some dependencies (e.g., TomoPy, SVMBIR, ASTRA toolbox) may require additional system libraries or conda-forge channels. If you encounter issues, try:
+
+```bash
+conda install -c conda-forge tomopy astra-toolbox svmbir
+```
+
+---
+
 ## Repository Structure
-Python Scripts
-- **main.py**: This is the primary script that orchestrates the entire tomographic reconstruction pipeline. It includes the loading of data, reconstruction using different algorithms, and saving of the results for further analysis. It implements various 3D reconstruction algorithms, including Filtered Back Projection (FBP), Algebraic Reconstruction Technique (ART), Simultaneous Iterative Reconstruction Technique (SIRT), and Model-Based Iterative Reconstruction (MBIR). The MBIR algorithm is noted to produce the best visual results and is preferred for final reconstructions.
 
-- **align.py**: This script focuses on aligning the 2D ptychographic reconstructions using methods such as cross-correlation, joint projection matching, and optical flow alignment. Proper alignment is crucial for accurate 3D reconstruction.
+- **main.py**: Main script for running 3D reconstructions on aligned data.
+- **align.py**: Script for aligning projection data using various strategies.
+- **tomoDataClass.py**: Defines the `tomoData` class, which manages data, alignment, and reconstruction.
+- **alignment_methods.py**: Contains all alignment algorithms (see below).
+- **helperFunctions.py**: Utility functions for plotting, shifting, and file I/O.
+- **tomoMono_demo.ipynb**: Demo walking through the basics of tomoMono
+- **notebooks/**: Example workflows and analysis (e.g., `tomoMono_demo.ipynb`, `densityConversion.ipynb`).
+- **data/**: Directory for raw or simulated projection data.
+- **alignedProjections/**: Stores aligned projection TIFF files.
+- **logs/**: Output logs from script runs.
+- **reconstructions/**: Output 3D reconstructions.
 
-Support python scripts
-- **tomoDataClass.py**: Defines the tomoData class and contains all implementation of alignment and reconstruction
+---
 
-- **helperFunctions.py**: Contains several functions referenced within the code
+## Basic Usage
 
-- **pltwidget.py**: Simple script that contains the definition of a function to output a widget with a slider to look at a 3D array of projections
+1. **Simulate or Load Data**  
+   Use TomoPy to generate a phantom or load your own projection data.
 
-- **tiffConverter.py**: Contains functions for converting numpy arrays into tif files and tif files into numpy arrays (preserving the scale information in the original tif files)
+2. **Alignment**  
+   Use `align.py` or the `tomoData` class to align projections. Choose an alignment strategy (see below).
 
-Jupyter Notebooks
-- **densityConversion.ipynb**: This notebook contains the workflow for calculating the mass density of the foam based on the reconstructed 3D volumes. It includes the conversion of phase shift values to electron density and the subsequent calculation of mass density.
+3. **Reconstruction**  
+   Use `main.py` or the `tomoData.reconstruct()` method to reconstruct the 3D volume using your preferred algorithm.
 
-- **Drop worst contrast images.ipynb**: Not a very important notebook. It was an experiment I tried to generate a dataset where the 'worst' 10 percent of projections based on contrast and feature sharpness were dropped from the dataset.
+4. **Visualization**  
+   Use the provided plotting functions or Jupyter notebooks to visualize projections and reconstructions.
 
-- **SeedingPtychographyRecons.ipynb**: Not a very important notebook. It was another experiment I tried to try creating a dataset that could seed the 2D reconstruction ptychography code written by Kevin Mertes (LANL), KMPty, to potentially create better reconstructions
+**Example (Jupyter Notebook):**
+```python
+from tomoDataClass import tomoData
+import tomopy
 
+# Simulate data
+obj = tomopy.shepp3d(size=256)
+angles = tomopy.angles(nang=200, ang1=0, ang2=360)
+projections = tomopy.project(obj, angles, pad=False)
 
-Directories
-- **data**: Must contain a tif file containing a 3D array of all of your data. The shape of the array should be like this [numAngles, imageHeight, imageWdith]
-- **alignedProjections**: A tif array of all of the projections after the alignment process will be saved here with a timestamp in the fileName for everytime you run align.py with the 'save' boolean variable set to True.
-- **logs**: If variable 'log' is set to True in either align.py or main.py, log files of the code output will be saved here
-- **reconstructions**: All 3D reconstructions from main.py will be saved here if 'saveToFile' variable is set to True
+# Initialize tomoData object
+tomo = tomoData(projections)
 
-## Dependencies
-Ensure that the following Python libraries are installed:
+# Add jitter and noise
+tomo.jitter(maxShift=7)
+tomo.add_noise()
 
-numpy
-scipy
-tomopy
-ASTRA
-skimage
-matplotlib
-dragonfly
-These dependencies can be installed using pip or conda.
+# Align and reconstruct
+tomo.cross_correlate_align(tolerance=0.1, max_iterations=15)
+tomo.PMA(max_iterations=5, tolerance=0.05, algorithm='art')
+tomo.make_updates_shift()
+tomo.reconstruct(algorithm='art')
 
+# Visualize
+tomo.makeNotebookReconMovie()
+```
 
-## Usage 
-The main functionality is demonstrated in the 'align.py' and 'main.py' python files. These files guide you through loading data, performing reconstructions, and visualizing results
+---
+
+## Alignment Strategies
+
+All alignment methods are implemented in `alignment_methods.py` and accessible via the `tomoData` class. The main strategies are:
+
+- **cross_correlate_align**  
+  Aligns projections by maximizing cross-correlation between consecutive images. Fast and robust for most datasets.
+
+- **rotate_correlate_align**  
+  Corrects rotational misalignments by maximizing cross-correlation after rotating projections.
+
+- **PMA (Projection Matching Alignment)**  
+  Iteratively aligns projections by comparing them to simulated projections from the current 3D reconstruction. Highly accurate, recommended as a final alignment step.
+
+- **vertical_mass_fluctuation_align**  
+  Aligns pairs of projections at opposite angles by minimizing vertical center-of-mass differences.
+
+- **tomopy_align**  
+  Uses TomoPy's joint reprojection algorithm for global alignment.
+
+- **optical_flow_align**  
+  Uses dense optical flow (TV-L1) to align projections. Useful for complex, non-rigid misalignments.
+
+Each method can be called as a method of the `tomoData` object, e.g.:
+```python
+tomo.cross_correlate_align(tolerance=0.1, max_iterations=10)
+tomo.PMA(max_iterations=5, tolerance=0.05, algorithm='art')
+```
+
+---
+
+## Tomographic Reconstruction Algorithms
+
+The following algorithms are available for 3D reconstruction (see `tomoData.reconstruct()`):
+
+- **sirt**  
+  Simultaneous Iterative Reconstruction Technique. CPU-based, robust, and widely used.
+
+- **art**  
+  Algebraic Reconstruction Technique. CPU-based, iterative, and good for sparse data.
+
+- **tv**  
+  Total Variation minimization. Useful for denoising and edge preservation.
+
+- **gridrec**  
+  Fast Fourier-based reconstruction. Very fast, but less robust to noise and misalignment.
+
+- **SIRT_CUDA**  
+  GPU-accelerated SIRT using the ASTRA toolbox. **Recommended for best speed and quality if you have a CUDA-capable GPU.**  
+  *Note: Will only work if a compatible GPU is available.*
+
+- **svmbir**  
+  Model-Based Iterative Reconstruction (MBIR) via SVMBIR. Produces high-quality results, especially for noisy or incomplete data, but is slower than SIRT_CUDA.
+
+**Algorithm Selection Tips:**
+- Use **SIRT_CUDA** if you have a GPU—it's the fastest and often produces the best results.
+- Use **svmbir** for the highest quality, especially with challenging data, but expect longer runtimes.
+- Use **sirt**, **art**, or **gridrec** for quick CPU-based reconstructions or for testing.
+
+**Example:**
+```python
+tomo.reconstruct(algorithm='SIRT_CUDA')  # Fast, high-quality (GPU required)
+tomo.reconstruct(algorithm='svmbir')     # High-quality, slower (CPU or GPU)
+tomo.reconstruct(algorithm='art')        # CPU-based, iterative
+```
+
+---
 
 ## Contributing
-Contributions are welcome! Please fork the repository, create a new branch, and submit a pull request with your changes.
+
+Contributions are welcome! Please fork the repository, create a new branch, and submit a pull request. For major changes, open an issue first to discuss your ideas.
+
+---
 
 ## License
-This project is licensed under the MIT License - see the LICENSE file for details.
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+---
 
 ## Contact
-For any questions or inquiries, please contact the repository owner, Levi Hancock.
+
+For questions or feedback, please contact the repository owner, Levi Hancock.
+
+---
