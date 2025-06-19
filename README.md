@@ -70,9 +70,8 @@ conda install -c conda-forge tomopy astra-toolbox svmbir
 - **tomoDataClass.py**: Defines the `tomoData` class, which manages data, alignment, and reconstruction.
 - **alignment_methods.py**: Contains all alignment algorithms (see below).
 - **helperFunctions.py**: Utility functions for plotting, shifting, and file I/O.
-- **pltwidget.py**: Interactive plotting widget for 3D arrays.
-- **tiffConverter.py**: Functions for converting between TIFF and numpy arrays.
-- **Jupyter Notebooks**: Example workflows and analysis (e.g., `tomoMono_demo.ipynb`, `densityConversion.ipynb`).
+- **tomoMono_demo.ipynb**: Demo walking through the basics of tomoMono
+- **notebooks/**: Example workflows and analysis (e.g., `tomoMono_demo.ipynb`, `densityConversion.ipynb`).
 - **data/**: Directory for raw or simulated projection data.
 - **alignedProjections/**: Stores aligned projection TIFF files.
 - **logs/**: Output logs from script runs.
