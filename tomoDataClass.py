@@ -274,7 +274,6 @@ class tomoData:
         Determines and adjusts the center of rotation for 2D projection images by finding the initial center,
         shifting the projections to center them, and calculating any remaining offset (to check if it needs to be done again).
         """
-        print("\n")
         print("Centering Projections")
         self.center_offset = 10
         while self.center_offset > 1:
