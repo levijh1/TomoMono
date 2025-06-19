@@ -38,6 +38,7 @@ git clone https://github.com/levijh1/TomoMono.git
 cd TomoMono
 
 # Install dependencies (This will take a while)
+# Will create an envrionment called tomoMono
 conda env create -f environment.yml
 ```
 
