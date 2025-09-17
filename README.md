@@ -30,35 +30,16 @@
 
 ---
 
-## Installation
-
-### Conda Environment Setup
-
-It is recommended to use a [conda](https://docs.conda.io/en/latest/) environment to manage dependencies and avoid conflicts:
-
-```bash
-# Create a new conda environment named 'tomomono'
-conda create -n tomomono python=3.9
-conda activate tomomono
-```
-
 ### Installing Dependencies
-
-After activating your environment, install all required dependencies using the provided `requirements.txt`:
 
 ```bash
 # Clone the repository
 git clone https://github.com/levijh1/TomoMono.git
 cd TomoMono
 
-# Install dependencies
-pip install -r requirements.txt
-```
-
-Some dependencies (e.g., TomoPy, SVMBIR, ASTRA toolbox) may require additional system libraries or conda-forge channels. If you encounter issues, try:
-
-```bash
-conda install -c conda-forge tomopy astra-toolbox svmbir
+# Install dependencies (This will take a while)
+# Will create an envrionment called tomoMono
+conda env create -f environment.yml
 ```
 
 ---
