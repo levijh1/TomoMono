@@ -32,18 +32,35 @@ if __name__ == '__main__':
     # tif_file = "alignedProjections/aligned_manually_3_3_25.tif"
     # obj, scale_info = convert_to_numpy(tif_file)
     # print(obj.shape)
-    # tomo = tomoDataClass.tomoData(obj)
 
-    # -------------------------
-    # DATA IMPORT (EXAMPLE FOR SIMULATED DATA): Tomopy Simulated Projections (Shepp-Logan Phantom)
-    # -------------------------
-    numAngles = 800
-    shepp3d = tomopy.shepp3d(size=128)  # Generate 3D Shepp-Logan phantom
-    ang = tomopy.angles(nang=numAngles, ang1=0, ang2=360)  # Define projection angles
-    obj = tomopy.project(shepp3d, ang, pad=False)  # Create projection data
-    tomo = tomoDataClass.tomoData(obj)  # Wrap projections in tomoData class
-    scale_info = None
-    tomo.jitter(maxShift=5)  # Add random misalignment to simulate experimental shifts
+    #Importing data from Taylor Buckway h5 file (APS data)
+    import h5py
+    import numpy as np
+    filename = r"/home/ljh79/TomoMono/data/poly_tomo_128.hdf5"
+    num_remove = 0   #images with the holder at the end to remove
+    with h5py.File(filename, "r") as f:
+        data = np.array(f["/object"])
+        angles = list(f["/angles"])
+    print("data shape is: ", data.shape)
+    print("angles shape is: ", angles.shape)
+    #removing images with holder in the way
+    if num_remove > 0:
+        data = data[:-num_remove]
+        angles = angles[:-num_remove]
+    tomo = tomoDataClass.tomoData(data)
+    tomo.makeScriptProjMovie()
+    sys.exit(0) 
+
+    # # -------------------------
+    # # DATA IMPORT (EXAMPLE FOR SIMULATED DATA): Tomopy Simulated Projections (Shepp-Logan Phantom)
+    # # -------------------------
+    # numAngles = 800
+    # shepp3d = tomopy.shepp3d(size=128)  # Generate 3D Shepp-Logan phantom
+    # ang = tomopy.angles(nang=numAngles, ang1=0, ang2=360)  # Define projection angles
+    # obj = tomopy.project(shepp3d, ang, pad=False)  # Create projection data
+    # tomo = tomoDataClass.tomoData(obj)  # Wrap projections in tomoData class
+    # scale_info = None
+    # tomo.jitter(maxShift=5)  # Add random misalignment to simulate experimental shifts
 
     # -------------------------
     # ALIGNMENT INSTRUCTIONS

@@ -1,4 +1,4 @@
-name: /sdf/group/lcls/ds/tools/conda_envs/tomopy_gpu
+name: tomoMono
 channels:
   - nvidia
   - astra-toolbox
@@ -336,4 +336,4 @@ dependencies:
       - torchaudio==2.4.1+cu118
       - torchvision==0.19.1+cu118
       - triton==3.0.0
-prefix: /sdf/group/lcls/ds/tools/conda_envs/tomopy_gpu
+prefix: tomoMono
