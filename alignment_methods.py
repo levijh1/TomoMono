@@ -28,6 +28,7 @@ def bilateralFilter(tomo, d=15, sigmaColor=0.3, sigmaSpace=100):
         )
 
 def cross_correlate_align(tomo, tolerance=1, max_iterations=15, stepRatio=1, yROI_Range=[200, -100], xROI_Range=[170, -170], maxShiftTolerance=2):
+    #TODO: GPU accelerate. Try to vectorize it.
     """
     Aligns projection images by maximizing cross-correlation between consecutive slices.
     Iterates until the average shift per iteration is below the specified tolerance.

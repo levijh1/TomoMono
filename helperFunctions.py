@@ -37,7 +37,7 @@ def add_noise(m):
 
 def subpixel_shift(image, shift_y, shift_x):
     """
-    Shift a 2D image using a phase ramp in the Fourier domain and pad out-of-bounds regions with zeros.
+    Shift a 2D image using a phase ramp in the Fourier domain and pad out-of-bounds regions with zeros (if that part of the code is uncommented).
 
     Parameters:
     image (2D numpy array): The input image to be shifted.

@@ -3,13 +3,13 @@ if __name__ == '__main__':
     import sys
     import tomoDataClass
     from datetime import datetime
-    from helperFunctions import DualLogger, convert_to_tiff
+    from helperFunctions import DualLogger, convert_to_tiff, subpixel_shift
     import tomopy
 
     # -------------------------
     # CONFIGURATION FLAGS
     # -------------------------
-    log = False           # Set to True to enable logging output to a file
+    log = True           # Set to True to enable logging output to a file
     saveToFile = True     # Set to True to save aligned projection data to a TIFF file
 
     # -------------------------
@@ -37,19 +37,27 @@ if __name__ == '__main__':
     import h5py
     import numpy as np
     filename = r"/home/ljh79/TomoMono/data/poly_tomo_128.hdf5"
-    num_remove = 0   #images with the holder at the end to remove
+
+    indicesToRemove = [0,1,2,3,4,5,53,60,67,69,82,90,178,183,186, 209, 218, 219, 221, 224, 254, 258, 276, 278, 304, 306] + list(range(308,325)) ##Look out for 200, 
+
     with h5py.File(filename, "r") as f:
-        data = np.array(f["/object"])
+        data = np.array(f["/data"])
         angles = list(f["/angles"])
-    print("data shape is: ", data.shape)
-    print("angles shape is: ", angles.shape)
+
+    data[0] = subpixel_shift(data[0], 0, 400)
+
     #removing images with holder in the way
-    if num_remove > 0:
-        data = data[:-num_remove]
-        angles = angles[:-num_remove]
-    tomo = tomoDataClass.tomoData(data)
-    tomo.makeScriptProjMovie()
-    sys.exit(0) 
+    print("data shape is: ", data.shape)
+    print("angles shape is: ", len(angles))
+    # for index in reversed(indicesToRemove):
+    #     print(index)
+    data = np.delete(data, indicesToRemove, axis = 0)
+    angles = np.delete(angles, indicesToRemove, axis = 0)
+    print("data shape after removing is: ", data.shape)
+    print("angles shape after removing is: ", len(angles))
+
+    tomo = tomoDataClass.tomoData(data, angles)
+    scale_info = None
 
     # # -------------------------
     # # DATA IMPORT (EXAMPLE FOR SIMULATED DATA): Tomopy Simulated Projections (Shepp-Logan Phantom)
@@ -76,20 +84,73 @@ if __name__ == '__main__':
     - center_projections
     """
 
+
+
+
+
+
     print("Starting alignment")
 
-    savePath = f"alignedProjections/aligned_manuallyPrepped_PMA_{timestamp}.tif"
+    savePath = f"alignedProjections/APSbeamtime1/aligned_XC_{timestamp}.tif"
     print("\n\nCreating aligned projections:", savePath)
 
     # Ensure alignment begins from original, unmodified projections
-    tomo.reset_workingProjections()
+    tomo.reset_workingProjections(x_size = data.shape[2], y_size=data.shape[1])
 
     # -------------------------
     # ALIGNMENT STRATEGY
     # -------------------------
     # Choose and configure alignment algorithm below:
-    tomo.cross_correlate_align(tolerance=0.01, max_iterations = 20)
-    tomo.PMA(max_iterations = 15, tolerance=0.0001, algorithm="SIRT_CUDA", crop_bottom_center_y = 500, crop_bottom_center_x = 750)
+    tomo.cross_correlate_align(tolerance=0.01, max_iterations = 10, yROI_Range=[30, -30], xROI_Range=[0, tomo.workingProjections.shape[2]], maxShiftTolerance=5)
+    tomo.cross_correlate_align(tolerance=0.01, max_iterations = 10, yROI_Range=[30, -30], xROI_Range=[760, -760], maxShiftTolerance=5)
+    # tomo.PMA(max_iterations = 10, tolerance=0.0001, algorithm="SIRT_CUDA", crop_bottom_center_y = tomo.workingProjections.shape[1]-40, crop_bottom_center_x = 1000, isPhaseData = True)
+    tomo.center_projections()
+    tomo.make_updates_shift()
+
+    # Apply the computed shifts to original data to finalize alignment
+    tomo.make_updates_shift()
+
+    # -------------------------
+    # SAVE RESULTS (Optional)
+    # -------------------------
+    if saveToFile:
+        convert_to_tiff(tomo.get_finalProjections(), savePath, scale_info)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    print("Starting alignment")
+
+    savePath = f"alignedProjections/APSbeamtime1/aligned_XC&PMA_{timestamp}.tif"
+    print("\n\nCreating aligned projections:", savePath)
+
+    # Ensure alignment begins from original, unmodified projections
+    tomo.reset_workingProjections(x_size = data.shape[2], y_size=data.shape[1])
+
+    # -------------------------
+    # ALIGNMENT STRATEGY
+    # -------------------------
+    # Choose and configure alignment algorithm below:
+    tomo.cross_correlate_align(tolerance=0.01, max_iterations = 10, yROI_Range=[30, -30], xROI_Range=[0, tomo.workingProjections.shape[2]], maxShiftTolerance=5)
+    tomo.cross_correlate_align(tolerance=0.01, max_iterations = 10, yROI_Range=[30, -30], xROI_Range=[760, -760], maxShiftTolerance=5)
+    tomo.PMA(max_iterations = 10, tolerance=0.0001, algorithm="SIRT_CUDA", crop_bottom_center_y = tomo.workingProjections.shape[1]-40, crop_bottom_center_x = 1000, isPhaseData = True)
     tomo.center_projections()
     tomo.make_updates_shift()
 

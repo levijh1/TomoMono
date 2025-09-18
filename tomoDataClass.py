@@ -14,7 +14,7 @@ class tomoData:
     Class for handling tomographic data, including preprocessing, alignment, and reconstruction.
     """
 
-    def __init__(self, data):
+    def __init__(self, data, angles = None):
         """
         Initializes the TomoData object with the provided dataset.
         Make sure that you check that the ang variable has the same range and number of angles as the collected data.
@@ -25,13 +25,16 @@ class tomoData:
         self.num_angles = data.shape[0]
         self.image_size = data.shape[1:]
         self.data = data
-        self.ang = tomopy.angles(nang=self.num_angles, ang1=0, ang2=360)
         self.workingProjections = np.copy(data)
         self.rotation_center = 0
         self.center_offset = 0
         self.finalProjections = np.copy(data)
         self.tracked_shifts = np.zeros((self.num_angles, 2))
         self.tracked_rotations = np.zeros(self.num_angles)
+        if angles is None:
+            self.ang = tomopy.angles(nang=self.num_angles, ang1=0, ang2=360)
+        else:
+            self.ang = angles
 
     def reset_workingProjections(self, x_size=900, y_size=650):
         """
@@ -273,10 +276,14 @@ class tomoData:
         """
         Determines and adjusts the center of rotation for 2D projection images by finding the initial center,
         shifting the projections to center them, and calculating any remaining offset (to check if it needs to be done again).
+        
+        Run a max of 3 times
         """
         print("Centering Projections")
         self.center_offset = 10
-        while self.center_offset > 1:
+        iterator = 0
+        while self.center_offset > 1 and iterator < 3:
+            iterator += 1
             self.rotation_center = tomopy.find_center_vo(self.workingProjections)
             print("Original center: {}".format(self.rotation_center))
             print("Center of frame: {}".format(self.image_size[1] // 2))
