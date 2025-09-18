@@ -27,7 +27,7 @@ def bilateralFilter(tomo, d=15, sigmaColor=0.3, sigmaSpace=100):
             tomo.workingProjections[i], d=d, sigmaColor=sigmaColor, sigmaSpace=sigmaSpace
         )
 
-def cross_correlate_align(tomo, tolerance=1, max_iterations=15, stepRatio=1, yROI_Range=[200, -100], xROI_Range=[170, -170], maxShiftTolerance=2):
+def cross_correlate_align(tomo, tolerance=1, max_iterations=15, stepRatio=1, yROI_Range=[200, -100], xROI_Range=[170, -170], maxShiftTolerance=2, isFull360 = True):
     #TODO: GPU accelerate. Try to vectorize it.
     """
     Aligns projection images by maximizing cross-correlation between consecutive slices.
@@ -46,13 +46,16 @@ def cross_correlate_align(tomo, tolerance=1, max_iterations=15, stepRatio=1, yRO
     """
     print("Cross-Correlation Alignment")
 
-
+    if isFull360:
+        num_correlations = tomo.num_angles + 1
+    else:
+        num_correlations = tomo.num_angles
 
     for iteration in range(max_iterations):
         total_shift = 0
         max_shift = 0
 
-        for m in tqdm(range(1, tomo.num_angles + 1), desc=f'Iteration {iteration + 1}/{max_iterations}'):
+        for m in tqdm(range(1, num_correlations), desc=f'Iteration {iteration + 1}/{max_iterations}'):
             if xROI_Range == None and yROI_Range == None:
                 # If no ROI is specified, use the full image
                 img1 = tomo.workingProjections[m - 1]
@@ -384,3 +387,44 @@ def optical_flow_align(tomo):
         v, u = optical_flow_tvl1(prev_img, current_img)
         aligned_img = warp(current_img, np.array([row_coords + v, col_coords + u]), mode='constant')
         tomo.finalProjections[m % tomo.num_angles] = aligned_img
+
+def shift_min_to_middle(tomo):
+    print("Shifting min values to middle")
+    n_images, height, width = tomo.workingProjections.shape
+    center_x = width // 2  # middle of array
+
+    for m in tqdm(range(n_images), desc="Shifting min to middle"):
+        img = tomo.workingProjections[m]
+        
+        # Find index of minimum value
+        min_idx = np.unravel_index(np.argmin(img), img.shape)
+        min_y, min_x = min_idx
+        
+        # Compute shift (positive means left/up)
+        x_shift = (center_x - min_x)
+
+        tomo.tracked_shifts[m % tomo.num_angles][1] += x_shift
+
+        tomo.workingProjections[m % tomo.num_angles] = subpixel_shift(tomo.workingProjections[m % tomo.num_angles], 0, x_shift)
+
+
+        
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    

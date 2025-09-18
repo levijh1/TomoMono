@@ -67,7 +67,9 @@ def subpixel_shift(image, shift_y, shift_x):
     # Inverse Fourier transform to get the shifted image
     shifted_image = np.fft.ifft2(shifted_fft_image).real
 
-    ###Uncomment this code if you want the shift to not wrap around the image and just be zeros at the edge instead
+
+    
+    # ##Uncomment this code if you want the shift to not wrap around the image and just be zeros at the edge instead
     # # Create a mask of valid regions
     # mask = np.ones_like(image)
 

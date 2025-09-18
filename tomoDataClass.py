@@ -272,6 +272,10 @@ class tomoData:
         print("\n")
         return optical_flow_align(self, *args, **kwargs)
 
+    def shift_min_to_middle(self, *args, **kwargs):
+        print("\n")
+        return shift_min_to_middle(self, *args, **kwargs)
+
     def center_projections(self):
         """
         Determines and adjusts the center of rotation for 2D projection images by finding the initial center,
