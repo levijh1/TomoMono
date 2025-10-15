@@ -3,7 +3,7 @@ import numpy as np
 import random
 import scipy as sp
 from helperFunctions import MoviePlotter, subpixel_shift, runwidget
-# import torch
+import torch
 from tqdm import tqdm
 from scipy.ndimage import rotate
 # import svmbir

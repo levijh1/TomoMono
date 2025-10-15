@@ -294,7 +294,7 @@ def PMA(tomo, max_iterations=5, tolerance=0.1, algorithm='art', crop_bottom_cent
             break
     # tomo.center_projections()
 
-def vertical_mass_fluctuation_align(tomo, tolerance=0.1, max_iterations=15):
+def vertical_mass_fluctuation_align(tomo, tolerance=0.1, max_iterations=15, y_range = None):
     """
     Aligns projection pairs at opposite angles by minimizing vertical center-of-mass differences.
 
@@ -307,23 +307,42 @@ def vertical_mass_fluctuation_align(tomo, tolerance=0.1, max_iterations=15):
     - max_iterations (int): Maximum number of iterations.
     """
     print("Vertical Mass Fluctuation Alignment")
+    # for iteration in tqdm(range(max_iterations), desc="VMF Alignment Iterations"):
+    #     sums = []
+    #     total_shift = 0
+    #     for k in range(tomo.num_angles):
+    #         sums.append(np.sum(tomo.workingProjections[k], axis=1).tolist())
+    #     for i in range(tomo.num_angles // 2):
+    #         CC = sp.signal.correlate(
+    #             sums[i], sums[(i + tomo.num_angles // 2) % tomo.num_angles], mode='same', method='fft'
+    #         )
+    #         maxpoint = np.where(CC == CC.max())
+    #         yshift = int(tomo.image_size[0] / 2 - maxpoint[0])
+    #         tomo.workingProjections[i] = subpixel_shift(tomo.workingProjections[i], -yshift / 2, 0)
+    #         tomo.workingProjections[(i + tomo.num_angles // 2) % tomo.num_angles] = subpixel_shift(
+    #             tomo.workingProjections[(i + tomo.num_angles // 2) % tomo.num_angles], yshift / 2, 0
+    #         )
+    #         tomo.tracked_shifts[i, 0] += yshift / 2
+    #         tomo.tracked_shifts[(i + tomo.num_angles // 2) % tomo.num_angles, 0] -= yshift / 2
+    #         total_shift += abs(yshift)
+
+    #Align with first image
     for iteration in tqdm(range(max_iterations), desc="VMF Alignment Iterations"):
         sums = []
         total_shift = 0
         for k in range(tomo.num_angles):
-            sums.append(np.sum(tomo.workingProjections[k], axis=1).tolist())
-        for i in range(tomo.num_angles // 2):
+            if y_range == None:
+                sums.append(np.sum(tomo.workingProjections[k], axis=1).tolist())
+            else:
+                sums.append(np.sum(tomo.workingProjections[k][y_range[0]:y_range[1]], axis=1).tolist())
+        for i in range(1, tomo.num_angles):
             CC = sp.signal.correlate(
-                sums[i], sums[(i + tomo.num_angles // 2) % tomo.num_angles], mode='same', method='fft'
+                sums[0], sums[i], mode='same', method='fft'
             )
             maxpoint = np.where(CC == CC.max())
-            yshift = int(tomo.image_size[0] / 2 - maxpoint[0])
-            tomo.workingProjections[i] = subpixel_shift(tomo.workingProjections[i], -yshift / 2, 0)
-            tomo.workingProjections[(i + tomo.num_angles // 2) % tomo.num_angles] = subpixel_shift(
-                tomo.workingProjections[(i + tomo.num_angles // 2) % tomo.num_angles], yshift / 2, 0
-            )
+            yshift = int(tomo.image_size[0] - maxpoint[0])
+            tomo.workingProjections[i] = subpixel_shift(tomo.workingProjections[i], -yshift, 0)
             tomo.tracked_shifts[i, 0] += yshift / 2
-            tomo.tracked_shifts[(i + tomo.num_angles // 2) % tomo.num_angles, 0] -= yshift / 2
             total_shift += abs(yshift)
 
         average_shift = total_shift / tomo.num_angles
@@ -333,7 +352,7 @@ def vertical_mass_fluctuation_align(tomo, tolerance=0.1, max_iterations=15):
             print(f'Convergence reached after {iteration + 1} iterations.')
             break
 
-def tomopy_align(tomo, tolerance=0.1, max_iterations=15, alg="sirt"):
+def tomopy_align(tomo, tolerance=0.1, max_iterations=15, alg="sirt", crop_bottom_center_y=500, crop_bottom_center_x=750, isPhaseData = False):
     """
     Uses TomoPy's joint reprojection algorithm to iteratively align all projections.
 
@@ -344,6 +363,10 @@ def tomopy_align(tomo, tolerance=0.1, max_iterations=15, alg="sirt"):
     - alg (str): TomoPy reconstruction algorithm to use (e.g., 'sirt').
     """
     print(f"Tomopy Joint Reprojection Alignment of Projections ({max_iterations} iterations)")
+    tomo.crop_bottom_center(crop_bottom_center_y, crop_bottom_center_x)
+    if standardize:
+        tomo.standardize(isPhaseData=isPhaseData)
+    tomo.center_projections()
     for iteration in tqdm(range(max_iterations), desc='Tomopy Joint Reprojeciton Align Iterations'):
         center = tomopy.find_center_vo(tomo.workingProjections)
         proj, sy, sx, _ = tomopy.prep.alignment.align_joint(

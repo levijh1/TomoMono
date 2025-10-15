@@ -101,11 +101,10 @@ if __name__ == '__main__':
     # ALIGNMENT STRATEGY
     # -------------------------
     # Choose and configure alignment algorithm below:
-    tomo.cross_correlate_align(tolerance=0.01, max_iterations = 10, yROI_Range=[30, -30], xROI_Range=[0, tomo.workingProjections.shape[2]], maxShiftTolerance=5)
-    tomo.cross_correlate_align(tolerance=0.01, max_iterations = 10, yROI_Range=[30, -30], xROI_Range=[760, -760], maxShiftTolerance=5)
-    # tomo.PMA(max_iterations = 10, tolerance=0.0001, algorithm="SIRT_CUDA", crop_bottom_center_y = tomo.workingProjections.shape[1]-40, crop_bottom_center_x = 1000, isPhaseData = True)
+    tomo.shift_min_to_middle()
+    tomo.cross_correlate_align(tolerance=0.01, max_iterations = 20, yROI_Range=[50, -85], xROI_Range=[400, -400], maxShiftTolerance=5, isFull360=False)
+    # tomo.PMA(max_iterations = 10, tolerance=0.0001, algorithm="SIRT_CUDA", crop_bottom_center_y = tomo.workingProjections.shape[1]-80, crop_bottom_center_x = 1200, isPhaseData = True)
     tomo.center_projections()
-    tomo.make_updates_shift()
 
     # Apply the computed shifts to original data to finalize alignment
     tomo.make_updates_shift()
@@ -148,11 +147,10 @@ if __name__ == '__main__':
     # ALIGNMENT STRATEGY
     # -------------------------
     # Choose and configure alignment algorithm below:
-    tomo.cross_correlate_align(tolerance=0.01, max_iterations = 10, yROI_Range=[30, -30], xROI_Range=[0, tomo.workingProjections.shape[2]], maxShiftTolerance=5)
-    tomo.cross_correlate_align(tolerance=0.01, max_iterations = 10, yROI_Range=[30, -30], xROI_Range=[760, -760], maxShiftTolerance=5)
-    tomo.PMA(max_iterations = 10, tolerance=0.0001, algorithm="SIRT_CUDA", crop_bottom_center_y = tomo.workingProjections.shape[1]-40, crop_bottom_center_x = 1000, isPhaseData = True)
+    tomo.shift_min_to_middle()
+    tomo.cross_correlate_align(tolerance=0.01, max_iterations = 20, yROI_Range=[50, -85], xROI_Range=[400, -400], maxShiftTolerance=5, isFull360=False)
+    tomo.PMA(max_iterations = 10, tolerance=0.0001, algorithm="SIRT_CUDA", crop_bottom_center_y = tomo.workingProjections.shape[1]-80, crop_bottom_center_x = 1200, isPhaseData = True)
     tomo.center_projections()
-    tomo.make_updates_shift()
 
     # Apply the computed shifts to original data to finalize alignment
     tomo.make_updates_shift()
@@ -174,5 +172,3 @@ if __name__ == '__main__':
         sys.stdout.close()
         sys.stdout = sys.__stdout__
         sys.stderr = sys.__stderr__
-
-
