@@ -3,14 +3,16 @@ if __name__ == '__main__':
     import sys
     import tomoDataClass
     from datetime import datetime
-    from helperFunctions import DualLogger, convert_to_tiff, subpixel_shift
+    from helperFunctions import DualLogger, convert_to_tiff, subpixel_shift, degree_to_positiveRadians
     import tomopy
+    import matplotlib.pyplot as plt
 
     # -------------------------
     # CONFIGURATION FLAGS
     # -------------------------
     log = True           # Set to True to enable logging output to a file
     saveToFile = True     # Set to True to save aligned projection data to a TIFF file
+    reconstruct = True     # Set to True to save the reconstruction to a TIFF file
 
     # -------------------------
     # SETUP: Timing & Logging
@@ -36,23 +38,20 @@ if __name__ == '__main__':
     #Importing data from Taylor Buckway h5 file (APS data)
     import h5py
     import numpy as np
-    filename = r"/home/ljh79/TomoMono/data/poly_tomo_128.hdf5"
-
-    indicesToRemove = [0,1,2,3,4,5,53,60,67,69,82,90,178,183,186, 209, 218, 219, 221, 224, 254, 258, 276, 278, 304, 306] + list(range(308,325)) ##Look out for 200, 
+    filename = r"/home/ljh79/TomoMono/data/noglow_tomo_128.hdf5"
 
     with h5py.File(filename, "r") as f:
         data = np.array(f["/data"])
-        angles = list(f["/angles"])
+        angles = degree_to_positiveRadians(list(f["/angles"]))
 
-    data[0] = subpixel_shift(data[0], 0, 400)
+    # indicesToRemove = [0,1,2,3,4,5,53,60,67,69,82,90,178,183,186, 209, 218, 219, 221, 224, 254, 258, 276, 278, 304, 306] + list(range(308,325)) ##Look out for 200, 
+    noGlow_indicesToRemove = [54, 61, 76, 177, 180, 215, 248, 252, 301]
 
     #removing images with holder in the way
     print("data shape is: ", data.shape)
     print("angles shape is: ", len(angles))
-    # for index in reversed(indicesToRemove):
-    #     print(index)
-    data = np.delete(data, indicesToRemove, axis = 0)
-    angles = np.delete(angles, indicesToRemove, axis = 0)
+    data = np.delete(data, noGlow_indicesToRemove, axis = 0)
+    angles = np.delete(angles, noGlow_indicesToRemove, axis = 0)
     print("data shape after removing is: ", data.shape)
     print("angles shape after removing is: ", len(angles))
 
@@ -73,6 +72,8 @@ if __name__ == '__main__':
     # -------------------------
     # ALIGNMENT INSTRUCTIONS
     # -------------------------
+
+    
     """
     Alignment Options (defined in alignment_methods.py):
     - cross_correlate_align
@@ -102,8 +103,8 @@ if __name__ == '__main__':
     # -------------------------
     # Choose and configure alignment algorithm below:
     tomo.shift_min_to_middle()
-    tomo.cross_correlate_align(tolerance=0.01, max_iterations = 20, yROI_Range=[50, -85], xROI_Range=[400, -400], maxShiftTolerance=5, isFull360=False)
-    # tomo.PMA(max_iterations = 10, tolerance=0.0001, algorithm="SIRT_CUDA", crop_bottom_center_y = tomo.workingProjections.shape[1]-80, crop_bottom_center_x = 1200, isPhaseData = True)
+    tomo.cross_correlate_align(tolerance=0.01, max_iterations = 10, yROI_Range=[50, -95], xROI_Range=[400, -400], maxShiftTolerance=5, isFull360=False)
+    # tomo.PMA(max_iterations = 5, tolerance=0.0001, algorithm="SIRT_CUDA", crop_bottom_center_y = tomo.workingProjections.shape[1]-80, crop_bottom_center_x = 1200, isPhaseData = True)
     tomo.center_projections()
 
     # Apply the computed shifts to original data to finalize alignment
@@ -114,6 +115,12 @@ if __name__ == '__main__':
     # -------------------------
     if saveToFile:
         convert_to_tiff(tomo.get_finalProjections(), savePath, scale_info)
+    if reconstruct:
+        tomo.reconstruct(algorithm="SIRT_CUDA", snr_db=None)
+        recon_path = f"reconstructions/APSbeamtime1/recon_XC_{timestamp}.tif"
+        convert_to_tiff(tomo.get_recon(), recon_path, scale_info)
+
+        
 
 
 
@@ -123,33 +130,19 @@ if __name__ == '__main__':
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-    print("Starting alignment")
-
-    savePath = f"alignedProjections/APSbeamtime1/aligned_XC&PMA_{timestamp}.tif"
+    savePath = f"alignedProjections/APSbeamtime1/aligned_XC_PMA_{timestamp}.tif"
     print("\n\nCreating aligned projections:", savePath)
 
-    # Ensure alignment begins from original, unmodified projections
-    tomo.reset_workingProjections(x_size = data.shape[2], y_size=data.shape[1])
+    # # Ensure alignment begins from original, unmodified projections
+    # tomo.reset_workingProjections(x_size = data.shape[2], y_size=data.shape[1])
 
-    # -------------------------
-    # ALIGNMENT STRATEGY
-    # -------------------------
-    # Choose and configure alignment algorithm below:
-    tomo.shift_min_to_middle()
-    tomo.cross_correlate_align(tolerance=0.01, max_iterations = 20, yROI_Range=[50, -85], xROI_Range=[400, -400], maxShiftTolerance=5, isFull360=False)
-    tomo.PMA(max_iterations = 10, tolerance=0.0001, algorithm="SIRT_CUDA", crop_bottom_center_y = tomo.workingProjections.shape[1]-80, crop_bottom_center_x = 1200, isPhaseData = True)
+    # # -------------------------
+    # # ALIGNMENT STRATEGY
+    # # -------------------------
+    # # Choose and configure alignment algorithm below:
+    # tomo.shift_min_to_middle()
+    # tomo.cross_correlate_align(tolerance=0.01, max_iterations = 20, yROI_Range=[50, -95], xROI_Range=[400, -400], maxShiftTolerance=5, isFull360=False)
+    tomo.PMA(max_iterations = 5, tolerance=0.001, algorithm="SIRT_CUDA", crop_bottom_center_y = tomo.workingProjections.shape[1]-80, crop_bottom_center_x = 1200, isPhaseData = True)
     tomo.center_projections()
 
     # Apply the computed shifts to original data to finalize alignment
@@ -160,15 +153,11 @@ if __name__ == '__main__':
     # -------------------------
     if saveToFile:
         convert_to_tiff(tomo.get_finalProjections(), savePath, scale_info)
+    if reconstruct:
+        tomo.reconstruct(algorithm="SIRT_CUDA", snr_db=None)
+        recon_path = f"reconstructions/APSbeamtime1/recon_XC_PMA_{timestamp}.tif"
+        convert_to_tiff(tomo.get_recon(), recon_path, scale_info)
 
-    # -------------------------
-    # EXECUTION TIME REPORTING
-    # -------------------------
-    end_time = time.time()
-    print(f"Script completed in {end_time - start_time:.2f} seconds.")
 
-    # Restore original stdout/stderr if logging was enabled
-    if log:
-        sys.stdout.close()
-        sys.stdout = sys.__stdout__
-        sys.stderr = sys.__stderr__
+
+

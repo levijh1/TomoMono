@@ -21,6 +21,7 @@ class tomoData:
         This assumes that all angles are evenly spaced between 0 and 360 degrees.
         Parameters:
         - data (np.array): The tomographic data as a 3D numpy array. The first dimension is the projection number.
+        - angles (list): Make sure the angles are listed in positive radians (0 to 2*pi)
         """
         self.num_angles = data.shape[0]
         self.image_size = data.shape[1:]

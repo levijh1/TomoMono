@@ -5,7 +5,7 @@ from skimage.transform import rotate
 from helperFunctions import subpixel_shift
 import tomopy
 from skimage.registration import optical_flow_tvl1
-# import torch
+import torch
 from skimage.transform import warp
 import cv2
 import scipy as sp
@@ -260,16 +260,16 @@ def PMA(tomo, max_iterations=5, tolerance=0.1, algorithm='art', crop_bottom_cent
             y_shift -= num_rows // 2
             x_shift -= num_cols // 2
 
-            if i == 100:
-                plt.imshow(img1)
-                plt.colorbar()
-                plt.show()
-                plt.imshow(img2)
-                plt.colorbar()
-                plt.show()
-                plt.imshow(correlation)
-                plt.show()
-                print("Y shift:", y_shift, "X shift:", x_shift)
+            # if i == 100:
+            #     plt.imshow(img1)
+            #     plt.colorbar()
+            #     plt.show()
+            #     plt.imshow(img2)
+            #     plt.colorbar()
+            #     plt.show()
+            #     plt.imshow(correlation)
+            #     plt.show()
+            #     print("Y shift:", y_shift, "X shift:", x_shift)
 
             tomo.workingProjections[i % tomo.num_angles] = subpixel_shift(
                 tomo.workingProjections[i % tomo.num_angles], y_shift, x_shift

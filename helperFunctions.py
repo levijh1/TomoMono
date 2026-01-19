@@ -207,7 +207,6 @@ def convert_to_numpy(file_location):
         tif_data = np.expand_dims(tif_data, axis=0)
     elif tif_data.ndim > 3:
         raise ValueError("Unsupported TIFF dimensions: expected 2D or 3D, got higher.")
-
     # print(tif_data.dtype)
     return tif_data, scale_info
 
@@ -264,3 +263,7 @@ def convert_to_2Dtiff(numpy_data, file_location, scale_info=None):
     else:
         # Save without resolution information if not provided
         tifffile.imsave(file_location, numpy_data)
+
+def degree_to_positiveRadians(angles):
+    angles_radians = np.deg2rad(angles)
+    return (angles_radians + 2*np.pi) % (2*np.pi)

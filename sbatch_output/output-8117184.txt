@@ -1,0 +1,286 @@
+timestamp: 20251014-235400
+Running Image Registration Script
+data shape is:  (302, 663, 2325)
+angles shape is:  302
+data shape after removing is:  (293, 663, 2325)
+angles shape after removing is:  293
+Starting alignment
+
+
+Creating aligned projections: alignedProjections/APSbeamtime1/aligned_XC_20251014-235400.tif
+
+
+Shifting min values to middle
+
+
+Cross-Correlation Alignment
+Average pixel shift of iteration 1: 55.07010381246391
+Average pixel shift of iteration 2: 1.2969283276450512
+Average pixel shift of iteration 3: 0.16040955631399317
+Average pixel shift of iteration 4: 0.13993174061433447
+Average pixel shift of iteration 5: 0.16040955631399317
+Average pixel shift of iteration 6: 0.18771331058020477
+Average pixel shift of iteration 7: 0.1945392491467577
+Average pixel shift of iteration 8: 0.17747440273037543
+Average pixel shift of iteration 9: 0.08873720136518772
+Average pixel shift of iteration 10: 0.07167235494880546
+Average pixel shift of iteration 11: 0.07167235494880546
+Average pixel shift of iteration 12: 0.07167235494880546
+Average pixel shift of iteration 13: 0.07167235494880546
+Average pixel shift of iteration 14: 0.07167235494880546
+Average pixel shift of iteration 15: 0.07167235494880546
+Average pixel shift of iteration 16: 0.07167235494880546
+Average pixel shift of iteration 17: 0.07167235494880546
+Average pixel shift of iteration 18: 0.07167235494880546
+Average pixel shift of iteration 19: 0.07167235494880546
+Average pixel shift of iteration 20: 0.07167235494880546
+Maximum iterations reached without convergence.
+Centering Projections
+timestamp: 20251014-235400
+Running Image Registration Script
+data shape is:  (302, 663, 2325)
+angles shape is:  302
+data shape after removing is:  (293, 663, 2325)
+angles shape after removing is:  293
+Starting alignment
+
+
+Creating aligned projections: alignedProjections/APSbeamtime1/aligned_XC_20251014-235400.tif
+
+
+Shifting min values to middle
+
+
+Cross-Correlation Alignment
+Average pixel shift of iteration 1: 55.07010381246391
+Average pixel shift of iteration 2: 1.2969283276450512
+Average pixel shift of iteration 3: 0.16040955631399317
+Average pixel shift of iteration 4: 0.13993174061433447
+Average pixel shift of iteration 5: 0.16040955631399317
+Average pixel shift of iteration 6: 0.18771331058020477
+Average pixel shift of iteration 7: 0.1945392491467577
+Average pixel shift of iteration 8: 0.17747440273037543
+Average pixel shift of iteration 9: 0.08873720136518772
+Average pixel shift of iteration 10: 0.07167235494880546
+Average pixel shift of iteration 11: 0.07167235494880546
+Average pixel shift of iteration 12: 0.07167235494880546
+Average pixel shift of iteration 13: 0.07167235494880546
+Average pixel shift of iteration 14: 0.07167235494880546
+Average pixel shift of iteration 15: 0.07167235494880546
+Average pixel shift of iteration 16: 0.07167235494880546
+Average pixel shift of iteration 17: 0.07167235494880546
+Average pixel shift of iteration 18: 0.07167235494880546
+Average pixel shift of iteration 19: 0.07167235494880546
+Average pixel shift of iteration 20: 0.07167235494880546
+Maximum iterations reached without convergence.
+Centering Projections
+timestamp: 20251014-235400
+Running Image Registration Script
+data shape is:  (302, 663, 2325)
+angles shape is:  302
+data shape after removing is:  (293, 663, 2325)
+angles shape after removing is:  293
+Starting alignment
+
+
+Creating aligned projections: alignedProjections/APSbeamtime1/aligned_XC_20251014-235400.tif
+
+
+Shifting min values to middle
+
+
+Cross-Correlation Alignment
+Average pixel shift of iteration 1: 55.07010381246391
+Average pixel shift of iteration 2: 1.2969283276450512
+Average pixel shift of iteration 3: 0.16040955631399317
+Average pixel shift of iteration 4: 0.13993174061433447
+Average pixel shift of iteration 5: 0.16040955631399317
+Average pixel shift of iteration 6: 0.18771331058020477
+Average pixel shift of iteration 7: 0.1945392491467577
+Average pixel shift of iteration 8: 0.17747440273037543
+Average pixel shift of iteration 9: 0.08873720136518772
+Average pixel shift of iteration 10: 0.07167235494880546
+Average pixel shift of iteration 11: 0.07167235494880546
+Average pixel shift of iteration 12: 0.07167235494880546
+Average pixel shift of iteration 13: 0.07167235494880546
+Average pixel shift of iteration 14: 0.07167235494880546
+Average pixel shift of iteration 15: 0.07167235494880546
+Average pixel shift of iteration 16: 0.07167235494880546
+Average pixel shift of iteration 17: 0.07167235494880546
+Average pixel shift of iteration 18: 0.07167235494880546
+Average pixel shift of iteration 19: 0.07167235494880546
+Average pixel shift of iteration 20: 0.07167235494880546
+Maximum iterations reached without convergence.
+Centering Projections
+Original center: 1141.5
+Center of frame: 1162
+timestamp: 20251014-235400
+Running Image Registration Script
+data shape is:  (302, 663, 2325)
+angles shape is:  302
+data shape after removing is:  (293, 663, 2325)
+angles shape after removing is:  293
+Starting alignment
+
+
+Creating aligned projections: alignedProjections/APSbeamtime1/aligned_XC_20251014-235400.tif
+
+
+Shifting min values to middle
+
+
+Cross-Correlation Alignment
+Average pixel shift of iteration 1: 55.07010381246391
+Average pixel shift of iteration 2: 1.2969283276450512
+Average pixel shift of iteration 3: 0.16040955631399317
+Average pixel shift of iteration 4: 0.13993174061433447
+Average pixel shift of iteration 5: 0.16040955631399317
+Average pixel shift of iteration 6: 0.18771331058020477
+Average pixel shift of iteration 7: 0.1945392491467577
+Average pixel shift of iteration 8: 0.17747440273037543
+Average pixel shift of iteration 9: 0.08873720136518772
+Average pixel shift of iteration 10: 0.07167235494880546
+Average pixel shift of iteration 11: 0.07167235494880546
+Average pixel shift of iteration 12: 0.07167235494880546
+Average pixel shift of iteration 13: 0.07167235494880546
+Average pixel shift of iteration 14: 0.07167235494880546
+Average pixel shift of iteration 15: 0.07167235494880546
+Average pixel shift of iteration 16: 0.07167235494880546
+Average pixel shift of iteration 17: 0.07167235494880546
+Average pixel shift of iteration 18: 0.07167235494880546
+Average pixel shift of iteration 19: 0.07167235494880546
+Average pixel shift of iteration 20: 0.07167235494880546
+Maximum iterations reached without convergence.
+Centering Projections
+Original center: 1141.5
+Center of frame: 1162
+timestamp: 20251014-235400
+Running Image Registration Script
+data shape is:  (302, 663, 2325)
+angles shape is:  302
+data shape after removing is:  (293, 663, 2325)
+angles shape after removing is:  293
+Starting alignment
+
+
+Creating aligned projections: alignedProjections/APSbeamtime1/aligned_XC_20251014-235400.tif
+
+
+Shifting min values to middle
+
+
+Cross-Correlation Alignment
+Average pixel shift of iteration 1: 55.07010381246391
+Average pixel shift of iteration 2: 1.2969283276450512
+Average pixel shift of iteration 3: 0.16040955631399317
+Average pixel shift of iteration 4: 0.13993174061433447
+Average pixel shift of iteration 5: 0.16040955631399317
+Average pixel shift of iteration 6: 0.18771331058020477
+Average pixel shift of iteration 7: 0.1945392491467577
+Average pixel shift of iteration 8: 0.17747440273037543
+Average pixel shift of iteration 9: 0.08873720136518772
+Average pixel shift of iteration 10: 0.07167235494880546
+Average pixel shift of iteration 11: 0.07167235494880546
+Average pixel shift of iteration 12: 0.07167235494880546
+Average pixel shift of iteration 13: 0.07167235494880546
+Average pixel shift of iteration 14: 0.07167235494880546
+Average pixel shift of iteration 15: 0.07167235494880546
+Average pixel shift of iteration 16: 0.07167235494880546
+Average pixel shift of iteration 17: 0.07167235494880546
+Average pixel shift of iteration 18: 0.07167235494880546
+Average pixel shift of iteration 19: 0.07167235494880546
+Average pixel shift of iteration 20: 0.07167235494880546
+Maximum iterations reached without convergence.
+Centering Projections
+Original center: 1141.5
+Center of frame: 1162
+Aligned projections shifted by 21.0 pixels
+Projections are currently centered at pixel 1161.25. Residual offset: 0.75
+timestamp: 20251014-235400
+Running Image Registration Script
+data shape is:  (302, 663, 2325)
+angles shape is:  302
+data shape after removing is:  (293, 663, 2325)
+angles shape after removing is:  293
+Starting alignment
+
+
+Creating aligned projections: alignedProjections/APSbeamtime1/aligned_XC_20251014-235400.tif
+
+
+Shifting min values to middle
+
+
+Cross-Correlation Alignment
+Average pixel shift of iteration 1: 55.07010381246391
+Average pixel shift of iteration 2: 1.2969283276450512
+Average pixel shift of iteration 3: 0.16040955631399317
+Average pixel shift of iteration 4: 0.13993174061433447
+Average pixel shift of iteration 5: 0.16040955631399317
+Average pixel shift of iteration 6: 0.18771331058020477
+Average pixel shift of iteration 7: 0.1945392491467577
+Average pixel shift of iteration 8: 0.17747440273037543
+Average pixel shift of iteration 9: 0.08873720136518772
+Average pixel shift of iteration 10: 0.07167235494880546
+Average pixel shift of iteration 11: 0.07167235494880546
+Average pixel shift of iteration 12: 0.07167235494880546
+Average pixel shift of iteration 13: 0.07167235494880546
+Average pixel shift of iteration 14: 0.07167235494880546
+Average pixel shift of iteration 15: 0.07167235494880546
+Average pixel shift of iteration 16: 0.07167235494880546
+Average pixel shift of iteration 17: 0.07167235494880546
+Average pixel shift of iteration 18: 0.07167235494880546
+Average pixel shift of iteration 19: 0.07167235494880546
+Average pixel shift of iteration 20: 0.07167235494880546
+Maximum iterations reached without convergence.
+Centering Projections
+Original center: 1141.5
+Center of frame: 1162
+Aligned projections shifted by 21.0 pixels
+Projections are currently centered at pixel 1161.25. Residual offset: 0.75
+timestamp: 20251014-235400
+Running Image Registration Script
+data shape is:  (302, 663, 2325)
+angles shape is:  302
+data shape after removing is:  (293, 663, 2325)
+angles shape after removing is:  293
+Starting alignment
+
+
+Creating aligned projections: alignedProjections/APSbeamtime1/aligned_XC_20251014-235400.tif
+
+
+Shifting min values to middle
+
+
+Cross-Correlation Alignment
+Average pixel shift of iteration 1: 55.07010381246391
+Average pixel shift of iteration 2: 1.2969283276450512
+Average pixel shift of iteration 3: 0.16040955631399317
+Average pixel shift of iteration 4: 0.13993174061433447
+Average pixel shift of iteration 5: 0.16040955631399317
+Average pixel shift of iteration 6: 0.18771331058020477
+Average pixel shift of iteration 7: 0.1945392491467577
+Average pixel shift of iteration 8: 0.17747440273037543
+Average pixel shift of iteration 9: 0.08873720136518772
+Average pixel shift of iteration 10: 0.07167235494880546
+Average pixel shift of iteration 11: 0.07167235494880546
+Average pixel shift of iteration 12: 0.07167235494880546
+Average pixel shift of iteration 13: 0.07167235494880546
+Average pixel shift of iteration 14: 0.07167235494880546
+Average pixel shift of iteration 15: 0.07167235494880546
+Average pixel shift of iteration 16: 0.07167235494880546
+Average pixel shift of iteration 17: 0.07167235494880546
+Average pixel shift of iteration 18: 0.07167235494880546
+Average pixel shift of iteration 19: 0.07167235494880546
+Average pixel shift of iteration 20: 0.07167235494880546
+Maximum iterations reached without convergence.
+Centering Projections
+Original center: 1141.5
+Center of frame: 1162
+Aligned projections shifted by 21.0 pixels
+Projections are currently centered at pixel 1161.25. Residual offset: 0.75
+
+
+Using GPU-accelerated reconstruction, Algorithm:  SIRT_CUDA
+Reconstruction completed.
