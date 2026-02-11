@@ -37,7 +37,7 @@ class tomoData:
         else:
             self.ang = angles
 
-    def reset_workingProjections(self, x_size=900, y_size=650):
+    def reset_workingProjections(self, x_size=900, y_size=650, cropBottomCenter=False):
         """
         Resets working and final projections to the original data and crops to the specified center size.
         This is useful for starting fresh with the original projections after modifications back to back.
@@ -48,7 +48,10 @@ class tomoData:
         """
         self.workingProjections = np.copy(self.data)
         self.finalProjections = np.copy(self.data)
-        self.crop_center(x_size, y_size)
+        if cropBottomCenter:
+            self.crop_bottom_center(x_size, y_size)
+        else:
+            self.crop_center(x_size, y_size)
 
     def get_recon(self):
         """
