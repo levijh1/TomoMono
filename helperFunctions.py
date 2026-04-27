@@ -9,6 +9,7 @@ import time
 import sys
 from matplotlib.widgets import Slider
 import tifffile
+from scipy.ndimage import fourier_shift
 
 
 
@@ -35,7 +36,7 @@ def add_noise(m):
   m = tomopy.prep.alignment.add_noise(m)
   return m
 
-def subpixel_shift(image, shift_y, shift_x):
+def subpixel_shift(image, shift_y, shift_x, homemade=False):
     """
     Shift a 2D image using a phase ramp in the Fourier domain and pad out-of-bounds regions with zeros (if that part of the code is uncommented).
 
@@ -50,19 +51,24 @@ def subpixel_shift(image, shift_y, shift_x):
     # Fourier transform of the image
     fft_image = np.fft.fft2(image)
 
-    # Get the image dimensions
-    rows, cols = image.shape
+    if homemade == True:
+        ### Using my own implementation
+        # Get the image dimensions
+        rows, cols = image.shape
 
-    # Create frequency coordinate grids
-    u = np.fft.fftfreq(cols)  # Frequency coordinates along the x-axis
-    v = np.fft.fftfreq(rows)  # Frequency coordinates along the y-axis
-    U, V = np.meshgrid(u, v)  # 2D grid of frequency coordinates
+        # Create frequency coordinate grids
+        u = np.fft.fftfreq(cols)  # Frequency coordinates along the x-axis
+        v = np.fft.fftfreq(rows)  # Frequency coordinates along the y-axis
+        U, V = np.meshgrid(u, v)  # 2D grid of frequency coordinates
 
-    # Calculate the phase ramp for shifting
-    phase_ramp = np.exp(-2j * np.pi * (shift_x * U + shift_y * V))
+        # Calculate the phase ramp for shifting
+        phase_ramp = np.exp(-2j * np.pi * (shift_x * U + shift_y * V))
 
-    # Apply the phase ramp to the Fourier-transformed image
-    shifted_fft_image = fft_image * phase_ramp
+        # Apply the phase ramp to the Fourier-transformed image
+        shifted_fft_image = fft_image * phase_ramp
+    else: 
+        ### Using scipy's implementation
+        shifted_fft_image = fourier_shift(fft_image, (shift_y, shift_x))
 
     # Inverse Fourier transform to get the shifted image
     shifted_image = np.fft.ifft2(shifted_fft_image).real

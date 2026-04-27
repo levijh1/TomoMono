@@ -4,353 +4,349 @@ from scipy.signal import correlate
 from skimage.transform import rotate
 from helperFunctions import subpixel_shift
 import tomopy
-from skimage.registration import optical_flow_tvl1
-import torch
-from skimage.transform import warp
+from skimage.registration import optical_flow_tvl1, phase_cross_correlation
+from skimage.transform import warp, pyramid_gaussian
 import cv2
 import scipy as sp
+from scipy.ndimage import gaussian_filter, gaussian_filter1d
 import matplotlib.pyplot as plt
 from math import ceil
+try:
+    import torch
+    if not torch.cuda.is_available() and not torch.backends.mps.is_available():
+        torch = None
+except ImportError:
+    torch = None
 
-def bilateralFilter(tomo, d=15, sigmaColor=0.3, sigmaSpace=100):
-    """
-    Applies a bilateral filter to each projection image to reduce noise while preserving edges.
+def compute_grad_image(image):
+    gy, gx = np.gradient(image)
+    return np.sqrt(gx**2 + gy**2)
 
-    Parameters:
-    - tomo: Tomography object containing the projections.
-    - d (int): Diameter of the pixel neighborhood used during filtering.
-    - sigmaColor (float): Filter sigma in the color space (intensity differences).
-    - sigmaSpace (float): Filter sigma in the coordinate space (spatial distance).
-    """
-    for i in tqdm(range(tomo.workingProjections.shape[0]), desc="Applying bilateral filter to projections"):
-        tomo.workingProjections[i] = cv2.bilateralFilter(
-            tomo.workingProjections[i], d=d, sigmaColor=sigmaColor, sigmaSpace=sigmaSpace
-        )
-
-def cross_correlate_align(tomo, tolerance=1, max_iterations=15, stepRatio=1, yROI_Range=[200, -100], xROI_Range=[170, -170], maxShiftTolerance=2, isFull360 = True):
-    #TODO: GPU accelerate. Try to vectorize it.
+def cross_correlate_align(
+        tomo,
+        tolerance=1,
+        max_iterations=15,
+        stepRatio=1,
+        yROI_Range=[200, -100],
+        xROI_Range=[170, -170],
+        maxShiftTolerance=1,
+        isFull360=False,
+        num_images_for_median=None,
+        upsample_factor=20,
+        downsample=1,
+        use_grad=False,
+        ):
     """
     Aligns projection images by maximizing cross-correlation between consecutive slices.
     Iterates until the average shift per iteration is below the specified tolerance.
+
+    Uses shift accumulation: each iteration computes all relative shifts from a snapshot
+    of the current images, then applies cumulative absolute shifts from that snapshot.
+    This avoids compounding interpolation errors from repeated in-place shifting.
 
     Source: Odstrčil. Alignment methods for nanotomography with deep subpixel accuracy.
     https://doi.org/10.1364/oe.27.036637
 
     Parameters:
     - tomo: Tomography object with .workingProjections and .tracked_shifts.
-    - tolerance (float): Convergence threshold for average pixel shift.
+    - tolerance (float): Convergence threshold for average pixel shift per iteration.
     - max_iterations (int): Maximum number of alignment iterations.
     - stepRatio (float): Scaling factor for the computed shifts.
-    - yROI_Range (list): Range of y-coordinates to consider for correlation [start, end].
-    - xROI_Range (list): Range of x-coordinates to consider for correlation [start, end].
+    - yROI_Range (list): [start, end] y-crop for correlation region.
+    - xROI_Range (list): [start, end] x-crop for correlation region.
+    - isFull360 (bool): If True, also correlates last image against first to close the loop.
+    - num_images_for_median (int): If set, use a rolling median of the last K images as
+      the reference instead of just the previous image. More robust to noisy projections.
+    - upsample_factor (int): Passed to phase_cross_correlation for sub-pixel accuracy.
+      upsample_factor=1 gives pixel-accurate shifts; higher values (e.g. 10, 100) give
+      finer sub-pixel precision at increased compute cost.
+    - downsample (int): Downscale factor applied before shift detection via pyramid_gaussian.
+      Speeds up correlation on large images; detected shifts are rescaled back automatically.
+      Use 1 (default) to skip downsampling.
+    - use_grad (bool): If True, replace each reference image with its gradient magnitude before
+      computing the cross-correlation. Gradient images are edge-enhanced, which can give
+      more accurate shifts when features have strong edges but low overall contrast.
     """
     print("Cross-Correlation Alignment")
 
-    if isFull360:
-        num_correlations = tomo.num_angles + 1
-    else:
-        num_correlations = tomo.num_angles
+    n = tomo.num_angles
+    K = num_images_for_median if (num_images_for_median is not None and num_images_for_median > 1) else None
 
+    def _crop(img):
+        if yROI_Range is not None and xROI_Range is not None:
+            return img[yROI_Range[0]:yROI_Range[1], xROI_Range[0]:xROI_Range[1]]
+        return img
+
+    def _maybe_downsample(img):
+        if downsample == 1:
+            return img
+        return tuple(pyramid_gaussian(img, max_layer=1, downscale=downsample, sigma=None, preserve_range=False))[1]
+
+    def _compute_shift(ref, mov):
+        ref_c = _crop(ref)
+        mov_c = _crop(mov)
+        if use_grad:
+            ref_c = compute_grad_image(ref_c)
+            mov_c = compute_grad_image(mov_c)
+        if downsample != 1:
+            ref_c = _maybe_downsample(ref_c)
+            mov_c = _maybe_downsample(mov_c)
+        shift_rc, _, _ = phase_cross_correlation(ref_c, mov_c, upsample_factor=upsample_factor)
+        return shift_rc[0] * downsample * stepRatio, shift_rc[1] * downsample * stepRatio
+    
     for iteration in range(max_iterations):
-        total_shift = 0
-        max_shift = 0
+        snapshot = tomo.workingProjections.copy()
+        rel_shifts = np.zeros((n, 2), dtype=np.float64)
 
-        for m in tqdm(range(1, num_correlations), desc=f'Iteration {iteration + 1}/{max_iterations}'):
-            if xROI_Range == None and yROI_Range == None:
-                # If no ROI is specified, use the full image
-                img1 = tomo.workingProjections[m - 1]
-                img2 = tomo.workingProjections[m % tomo.num_angles] # Handle circular indexing for the last projection
+        for i in tqdm(range(1, n), desc=f'Iteration {iteration + 1}/{max_iterations}'):
+            if K is None:
+                ref = snapshot[i - 1]
             else:
-                # If ROI is specified, crop the images accordingly
-                # ROI can be set to lock in on regions of the image where image is sharpest (like the tip of a pillar)
-                img1 = tomo.workingProjections[m - 1][yROI_Range[0]:yROI_Range[1], xROI_Range[0]:xROI_Range[1]]
-                img2 = tomo.workingProjections[m % tomo.num_angles][yROI_Range[0]:yROI_Range[1], xROI_Range[0]:xROI_Range[1]]
-            
-            num_rows, num_cols = img1.shape
-    
-            # Compute the cross-correlation between two consecutive images
-            correlation = correlate(img1, img2, mode='same')
-    
-            # Find the index of the maximum correlation value
-            y_shift, x_shift = np.unravel_index(np.argmax(correlation), correlation.shape)
-    
-            # Calculate the shifts, considering the center of the images as the origin
-            y_shift -= num_rows // 2
-            x_shift -= num_cols // 2
-    
-            y_shift *= stepRatio
-            x_shift *= stepRatio
-    
-            # Apply the calculated shift to align the images
-            tomo.workingProjections[m % tomo.num_angles] = subpixel_shift(tomo.workingProjections[m % tomo.num_angles], y_shift, x_shift)
-    
-            # Store the shifts
-            tomo.tracked_shifts[m % tomo.num_angles][0] += y_shift
-            tomo.tracked_shifts[m % tomo.num_angles][1] += x_shift
-    
-            # Accumulate the total shift magnitude for this iteration
-            total_shift += np.sqrt(y_shift**2 + x_shift**2)
+                ref = np.median(snapshot[max(0, i - K):i], axis=0)
+            y_shift, x_shift = _compute_shift(ref, snapshot[i])
+            rel_shifts[i] = [y_shift, x_shift]
 
-            if total_shift > max_shift:
-                max_shift = total_shift
-    
-        # Calculate the average shift for this iteration
-        average_shift = total_shift / tomo.num_angles
-        print(f"Average pixel shift of iteration {iteration+1}: {average_shift}")
-    
-        # Check if the average shift is below the tolerance
-        if average_shift < tolerance and max_shift < maxShiftTolerance:
+        # Absolute shifts: image[i] needs the cumulative sum of all relative shifts up to i.
+        # rel_shifts[0] stays zero (image[0] is the anchor), so cumsum gives:
+        #   abs_shifts[i] = rel_shifts[1] + ... + rel_shifts[i]
+        abs_shifts = np.cumsum(rel_shifts, axis=0)
+
+        if isFull360:
+            # Correlate last image against first to close the loop; shift image[0] to close drift.
+            y_shift, x_shift = _compute_shift(snapshot[n - 1], snapshot[0])
+            abs_shifts[0] = [y_shift, x_shift]
+
+        # Apply cumulative shifts from the snapshot — one interpolation per image, no compounding.
+        for i in range(1, n):
+            tomo.workingProjections[i] = subpixel_shift(snapshot[i], abs_shifts[i, 0], abs_shifts[i, 1])
+        if isFull360:
+            tomo.workingProjections[0] = subpixel_shift(snapshot[0], abs_shifts[0, 0], abs_shifts[0, 1])
+
+        tomo.tracked_shifts += abs_shifts
+
+        shift_magnitudes = np.linalg.norm(rel_shifts[1:], axis=1)
+        average_shift = shift_magnitudes.mean()
+        max_shift = shift_magnitudes.max()
+        print(f"Iteration {iteration + 1}: avg shift = {average_shift:.4f} px, max shift = {max_shift:.4f} px")
+
+        if average_shift <= tolerance and max_shift <= maxShiftTolerance:
             print(f'Convergence reached after {iteration + 1} iterations.')
-            break
-    print(f'Maximum iterations reached without convergence.')
+            return
 
-def find_optimal_rotation(img1, img2, angle_range=[-5, 5], angle_step=0.25):
+    print('Maximum iterations reached without convergence.')
+
+def PMA(
+        tomo,
+        max_iterations=5,
+        tolerance=0.1,
+        algorithm='art',
+        crop_bottom_center_y=500,
+        crop_bottom_center_x=750,
+        isPhaseData=False,
+        standardize=True,
+        levels=1,
+        scale=2,
+        iterations_per_level=None,
+        upsample_factor=20,
+        ):
     """
-    Finds the rotation angle between two projections that maximizes their similarity (cross-correlation).
+    Performs Projection Matching Alignment (PMA) using a multi-resolution pyramid.
 
-    Parameters:
-    - img1 (np.array): Reference image.
-    - img2 (np.array): Image to be rotated.
-    - angle_range (list): Range of angles to search over [min, max].
-    - angle_step (float): Increment between angle steps.
+    Runs alignment at progressively finer resolutions (coarse to fine). At each level,
+    shifts are computed on downsampled images and upscaled back to full-resolution units.
+    All levels accumulate into a single set of cumulative shifts applied from the original
+    projections, avoiding chained interpolation errors across levels.
 
-    Returns:
-    - optimal_angle (float): Rotation angle that gives the maximum similarity.
-    - max_similarity (float): Maximum cross-correlation score found.
-    """
-    max_similarity = -100000
-    optimal_angle = 0
-
-    for angle in np.arange(angle_range[0], angle_range[1] + angle_step, angle_step):
-        rotated_img2 = rotate(np.copy(img2), angle, reshape=False, mode='wrap')
-        similarity = np.max(correlate(img1[200:-100, 170:-170], rotated_img2[200:-100, 170:-170], mode='same'))
-        if similarity > max_similarity:
-            max_similarity = similarity
-            optimal_angle = angle
-
-    return optimal_angle, max_similarity
-
-def rotate_correlate_align(tomo, max_iterations=10, tolerance=0.5):
-    """
-    Aligns projections by correcting rotational misalignment using pairwise image rotation and cross-correlation.
-
-    Parameters:
-    - tomo: Tomography object with .workingProjections and .tracked_rotations.
-    - max_iterations (int): Maximum number of alignment iterations.
-    - tolerance (float): Average rotation threshold to consider convergence.
-    """
-    for iteration in tqdm(range(max_iterations), desc='Rotation Correlation Alignment Iterations'):
-        total_angle_rotation = 0
-        for i in tqdm(range(tomo.num_angles // 2), desc=f'Iteration {iteration + 1}'):
-            angle, _ = tomo.find_optimal_rotation(
-                tomo.workingProjections[i],
-                tomo.workingProjections[(i + tomo.num_angles // 2) % tomo.num_angles]
-            )
-            tomo.workingProjections[i] = rotate(
-                tomo.workingProjections[i], -angle / 2, reshape=False, mode='wrap'
-            )
-            tomo.workingProjections[(i + tomo.num_angles // 2) % tomo.num_angles] = rotate(
-                tomo.workingProjections[(i + tomo.num_angles // 2) % tomo.num_angles], angle / 2, reshape=False, mode='wrap'
-            )
-            tomo.tracked_rotations[i] += -angle / 2
-            tomo.tracked_rotations[(i + tomo.num_angles // 2) % tomo.num_angles] += angle / 2
-            total_angle_rotation += abs(angle / 2)
-
-        average_angle_rotation = total_angle_rotation / (tomo.num_angles // 2)
-        print(f"Average degree rotation of iteration {iteration}: {average_angle_rotation}")
-
-        if average_angle_rotation < tolerance:
-            print(f'Convergence reached after {iteration + 1} iterations.')
-            break
-    print(f'Maximum iterations reached without convergence.')
-
-def unrotate(tomo):
-    """
-    Reverses the rotational shifts stored in tracked_rotations and applies them to finalProjections.
-
-    Parameters:
-    - tomo: Tomography object with .finalProjections and .tracked_rotations.
-    """
-    for i in tqdm(range(tomo.num_angles // 2), desc='Un-rotate image'):
-        tomo.finalProjections[i] = rotate(
-            tomo.finalProjections[i], -tomo.tracked_rotations[i], reshape=False, mode='wrap'
-        )
-        tomo.finalProjections[(i + tomo.num_angles // 2) % tomo.num_angles] = rotate(
-            tomo.finalProjections[(i + tomo.num_angles // 2) % tomo.num_angles],
-            -tomo.tracked_rotations[(i + tomo.num_angles // 2) % tomo.num_angles],
-            reshape=False, mode='wrap'
-        )
-
-def PMA(tomo, max_iterations=5, tolerance=0.1, algorithm='art', crop_bottom_center_y=500, crop_bottom_center_x=750, isPhaseData=False, standardize=True):
-    """
-    Performs Projection Matching Alignment (PMA) by comparing 2D projections to simulated projections of the current 3D reconstruction and minimizing differences.
-    Projections must be normalized for this method to work.
-    Automatically centers projections before and after running the algorithm.
-    Since cropping is part of the algorith, it is recommended to use PMA as one of the last alignment algorithms.
+    Step-size regularization damps shifts by 0.2x when the max shift drops below 0.05 px,
+    preventing overshoot near convergence.
 
     Source: Odstrčil. Alignment methods for nanotomography with deep subpixel accuracy.
     https://doi.org/10.1364/oe.27.036637
 
     Parameters:
     - tomo: Tomography object containing projections, angles, and reconstruction settings.
-    - max_iterations (int): Number of PMA refinement iterations to perform.
-    - tolerance (float): Average pixel shift to consider convergence.
-    - algorithm (str): Reconstruction algorithm to use.
-    - crop_bottom_center_y (int): Height for cropping bottom center.
-    - crop_bottom_center_x (int): Width for cropping bottom center.
-    - isPhaseData (bool): Whether the data is phase data, which may require sign inversion.
+    - max_iterations (int): Default number of iterations per pyramid level.
+    - tolerance (float): Average pixel shift threshold for early stopping within a level.
+    - algorithm (str): Reconstruction algorithm ('art', 'gridrec', 'sirt', or CUDA variant).
+    - crop_bottom_center_y/x (int): Spatial crop applied before alignment begins.
+    - isPhaseData (bool): Whether data is phase contrast (affects standardization sign).
+    - standardize (bool): Whether to standardize projections and reprojections before comparing.
+    - levels (int): Number of pyramid levels. 1 = full resolution only (original behaviour).
+      level 0 = full res, level 1 = scale^1 downsampled, etc. Runs coarse → fine.
+    - scale (int): Downscale factor between pyramid levels (e.g. 2 → 2x, 4x, 8x, ...).
+    - iterations_per_level (list): Per-level iteration counts ordered coarse → fine.
+      Length must equal `levels`. If None, uses `max_iterations` at every level.
+      Example: levels=3, iterations_per_level=[3, 3, 5] runs 3 iters at 4x, 3 at 2x, 5 at 1x.
     """
     print("Projection Matching Alignment (PMA)")
+    ratio = 0.95
 
-    # Cropping will affect both workingProjections and finalProjections, Crop just to remove outside noise to improve 3D reconstructions
     tomo.crop_bottom_center(crop_bottom_center_y, crop_bottom_center_x)
     if standardize:
         tomo.standardize(isPhaseData=isPhaseData)
     tomo.center_projections()
-    for k in tqdm(range(max_iterations), desc='PMA Algorithm iterations'):
+
+    if iterations_per_level is None:
+        iters_per_level = [max_iterations] * levels
+    else:
+        iters_per_level = list(iterations_per_level)
+        assert len(iters_per_level) == levels, "iterations_per_level must have one entry per level"
+
+    def _reconstruct(projs, center):
         if algorithm.endswith("CUDA"):
-            if torch.cuda.is_available():
-                options = {
-                    'proj_type': 'cuda',
-                    'method': algorithm,
-                    'num_iter': 400,
-                    'extra_options': {}
-                }
-                recon_iterated = tomopy.recon(
-                    tomo.workingProjections,
-                    tomo.ang,
-                    center=tomo.rotation_center,
-                    algorithm=tomopy.astra,
-                    options=options,
-                    ncore=1
-                )
-            else:
-                raise ValueError("GPU is not available, but the selected algorithm was 'gpu'.")
+            if torch is None:
+                raise ValueError("GPU requested but torch is unavailable.")
+            options = {'proj_type': 'cuda', 'method': algorithm, 'num_iter': 400, 'extra_options': {}}
+            recon = tomopy.recon(projs, tomo.ang, center=center, algorithm=tomopy.astra, options=options, ncore=1)
         elif algorithm == 'svmbir':
-            recon_iterated = svmbir.recon(
-                tomo.workingProjections, tomo.ang, center_offset=tomo.center_offset, verbose=1
-            )
+            recon = svmbir.recon(projs, tomo.ang, center_offset=tomo.center_offset, verbose=1)
         else:
-            recon_iterated = tomopy.recon(
-                tomo.workingProjections,
-                tomo.ang,
-                center=tomo.rotation_center,
-                algorithm=algorithm,
-                sinogram_order=False
-            )
+            recon = tomopy.recon(projs, tomo.ang, center=center, algorithm=algorithm, sinogram_order=False)
+        return tomopy.circ_mask(recon, axis=0, ratio=ratio)
 
-        ratio = 0.95
-        recon_iterated = tomopy.circ_mask(recon_iterated, axis=0, ratio=ratio)
+    def _compute_shift(ref, mov, cropping):
+        ref_c = ref[:, cropping:-cropping] if cropping > 0 else ref
+        mov_c = mov[:, cropping:-cropping] if cropping > 0 else mov
+        shift_rc, _, _ = phase_cross_correlation(ref_c, mov_c, upsample_factor=upsample_factor)
+        return shift_rc[0], shift_rc[1]
 
-        iterated = tomopy.project(recon_iterated, tomo.ang, pad=False)
-        if standardize:
-            iterated = (iterated - np.mean(iterated)) / np.std(iterated)
-        total_shift = 0
-        total_x_shift = 0
-        total_y_shift = 0
-        for i in range(tomo.num_angles):
-            #Assign images to compare and crop images to match the cropping done by the circular mask
-            cropping = ceil((1-ratio) * tomo.image_size[0] / 2)
-            img1 = iterated[i][:,cropping:-cropping]
-            img2 = tomo.workingProjections[i][:,cropping:-cropping]
-            num_rows, num_cols = img1.shape
+    # Snapshot taken after preprocessing; all pyramid levels shift from this base.
+    original = tomo.workingProjections.copy()
+    pma_shifts = np.zeros((tomo.num_angles, 2), dtype=np.float64)
 
-            correlation = correlate(img1, img2, mode='same')
-            y_shift, x_shift = np.unravel_index(np.argmax(correlation), correlation.shape)
-            y_shift -= num_rows // 2
-            x_shift -= num_cols // 2
+    for level_idx, level in enumerate(reversed(range(levels))):
+        downsample_factor = scale ** level
+        n_iters = iters_per_level[level_idx]
+        print(f"\n--- PMA Level {level} ({downsample_factor}x downsampled, {n_iters} iterations) ---")
 
-            # if i == 100:
-            #     plt.imshow(img1)
-            #     plt.colorbar()
-            #     plt.show()
-            #     plt.imshow(img2)
-            #     plt.colorbar()
-            #     plt.show()
-            #     plt.imshow(correlation)
-            #     plt.show()
-            #     print("Y shift:", y_shift, "X shift:", x_shift)
+        # Apply current cumulative PMA shifts from original — no chained interpolation.
+        current_projs = np.stack([
+            subpixel_shift(original[i], pma_shifts[i, 0], pma_shifts[i, 1])
+            for i in range(tomo.num_angles)
+        ])
 
-            tomo.workingProjections[i % tomo.num_angles] = subpixel_shift(
-                tomo.workingProjections[i % tomo.num_angles], y_shift, x_shift
-            )
-            tomo.tracked_shifts[i % tomo.num_angles][0] += y_shift
-            tomo.tracked_shifts[i % tomo.num_angles][1] += x_shift
-            total_shift += np.sqrt(y_shift**2 + x_shift**2)
-            total_x_shift += np.abs(x_shift)
-            total_y_shift += np.abs(y_shift)
+        # Spatially downsample for this pyramid level.
+        if level > 0:
+            scaled_projs = list(pyramid_gaussian(
+                current_projs, downscale=scale, max_layer=level, channel_axis=0
+            ))[level].astype(np.float32)
+        else:
+            scaled_projs = current_projs.astype(np.float32)
 
-        average_shift = total_shift / tomo.num_angles
-        average_x_shift = total_x_shift / tomo.num_angles
-        average_y_shift = total_y_shift / tomo.num_angles
+        scaled_center = tomo.rotation_center / downsample_factor
+        ny_scaled = scaled_projs.shape[1]
+        cropping = ceil((1 - ratio) * ny_scaled / 2)
 
+        level_shifts = np.zeros((tomo.num_angles, 2), dtype=np.float64)
 
-        print(f"Average pixel shift of iteration {k} - (x: {average_x_shift}, y: {average_y_shift}), Total: {average_shift}")
+        for k in tqdm(range(n_iters), desc=f'PMA Level {level} iterations'):
+            recon = _reconstruct(scaled_projs, scaled_center)
+            reproj = tomopy.project(recon, tomo.ang, pad=False)
+            if standardize:
+                reproj = (reproj - np.mean(reproj)) / np.std(reproj)
 
+            dy = np.zeros(tomo.num_angles)
+            dx = np.zeros(tomo.num_angles)
+            for i in range(tomo.num_angles):
+                dy[i], dx[i] = _compute_shift(reproj[i], scaled_projs[i], cropping)
 
-        if average_shift < tolerance:
-            print(f'Convergence reached after {k + 1} iterations.')
-            # tomo.center_projections()
-            break
-    # tomo.center_projections()
+            # Step-size regularization: damp when near convergence to avoid overshoot.
+            dxmax = np.max(np.abs(dx))
+            dymax = np.max(np.abs(dy))
+            alpha = 0.2 if max(dxmax, dymax) < 0.05 else 1.0
+            dy *= alpha
+            dx *= alpha
+            if alpha < 1.0:
+                print(f"  Regularized alpha={alpha} (max: dx={dxmax:.3f}, dy={dymax:.3f})")
 
-def vertical_mass_fluctuation_align(tomo, tolerance=0.1, max_iterations=15, y_range = None):
+            for i in range(tomo.num_angles):
+                scaled_projs[i] = subpixel_shift(scaled_projs[i], dy[i], dx[i])
+            level_shifts[:, 0] += dy
+            level_shifts[:, 1] += dx
+
+            avg_shift = np.mean(np.sqrt((dy* downsample_factor)**2 + (dx*downsample_factor)**2))
+            print(f"  Iter {k+1}: avg={avg_shift:.4f} px (x:{np.mean(np.abs(dx*downsample_factor)):.4f}, y:{np.mean(np.abs(dy*downsample_factor)):.4f})")
+
+            if avg_shift*downsample_factor < tolerance:
+                print(f"  Convergence at level {level} after {k+1} iterations.")
+                break
+
+        # Upscale shifts to full-resolution pixel units before accumulating.
+        pma_shifts += level_shifts * downsample_factor
+
+    # Apply all accumulated PMA shifts in one pass from the original (no compounding).
+    for i in range(tomo.num_angles):
+        tomo.workingProjections[i] = subpixel_shift(original[i], pma_shifts[i, 0], pma_shifts[i, 1])
+    tomo.tracked_shifts += pma_shifts
+    print("\nPMA complete.")
+
+def vertical_mass_fluctuation_align(
+        tomo,
+        tolerance=0.1,
+        max_iterations=15,
+        y_range=None,
+        sigma=2.0,
+        upsample_factor=100,
+        smooth_sigma=None,
+        ):
     """
-    Aligns projection pairs at opposite angles by minimizing vertical center-of-mass differences.
+    Aligns projections vertically by correlating high-pass-filtered column-sum profiles.
 
     Source: Odstrčil. Alignment methods for nanotomography with deep subpixel accuracy.
     https://doi.org/10.1364/oe.27.036637
 
     Parameters:
     - tomo: Tomography object with projection data and shift tracking.
-    - tolerance (float): Convergence threshold for average vertical shift.
+    - tolerance (float): Convergence threshold for average vertical shift per iteration.
     - max_iterations (int): Maximum number of iterations.
+    - y_range (list): Optional [start, end] row crop applied before summing columns.
+    - sigma (float): Gaussian sigma for high-pass filtering each mass profile
+      (profile = raw_sum - gaussian_filter(raw_sum, sigma)).
+    - upsample_factor (int): Sub-pixel precision for phase_cross_correlation (e.g. 100 = 0.01 px).
+    - smooth_sigma (float): If set, smooths detected shifts across angles with gaussian_filter1d
+      before applying them, suppressing noisy frame-to-frame outliers.
     """
     print("Vertical Mass Fluctuation Alignment")
-    # for iteration in tqdm(range(max_iterations), desc="VMF Alignment Iterations"):
-    #     sums = []
-    #     total_shift = 0
-    #     for k in range(tomo.num_angles):
-    #         sums.append(np.sum(tomo.workingProjections[k], axis=1).tolist())
-    #     for i in range(tomo.num_angles // 2):
-    #         CC = sp.signal.correlate(
-    #             sums[i], sums[(i + tomo.num_angles // 2) % tomo.num_angles], mode='same', method='fft'
-    #         )
-    #         maxpoint = np.where(CC == CC.max())
-    #         yshift = int(tomo.image_size[0] / 2 - maxpoint[0])
-    #         tomo.workingProjections[i] = subpixel_shift(tomo.workingProjections[i], -yshift / 2, 0)
-    #         tomo.workingProjections[(i + tomo.num_angles // 2) % tomo.num_angles] = subpixel_shift(
-    #             tomo.workingProjections[(i + tomo.num_angles // 2) % tomo.num_angles], yshift / 2, 0
-    #         )
-    #         tomo.tracked_shifts[i, 0] += yshift / 2
-    #         tomo.tracked_shifts[(i + tomo.num_angles // 2) % tomo.num_angles, 0] -= yshift / 2
-    #         total_shift += abs(yshift)
 
-    #Align with first image
+    n = tomo.num_angles
+
     for iteration in tqdm(range(max_iterations), desc="VMF Alignment Iterations"):
-        sums = []
-        total_shift = 0
-        for k in range(tomo.num_angles):
-            if y_range == None:
-                sums.append(np.sum(tomo.workingProjections[k], axis=1).tolist())
-            else:
-                sums.append(np.sum(tomo.workingProjections[k][y_range[0]:y_range[1]], axis=1).tolist())
-        for i in range(1, tomo.num_angles):
-            CC = sp.signal.correlate(
-                sums[0], sums[i], mode='same', method='fft'
-            )
-            maxpoint = np.where(CC == CC.max())
-            yshift = int(tomo.image_size[0] - maxpoint[0])
-            tomo.workingProjections[i] = subpixel_shift(tomo.workingProjections[i], -yshift, 0)
-            tomo.tracked_shifts[i, 0] += yshift / 2
-            total_shift += abs(yshift)
+        snapshot = tomo.workingProjections.copy()
 
-        average_shift = total_shift / tomo.num_angles
-        print(f"Average pixel shift of iteration {iteration}: {average_shift}")
+        # Build high-pass-filtered column-sum profiles for each projection.
+        # Small sigma removes only pixel noise; the broad mass peak is preserved for correlation.
+        profiles_list = []
+        for k in range(n):
+            img = snapshot[k] if y_range is None else snapshot[k][y_range[0]:y_range[1]]
+            m = np.sum(img, axis=1).astype(np.float64)
+            profiles_list.append(m - gaussian_filter(m, sigma=sigma))
+        profiles = np.array(profiles_list)
+
+        ref = profiles.mean(axis=0)
+
+        # Detect sub-pixel vertical shifts via phase cross-correlation
+        shifts_y = np.zeros(n, dtype=np.float64)
+        for i in range(n):
+            d_y, _, _ = phase_cross_correlation(ref, profiles[i], upsample_factor=upsample_factor)
+            shifts_y[i] = d_y[0]
+
+        # Optionally smooth shifts across angles to suppress outliers
+        if smooth_sigma is not None and smooth_sigma > 0:
+            shifts_y = gaussian_filter1d(shifts_y, sigma=smooth_sigma)
+
+        # Apply all shifts from the snapshot in one pass (no compounding interpolation errors)
+        for i in range(n):
+            tomo.workingProjections[i] = subpixel_shift(snapshot[i], shifts_y[i], 0)
+        tomo.tracked_shifts[:, 0] += shifts_y
+
+        average_shift = np.mean(np.abs(shifts_y))
+        print(f"Iteration {iteration + 1}: avg shift = {average_shift:.4f} px")
 
         if average_shift < tolerance:
             print(f'Convergence reached after {iteration + 1} iterations.')
-            break
+            return
+
+    print('Maximum iterations reached without convergence.')
 
 def tomopy_align(tomo, tolerance=0.1, max_iterations=15, alg="sirt", crop_bottom_center_y=500, crop_bottom_center_x=750, isPhaseData = False):
     """
@@ -431,11 +427,210 @@ def shift_min_to_middle(tomo):
         tomo.workingProjections[m % tomo.num_angles] = subpixel_shift(tomo.workingProjections[m % tomo.num_angles], 0, x_shift)
 
 
-        
+def bilateralFilter(tomo, d=15, sigmaColor=0.3, sigmaSpace=100):
+    """
+    Applies a bilateral filter to each projection image to reduce noise while preserving edges.
+
+    Parameters:
+    - tomo: Tomography object containing the projections.
+    - d (int): Diameter of the pixel neighborhood used during filtering.
+    - sigmaColor (float): Filter sigma in the color space (intensity differences).
+    - sigmaSpace (float): Filter sigma in the coordinate space (spatial distance).
+    """
+    for i in tqdm(range(tomo.workingProjections.shape[0]), desc="Applying bilateral filter to projections"):
+        tomo.workingProjections[i] = cv2.bilateralFilter(
+            tomo.workingProjections[i], d=d, sigmaColor=sigmaColor, sigmaSpace=sigmaSpace
+        )
+
+def find_optimal_rotation(img1, img2, angle_range=[-5, 5], angle_step=0.25):
+    """
+    Finds the rotation angle between two projections that maximizes their similarity (cross-correlation).
+
+    Parameters:
+    - img1 (np.array): Reference image.
+    - img2 (np.array): Image to be rotated.
+    - angle_range (list): Range of angles to search over [min, max].
+    - angle_step (float): Increment between angle steps.
+
+    Returns:
+    - optimal_angle (float): Rotation angle that gives the maximum similarity.
+    - max_similarity (float): Maximum cross-correlation score found.
+    """
+    max_similarity = -100000
+    optimal_angle = 0
+
+    for angle in np.arange(angle_range[0], angle_range[1] + angle_step, angle_step):
+        rotated_img2 = rotate(np.copy(img2), angle, reshape=False, mode='wrap')
+        similarity = np.max(correlate(img1[200:-100, 170:-170], rotated_img2[200:-100, 170:-170], mode='same'))
+        if similarity > max_similarity:
+            max_similarity = similarity
+            optimal_angle = angle
+
+    return optimal_angle, max_similarity
+
+def rotate_correlate_align(tomo, max_iterations=10, tolerance=0.5):
+    """
+    Aligns projections by correcting rotational misalignment using pairwise image rotation and cross-correlation.
+
+    Parameters:
+    - tomo: Tomography object with .workingProjections and .tracked_rotations.
+    - max_iterations (int): Maximum number of alignment iterations.
+    - tolerance (float): Average rotation threshold to consider convergence.
+    """
+    for iteration in tqdm(range(max_iterations), desc='Rotation Correlation Alignment Iterations'):
+        total_angle_rotation = 0
+        for i in tqdm(range(tomo.num_angles // 2), desc=f'Iteration {iteration + 1}'):
+            angle, _ = tomo.find_optimal_rotation(
+                tomo.workingProjections[i],
+                tomo.workingProjections[(i + tomo.num_angles // 2) % tomo.num_angles]
+            )
+            tomo.workingProjections[i] = rotate(
+                tomo.workingProjections[i], -angle / 2, reshape=False, mode='wrap'
+            )
+            tomo.workingProjections[(i + tomo.num_angles // 2) % tomo.num_angles] = rotate(
+                tomo.workingProjections[(i + tomo.num_angles // 2) % tomo.num_angles], angle / 2, reshape=False, mode='wrap'
+            )
+            tomo.tracked_rotations[i] += -angle / 2
+            tomo.tracked_rotations[(i + tomo.num_angles // 2) % tomo.num_angles] += angle / 2
+            total_angle_rotation += abs(angle / 2)
+
+        average_angle_rotation = total_angle_rotation / (tomo.num_angles // 2)
+        print(f"Average degree rotation of iteration {iteration}: {average_angle_rotation}")
+
+        if average_angle_rotation < tolerance:
+            print(f'Convergence reached after {iteration + 1} iterations.')
+            break
+    print(f'Maximum iterations reached without convergence.')
+
+def unrotate(tomo):
+    """
+    Reverses the rotational shifts stored in tracked_rotations and applies them to finalProjections.
+
+    Parameters:
+    - tomo: Tomography object with .finalProjections and .tracked_rotations.
+    """
+    for i in tqdm(range(tomo.num_angles // 2), desc='Un-rotate image'):
+        tomo.finalProjections[i] = rotate(
+            tomo.finalProjections[i], -tomo.tracked_rotations[i], reshape=False, mode='wrap'
+        )
+        tomo.finalProjections[(i + tomo.num_angles // 2) % tomo.num_angles] = rotate(
+            tomo.finalProjections[(i + tomo.num_angles // 2) % tomo.num_angles],
+            -tomo.tracked_rotations[(i + tomo.num_angles // 2) % tomo.num_angles],
+            reshape=False, mode='wrap'
+        )
 
 
+def sinogram_consistency_score(tomo, plot=True, bg_percentile=None):
+    """
+    Quantifies alignment quality using the Helgason-Ludwig consistency conditions:
 
+      x_cm(θ) = A·cos(θ) + B·sin(θ) + C   (horizontal CM follows a sinusoid)
+      y_cm(θ) = constant                    (vertical CM is invariant to rotation)
 
+    x_cm deviation captures horizontal misalignment (what XCA corrects).
+    y_cm deviation captures vertical drift (what VMF corrects).
+    Both are combined into a single overall RMSE.
+
+    Parameters:
+    - tomo: Tomography object with .workingProjections and .ang (angles in radians).
+    - plot (bool): If True, plots both CM trajectories with fits and residuals.
+    - bg_percentile (float or None): If set (e.g. 10), subtracts the Nth percentile of
+      each projection as a background estimate before computing the CM. Improves accuracy
+      when bright background pulls the CM away from the sample signal.
+
+    Returns:
+    - combined_rmse (float): RMS of x and y RMSE combined — the single overall score.
+    - x_rmse (float): RMSE of x_cm vs best-fit sinusoid (horizontal alignment, pixels).
+    - y_rmse (float): RMSE of y_cm vs its mean (vertical alignment, pixels).
+    - x_cm, y_cm (ndarray): Measured CM trajectories, shape (n,).
+    """
+    n = tomo.num_angles
+    angles = tomo.ang.ravel()
+    ny, nx = tomo.workingProjections.shape[1], tomo.workingProjections.shape[2]
+    x_coords = np.arange(nx, dtype=np.float64)
+    y_coords = np.arange(ny, dtype=np.float64)
+
+    x_cm = np.zeros(n)
+    y_cm = np.zeros(n)
+
+    for i in range(n):
+        img = tomo.workingProjections[i].astype(np.float64)
+
+        # Background subtraction: remove Nth percentile intensity before weighting.
+        # Prevents bright background from dominating the center-of-mass estimate.
+        if bg_percentile is not None:
+            bg = np.percentile(img, bg_percentile)
+            img = np.clip(img - bg, 0, None)
+
+        col_sums = img.sum(axis=0)  # (nx,) — mass at each column position
+        row_sums = img.sum(axis=1)  # (ny,) — mass at each row position
+        total = col_sums.sum()
+
+        if total > 0:
+            x_cm[i] = (x_coords * col_sums).sum() / total
+            y_cm[i] = (y_coords * row_sums).sum() / total
+        else:
+            x_cm[i] = nx / 2.0
+            y_cm[i] = ny / 2.0
+
+    # x_cm consistency: fit sinusoid A·cos(θ) + B·sin(θ) + C
+    design = np.column_stack([np.cos(angles), np.sin(angles), np.ones(n)])
+    coeffs_x, _, _, _ = np.linalg.lstsq(design, x_cm, rcond=None)
+    x_fit = design @ coeffs_x
+    x_residuals = x_cm - x_fit
+    x_rmse = np.sqrt(np.mean(x_residuals ** 2))
+    ss_tot_x = np.sum((x_cm - x_cm.mean()) ** 2)
+    r2_x = 1.0 - np.sum(x_residuals ** 2) / ss_tot_x if ss_tot_x > 0 else 1.0
+
+    # y_cm consistency: should be constant across angles (invariant to rotation)
+    y_fit = np.full(n, y_cm.mean())
+    y_residuals = y_cm - y_fit
+    y_rmse = np.sqrt(np.mean(y_residuals ** 2))
+    ss_tot_y = np.sum((y_cm - y_cm.mean()) ** 2)
+    r2_y = 1.0 - np.sum(y_residuals ** 2) / ss_tot_y if ss_tot_y > 0 else 1.0
+
+    # Combined score: quadrature sum of both directions
+    combined_rmse = np.sqrt((x_rmse ** 2 + y_rmse ** 2) / 2)
+
+    print(f"Sinogram consistency:")
+    print(f"  x_cm (horizontal) — RMSE: {x_rmse:.4f} px  |  R²: {r2_x:.6f}")
+    print(f"  y_cm (vertical)   — RMSE: {y_rmse:.4f} px  |  R²: {r2_y:.6f}")
+    print(f"  Combined RMSE:       {combined_rmse:.4f} px")
+
+    if plot:
+        angles_deg = np.rad2deg(angles)
+        order = np.argsort(angles_deg)
+        ad = angles_deg[order]
+
+        fig, axes = plt.subplots(2, 2, figsize=(14, 6), sharex=True)
+        fig.suptitle(f'Sinogram Consistency  —  Combined RMSE={combined_rmse:.4f} px', fontsize=12)
+
+        axes[0, 0].plot(ad, x_cm[order], '.', markersize=3, label='x_cm')
+        axes[0, 0].plot(ad, x_fit[order], '-', linewidth=1.5, label='Sinusoid fit')
+        axes[0, 0].set_ylabel('x center of mass (px)')
+        axes[0, 0].set_title(f'Horizontal  RMSE={x_rmse:.4f} px  R²={r2_x:.4f}')
+        axes[0, 0].legend(markerscale=3)
+
+        axes[1, 0].plot(ad, x_residuals[order], '.', markersize=3, color='tomato')
+        axes[1, 0].axhline(0, color='k', linewidth=0.8, linestyle='--')
+        axes[1, 0].set_xlabel('Angle (degrees)')
+        axes[1, 0].set_ylabel('Residual (px)')
+
+        axes[0, 1].plot(ad, y_cm[order], '.', markersize=3, color='steelblue', label='y_cm')
+        axes[0, 1].axhline(y_cm.mean(), color='orange', linewidth=1.5, label='Mean (expected)')
+        axes[0, 1].set_ylabel('y center of mass (px)')
+        axes[0, 1].set_title(f'Vertical  RMSE={y_rmse:.4f} px  R²={r2_y:.4f}')
+        axes[0, 1].legend(markerscale=3)
+
+        axes[1, 1].plot(ad, y_residuals[order], '.', markersize=3, color='tomato')
+        axes[1, 1].axhline(0, color='k', linewidth=0.8, linestyle='--')
+        axes[1, 1].set_xlabel('Angle (degrees)')
+        axes[1, 1].set_ylabel('Residual (px)')
+
+        plt.tight_layout()
+        plt.show()
+
+    return combined_rmse, x_rmse, y_rmse, x_cm, y_cm
 
 
 
