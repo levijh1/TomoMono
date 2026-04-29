@@ -11,6 +11,8 @@ import scipy as sp
 from scipy.ndimage import gaussian_filter, gaussian_filter1d
 import matplotlib.pyplot as plt
 from math import ceil
+from matplotlib import gridspec
+
 try:
     import torch
     if not torch.cuda.is_available() and not torch.backends.mps.is_available():
@@ -18,17 +20,33 @@ try:
 except ImportError:
     torch = None
 
+try:
+    import cupy as cp
+    if cp.is_available():
+        from cupyx.scipy.ndimage import gaussian_filter as _gaussian_filter
+        xp = cp
+    else:
+        cp = None
+        _gaussian_filter = gaussian_filter
+        xp = np
+except ImportError:
+    cp = None
+    _gaussian_filter = gaussian_filter
+    xp = np
+
 def compute_grad_image(image):
-    gy, gx = np.gradient(image)
-    return np.sqrt(gx**2 + gy**2)
+    arr = xp.asarray(image)
+    gy, gx = xp.gradient(arr)
+    result = xp.sqrt(gx**2 + gy**2)
+    return result.get() if xp is not np else result
 
 def cross_correlate_align(
         tomo,
         tolerance=1,
         max_iterations=15,
         stepRatio=1,
-        yROI_Range=[200, -100],
-        xROI_Range=[170, -170],
+        yROI_Range=None,
+        xROI_Range=None,
         maxShiftTolerance=1,
         isFull360=False,
         num_images_for_median=None,
@@ -67,7 +85,10 @@ def cross_correlate_align(
       computing the cross-correlation. Gradient images are edge-enhanced, which can give
       more accurate shifts when features have strong edges but low overall contrast.
     """
-    print("Cross-Correlation Alignment")
+    roi_str = f"ROI y={yROI_Range} x={xROI_Range}" if (yROI_Range is not None and xROI_Range is not None) else "full frame"
+    ds_str = f"{downsample}x downsample" if downsample > 1 else "full resolution"
+    grad_str = "gradient mode" if use_grad else "intensity mode"
+    print(f"Cross-Correlation Alignment  [{ds_str} | {roi_str} | {grad_str}]")
 
     n = tomo.num_angles
     K = num_images_for_median if (num_images_for_median is not None and num_images_for_median > 1) else None
@@ -77,7 +98,7 @@ def cross_correlate_align(
             return img[yROI_Range[0]:yROI_Range[1], xROI_Range[0]:xROI_Range[1]]
         return img
 
-    def _maybe_downsample(img):
+    def _downsample(img):
         if downsample == 1:
             return img
         return tuple(pyramid_gaussian(img, max_layer=1, downscale=downsample, sigma=None, preserve_range=False))[1]
@@ -89,8 +110,8 @@ def cross_correlate_align(
             ref_c = compute_grad_image(ref_c)
             mov_c = compute_grad_image(mov_c)
         if downsample != 1:
-            ref_c = _maybe_downsample(ref_c)
-            mov_c = _maybe_downsample(mov_c)
+            ref_c = _downsample(ref_c)
+            mov_c = _downsample(mov_c)
         shift_rc, _, _ = phase_cross_correlation(ref_c, mov_c, upsample_factor=upsample_factor)
         return shift_rc[0] * downsample * stepRatio, shift_rc[1] * downsample * stepRatio
     
@@ -135,82 +156,131 @@ def cross_correlate_align(
 
     print('Maximum iterations reached without convergence.')
 
+
+
+
+
+
+def _highpass(img, sigma):
+    arr = xp.asarray(img, dtype=xp.float64)
+    result = arr - _gaussian_filter(arr, sigma)
+    return result.get() if xp is not np else result
+
+def _fourier_gradients(img):
+    ny, nx = img.shape
+    arr = xp.asarray(img)
+    F  = xp.fft.fft2(arr)
+    ux = xp.fft.fftfreq(nx).reshape(1, -1)
+    uy = xp.fft.fftfreq(ny).reshape(-1, 1)
+    dy = xp.real(xp.fft.ifft2(2j * np.pi * uy * F))
+    dx = xp.real(xp.fft.ifft2(2j * np.pi * ux * F))
+    if xp is not np:
+        return dy.get(), dx.get()
+    return dy, dx
+
+# def _optical_flow_shift(proj, reproj_img, sigma):
+#     """Estimate (dy, dx) via Lucas-Kanade optical flow on high-pass filtered images.
+
+#     Minimizes ||r - dy·∂p̂/∂y - dx·∂p̂/∂x||² where r = proj - reproj_img.
+#     The closed-form solution is  d = Σ(hp(∂p̂/∂d) · hp(r)) / Σ(hp(∂p̂/∂d)²),
+#     so the denominator is gradient energy of the reprojection, not residual energy.
+#     """
+#     r_hp             = _highpass(proj - reproj_img, sigma)
+#     dy_grad, dx_grad = _fourier_gradients(reproj_img)
+#     hp_dy            = _highpass(dy_grad, sigma)
+#     hp_dx            = _highpass(dx_grad, sigma)
+#     dy = np.sum(hp_dy * r_hp) / (np.sum(hp_dy ** 2) + 1e-8)
+#     dx = np.sum(hp_dx * r_hp) / (np.sum(hp_dx ** 2) + 1e-8)
+#     return float(dy), float(dx)
+
+
+def _pma_reconstruct(projs, ang, center, algorithm, ratio=0.95):
+    if algorithm.endswith("CUDA"):
+        if torch is None:
+            raise ValueError("GPU requested but torch is unavailable.")
+        options = {'proj_type': 'cuda', 'method': algorithm, 'num_iter': 400, 'extra_options': {}}
+        recon = tomopy.recon(projs, ang, center=center, algorithm=tomopy.astra, options=options, ncore=1)
+    else:
+        recon = tomopy.recon(projs, ang, center=center, algorithm=algorithm, sinogram_order=False)
+    return tomopy.circ_mask(recon, axis=0, ratio=ratio)
+
+def _cross_correlation_shift(ref, mov, upsample_factor):
+    shift, _, _ = phase_cross_correlation(ref, mov, upsample_factor=upsample_factor)
+    return float(shift[0]), float(shift[1])
+
+# --- NEW: Matching preprocess (easy to disable/remove) ---
+def _preprocess_for_matching(img, sigma=2):
+    img = img.astype(np.float64)
+    img = img - gaussian_filter(img, sigma)  # high-pass
+    img /= (np.std(img) + 1e-8)
+    return img
+
+
+def _optical_flow_shift(proj, reproj_img, sigma):
+    """Improved Lucas-Kanade optical flow with full 2x2 system."""
+    r_hp = _highpass(proj - reproj_img, sigma)
+
+    dy_grad, dx_grad = _fourier_gradients(reproj_img)
+    hp_dy = _highpass(dy_grad, sigma)
+    hp_dx = _highpass(dx_grad, sigma)
+
+    # --- NEW: full 2x2 system ---
+    A11 = np.sum(hp_dy * hp_dy)
+    A22 = np.sum(hp_dx * hp_dx)
+    A12 = np.sum(hp_dy * hp_dx)
+
+    b1 = np.sum(hp_dy * r_hp)
+    b2 = np.sum(hp_dx * r_hp)
+
+    det = A11 * A22 - A12 * A12 + 1e-8
+
+    dy = ( A22 * b1 - A12 * b2) / det
+    dx = (-A12 * b1 + A11 * b2) / det
+
+    return float(dy), float(dx)
+
+
 def PMA(
         tomo,
         max_iterations=5,
         tolerance=0.1,
         algorithm='art',
-        crop_bottom_center_y=500,
-        crop_bottom_center_x=750,
+        crop_bottom_center_y=None,
+        crop_bottom_center_x=None,
         isPhaseData=False,
-        standardize=True,
+        standardize=False,
         levels=1,
         scale=2,
         iterations_per_level=None,
         upsample_factor=20,
+        shift_method='cross_correlation',
+        of_sigma=3.0,
+        smooth_sigma=None,  # --- CHANGED: disabled by default ---
+        plot=False,
+
+        # --- NEW: easy toggle ---
+        use_matching_preprocess=True,
+        matching_sigma=2,
+
+        # --- NEW: shift clamp ---
+        max_step=0.5,
         ):
     """
-    Performs Projection Matching Alignment (PMA) using a multi-resolution pyramid.
-
-    Runs alignment at progressively finer resolutions (coarse to fine). At each level,
-    shifts are computed on downsampled images and upscaled back to full-resolution units.
-    All levels accumulate into a single set of cumulative shifts applied from the original
-    projections, avoiding chained interpolation errors across levels.
-
-    Step-size regularization damps shifts by 0.2x when the max shift drops below 0.05 px,
-    preventing overshoot near convergence.
-
-    Source: Odstrčil. Alignment methods for nanotomography with deep subpixel accuracy.
-    https://doi.org/10.1364/oe.27.036637
-
-    Parameters:
-    - tomo: Tomography object containing projections, angles, and reconstruction settings.
-    - max_iterations (int): Default number of iterations per pyramid level.
-    - tolerance (float): Average pixel shift threshold for early stopping within a level.
-    - algorithm (str): Reconstruction algorithm ('art', 'gridrec', 'sirt', or CUDA variant).
-    - crop_bottom_center_y/x (int): Spatial crop applied before alignment begins.
-    - isPhaseData (bool): Whether data is phase contrast (affects standardization sign).
-    - standardize (bool): Whether to standardize projections and reprojections before comparing.
-    - levels (int): Number of pyramid levels. 1 = full resolution only (original behaviour).
-      level 0 = full res, level 1 = scale^1 downsampled, etc. Runs coarse → fine.
-    - scale (int): Downscale factor between pyramid levels (e.g. 2 → 2x, 4x, 8x, ...).
-    - iterations_per_level (list): Per-level iteration counts ordered coarse → fine.
-      Length must equal `levels`. If None, uses `max_iterations` at every level.
-      Example: levels=3, iterations_per_level=[3, 3, 5] runs 3 iters at 4x, 3 at 2x, 5 at 1x.
+    PMA with improved stability tweaks.
     """
-    print("Projection Matching Alignment (PMA)")
     ratio = 0.95
+    print(f"Projection Matching Alignment (PMA) [{shift_method}]")
 
-    tomo.crop_bottom_center(crop_bottom_center_y, crop_bottom_center_x)
+    if crop_bottom_center_x is not None and crop_bottom_center_y is not None:
+        tomo.crop_bottom_center(crop_bottom_center_y, crop_bottom_center_x)
     if standardize:
         tomo.standardize(isPhaseData=isPhaseData)
     tomo.center_projections()
 
-    if iterations_per_level is None:
-        iters_per_level = [max_iterations] * levels
-    else:
-        iters_per_level = list(iterations_per_level)
-        assert len(iters_per_level) == levels, "iterations_per_level must have one entry per level"
+    iters_per_level = ([max_iterations] * levels if iterations_per_level is None
+                       else list(iterations_per_level))
+    assert len(iters_per_level) == levels
 
-    def _reconstruct(projs, center):
-        if algorithm.endswith("CUDA"):
-            if torch is None:
-                raise ValueError("GPU requested but torch is unavailable.")
-            options = {'proj_type': 'cuda', 'method': algorithm, 'num_iter': 400, 'extra_options': {}}
-            recon = tomopy.recon(projs, tomo.ang, center=center, algorithm=tomopy.astra, options=options, ncore=1)
-        elif algorithm == 'svmbir':
-            recon = svmbir.recon(projs, tomo.ang, center_offset=tomo.center_offset, verbose=1)
-        else:
-            recon = tomopy.recon(projs, tomo.ang, center=center, algorithm=algorithm, sinogram_order=False)
-        return tomopy.circ_mask(recon, axis=0, ratio=ratio)
-
-    def _compute_shift(ref, mov, cropping):
-        ref_c = ref[:, cropping:-cropping] if cropping > 0 else ref
-        mov_c = mov[:, cropping:-cropping] if cropping > 0 else mov
-        shift_rc, _, _ = phase_cross_correlation(ref_c, mov_c, upsample_factor=upsample_factor)
-        return shift_rc[0], shift_rc[1]
-
-    # Snapshot taken after preprocessing; all pyramid levels shift from this base.
     original = tomo.workingProjections.copy()
     pma_shifts = np.zeros((tomo.num_angles, 2), dtype=np.float64)
 
@@ -219,13 +289,11 @@ def PMA(
         n_iters = iters_per_level[level_idx]
         print(f"\n--- PMA Level {level} ({downsample_factor}x downsampled, {n_iters} iterations) ---")
 
-        # Apply current cumulative PMA shifts from original — no chained interpolation.
         current_projs = np.stack([
             subpixel_shift(original[i], pma_shifts[i, 0], pma_shifts[i, 1])
             for i in range(tomo.num_angles)
         ])
 
-        # Spatially downsample for this pyramid level.
         if level > 0:
             scaled_projs = list(pyramid_gaussian(
                 current_projs, downscale=scale, max_layer=level, channel_axis=0
@@ -234,120 +302,245 @@ def PMA(
             scaled_projs = current_projs.astype(np.float32)
 
         scaled_center = tomo.rotation_center / downsample_factor
-        ny_scaled = scaled_projs.shape[1]
-        cropping = ceil((1 - ratio) * ny_scaled / 2)
-
         level_shifts = np.zeros((tomo.num_angles, 2), dtype=np.float64)
+        level_snapshot = scaled_projs.copy()
 
         for k in tqdm(range(n_iters), desc=f'PMA Level {level} iterations'):
-            recon = _reconstruct(scaled_projs, scaled_center)
+            recon  = _pma_reconstruct(scaled_projs, tomo.ang, scaled_center, algorithm, ratio)
             reproj = tomopy.project(recon, tomo.ang, pad=False)
+            # reproj = reproj[:, :, ::-1]  # tomopy.project uses opposite x-axis convention from tomopy.recon
+
             if standardize:
                 reproj = (reproj - np.mean(reproj)) / np.std(reproj)
 
             dy = np.zeros(tomo.num_angles)
             dx = np.zeros(tomo.num_angles)
-            for i in range(tomo.num_angles):
-                dy[i], dx[i] = _compute_shift(reproj[i], scaled_projs[i], cropping)
 
-            # Step-size regularization: damp when near convergence to avoid overshoot.
-            dxmax = np.max(np.abs(dx))
-            dymax = np.max(np.abs(dy))
-            alpha = 0.2 if max(dxmax, dymax) < 0.05 else 1.0
-            dy *= alpha
-            dx *= alpha
-            if alpha < 1.0:
-                print(f"  Regularized alpha={alpha} (max: dx={dxmax:.3f}, dy={dymax:.3f})")
+            # --- NEW: store ref/mov for plotting ---
+            ref_list = []
+            mov_list = []
 
             for i in range(tomo.num_angles):
-                scaled_projs[i] = subpixel_shift(scaled_projs[i], dy[i], dx[i])
+
+                ref = reproj[i]
+                mov = scaled_projs[i]
+
+                # --- NEW: optional preprocessing ---
+                if use_matching_preprocess:
+                    ref = _preprocess_for_matching(ref, matching_sigma)
+                    mov = _preprocess_for_matching(mov, matching_sigma)
+
+                ref_list.append(ref)
+                mov_list.append(mov)
+
+                if shift_method == 'optical_flow':
+                    dy[i], dx[i] = _optical_flow_shift(mov, ref, of_sigma)
+                else:
+                    dy[i], dx[i] = _cross_correlation_shift(ref, mov, upsample_factor)
+
+            # --- Plot ACTUAL matching inputs ---
+            if plot and k == 0:
+                idx = tomo.num_angles//2
+                vmin = min(mov_list[idx].min(), ref_list[idx].min())
+                vmax = max(mov_list[idx].max(), ref_list[idx].max())
+
+                fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+                fig.suptitle(f"PMA Level {level} — Matching Inputs (Projection {idx})")
+
+                im0 = axes[0].imshow(mov_list[idx], cmap='gray', aspect='auto', vmin=vmin, vmax=vmax)
+                axes[0].set_title("mov (projection)")
+                axes[0].axis('off')
+                plt.colorbar(im0, ax=axes[0], fraction=0.046, pad=0.04)
+
+                im1 = axes[1].imshow(ref_list[idx], cmap='gray', aspect='auto', vmin=vmin, vmax=vmax)
+                axes[1].set_title("ref (reprojection)")
+                axes[1].axis('off')
+                plt.colorbar(im1, ax=axes[1], fraction=0.046, pad=0.04)
+
+                plt.tight_layout()
+                plt.show()
+
+            # Center shifts
+            dy -= np.mean(dy)
+            dx -= np.mean(dx)
+
+            # --- REMOVED smoothing unless explicitly set ---
+            if smooth_sigma:
+                dy = gaussian_filter1d(dy, sigma=smooth_sigma)
+                dx = gaussian_filter1d(dx, sigma=smooth_sigma)
+
+            # --- NEW: clamp shifts ---
+            dy = np.clip(dy, -max_step, max_step)
+            dx = np.clip(dx, -max_step, max_step)
+
             level_shifts[:, 0] += dy
             level_shifts[:, 1] += dx
 
-            avg_shift = np.mean(np.sqrt((dy* downsample_factor)**2 + (dx*downsample_factor)**2))
-            print(f"  Iter {k+1}: avg={avg_shift:.4f} px (x:{np.mean(np.abs(dx*downsample_factor)):.4f}, y:{np.mean(np.abs(dy*downsample_factor)):.4f})")
+            # Apply shifts
+            for i in range(tomo.num_angles):
+                scaled_projs[i] = subpixel_shift(level_snapshot[i], level_shifts[i, 0], level_shifts[i, 1])
 
-            if avg_shift*downsample_factor < tolerance:
+            avg_shift = np.mean(np.sqrt(dy**2 + dx**2))
+            print(f"  Iter {k+1}: avg={avg_shift:.4f} px")
+
+            if avg_shift < tolerance:
                 print(f"  Convergence at level {level} after {k+1} iterations.")
                 break
 
-        # Upscale shifts to full-resolution pixel units before accumulating.
         pma_shifts += level_shifts * downsample_factor
 
-    # Apply all accumulated PMA shifts in one pass from the original (no compounding).
     for i in range(tomo.num_angles):
         tomo.workingProjections[i] = subpixel_shift(original[i], pma_shifts[i, 0], pma_shifts[i, 1])
+
     tomo.tracked_shifts += pma_shifts
     print("\nPMA complete.")
 
 def vertical_mass_fluctuation_align(
-        tomo,
-        tolerance=0.1,
-        max_iterations=15,
-        y_range=None,
-        sigma=2.0,
-        upsample_factor=100,
-        smooth_sigma=None,
-        ):
-    """
-    Aligns projections vertically by correlating high-pass-filtered column-sum profiles.
+    tomo,
+    tolerance=0.0,
+    max_iterations=10,
+    y_range=None,
+    upsample_factor=50,
+    smooth_sigma=1.0,
+    window='hanning',     # 'hanning', 'soft_roi', or None — suppresses cut-off boundary artifacts
+    roi_sigma=0.3,        # Gaussian half-width as fraction of frame height (only for 'soft_roi')
+    use_gradient=True,   # Differentiate mass profile — sensitive to internal features, ignores bulk cut-off
+    plot=False,           # Plot window profile, final overall profile, and second projection profile
+    sigma=None,           # High-pass: removes the "bulk" mass, keeps the "fluctuations"
 
-    Source: Odstrčil. Alignment methods for nanotomography with deep subpixel accuracy.
-    https://doi.org/10.1364/oe.27.036637
-
-    Parameters:
-    - tomo: Tomography object with projection data and shift tracking.
-    - tolerance (float): Convergence threshold for average vertical shift per iteration.
-    - max_iterations (int): Maximum number of iterations.
-    - y_range (list): Optional [start, end] row crop applied before summing columns.
-    - sigma (float): Gaussian sigma for high-pass filtering each mass profile
-      (profile = raw_sum - gaussian_filter(raw_sum, sigma)).
-    - upsample_factor (int): Sub-pixel precision for phase_cross_correlation (e.g. 100 = 0.01 px).
-    - smooth_sigma (float): If set, smooths detected shifts across angles with gaussian_filter1d
-      before applying them, suppressing noisy frame-to-frame outliers.
-    """
-    print("Vertical Mass Fluctuation Alignment")
-
+):
+    if sigma is None:
+        sigma = tomo.workingProjections.shape[1] / 128  # heuristic: adjust based on image height
+    print(f"VMF Alignment (sigma={sigma}, upsample={upsample_factor}, window={window}, gradient={use_gradient})")
     n = tomo.num_angles
 
-    for iteration in tqdm(range(max_iterations), desc="VMF Alignment Iterations"):
+    for iteration in range(max_iterations):
+        # We work from the same 'snapshot' to avoid multiple interpolation blurs
         snapshot = tomo.workingProjections.copy()
 
-        # Build high-pass-filtered column-sum profiles for each projection.
-        # Small sigma removes only pixel noise; the broad mass peak is preserved for correlation.
-        profiles_list = []
+        profiles = []
+        win_to_plot = None
         for k in range(n):
             img = snapshot[k] if y_range is None else snapshot[k][y_range[0]:y_range[1]]
+
+            # 1. Generate Vertical Mass Profile
             m = np.sum(img, axis=1).astype(np.float64)
-            profiles_list.append(m - gaussian_filter(m, sigma=sigma))
-        profiles = np.array(profiles_list)
 
-        ref = profiles.mean(axis=0)
+            # 2. (Optional) Gradient-based profile — the derivative highlights internal
+            #    density transitions while making the cut-off boundary a single spike
+            #    that the window (step 3) can then suppress.
+            if use_gradient:
+                m = np.gradient(m)
 
-        # Detect sub-pixel vertical shifts via phase cross-correlation
-        shifts_y = np.zeros(n, dtype=np.float64)
+            # 3. Intensity Normalization (Crucial for VMF)
+            # This makes the sum independent of beam intensity fluctuations.
+            # Use mean-abs for gradient profiles since they can be signed.
+            if use_gradient:
+                m /= (np.mean(np.abs(m)) + 1e-9)
+            else:
+                m /= (np.mean(m) + 1e-9)
+
+            # 4. Apply vertical window to taper boundary artifacts to zero.
+            #    'hanning'  — cosine taper, both edges fade to 0; best general choice.
+            #    'soft_roi' — Gaussian centred in frame; useful when top is in-frame
+            #                 but bottom is cut off (upweights centre over edges).
+
+            if window == 'hanning':
+                win = np.hanning(len(m))
+                m = m * win
+            elif window == 'soft_roi':
+                y = np.arange(len(m))
+                center = (len(m) - 1) / 2.0
+                win = np.exp(-0.5 * ((y - center) / (roi_sigma * len(m))) ** 2)
+                m = m * win
+            else:
+                win = np.ones(len(m))
+
+            if plot and k == 0:
+                win_to_plot = win.copy()
+
+            # # 5. High-Pass Filter to extract 'Fluctuations'
+            # # (Signal - LowPass) = HighPass
+            # fluctuation = m - gaussian_filter(m, sigma=sigma)
+            # profiles.append(fluctuation)
+            profiles.append(m) #High pass filter might be too bad with noise
+
+        profiles = np.array(profiles)
+
+        # Robust Reference: The average fluctuation across all angles
+        ref = np.mean(profiles, axis=0)
+
+        shifts_y = np.zeros(n)
         for i in range(n):
-            d_y, _, _ = phase_cross_correlation(ref, profiles[i], upsample_factor=upsample_factor)
-            shifts_y[i] = d_y[0]
+            shift, error, diffphase = phase_cross_correlation(
+                ref[:, np.newaxis],
+                profiles[i][:, np.newaxis],
+                upsample_factor=upsample_factor
+            )
+            shifts_y[i] = shift[0]
 
-        # Optionally smooth shifts across angles to suppress outliers
-        if smooth_sigma is not None and smooth_sigma > 0:
+        # Subtract the mean shift to keep the volume centered in the FOV
+        shifts_y -= np.mean(shifts_y)
+
+        # Apply smoothing to the shift vector to prevent 'jittery' alignment
+        if smooth_sigma:
             shifts_y = gaussian_filter1d(shifts_y, sigma=smooth_sigma)
 
-        # Apply all shifts from the snapshot in one pass (no compounding interpolation errors)
+        # Apply shifts
         for i in range(n):
             tomo.workingProjections[i] = subpixel_shift(snapshot[i], shifts_y[i], 0)
-        tomo.tracked_shifts[:, 0] += shifts_y
+            tomo.tracked_shifts[i, 0] += shifts_y[i]
 
-        average_shift = np.mean(np.abs(shifts_y))
-        print(f"Iteration {iteration + 1}: avg shift = {average_shift:.4f} px")
+        avg_delta = np.mean(np.abs(shifts_y))
+        print(f"  Iteration {iteration + 1}: Mean Correction = {avg_delta:.4f} px")
 
-        if average_shift < tolerance:
-            print(f'Convergence reached after {iteration + 1} iterations.')
-            return
+        if plot:
+            fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+            fig.suptitle(f"VMF Alignment — Iteration {iteration + 1}")
 
-    print('Maximum iterations reached without convergence.')
+            # Window profile
+            axes[0].plot(win_to_plot)
+            axes[0].set_title(f"Window Profile ({window if window else 'none'})")
+            axes[0].set_xlabel("Pixel (vertical)")
+            axes[0].set_ylabel("Weight")
 
+            # Overall reference profile (mean across all projections)
+            axes[1].plot(ref)
+            axes[1].set_title("Overall Reference Profile\n(mean fluctuation across all angles)")
+            axes[1].set_xlabel("Pixel (vertical)")
+            axes[1].set_ylabel("Fluctuation")
+
+            # Second projection's processed profile (index 1, or 0 if only one angle)
+            second_idx = min(1, n - 1)
+            axes[2].plot(profiles[second_idx])
+            axes[2].set_title(f"Processed Profile — Projection {second_idx}")
+            axes[2].set_xlabel("Pixel (vertical)")
+            axes[2].set_ylabel("Fluctuation")
+
+            plt.tight_layout()
+            plt.show()
+
+        if avg_delta < tolerance:
+            print(f"  Converged.")
+            break
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+###Less successful algorithms below
 def tomopy_align(tomo, tolerance=0.1, max_iterations=15, alg="sirt", crop_bottom_center_y=500, crop_bottom_center_x=750, isPhaseData = False):
     """
     Uses TomoPy's joint reprojection algorithm to iteratively align all projections.
@@ -520,33 +713,32 @@ def unrotate(tomo):
         )
 
 
+
+
+
+
+
+
+
+
+
+
+###Scoring functions for alignment quality assessment
+
 def sinogram_consistency_score(tomo, plot=True, bg_percentile=None):
     """
-    Quantifies alignment quality using the Helgason-Ludwig consistency conditions:
-
-      x_cm(θ) = A·cos(θ) + B·sin(θ) + C   (horizontal CM follows a sinusoid)
-      y_cm(θ) = constant                    (vertical CM is invariant to rotation)
-
-    x_cm deviation captures horizontal misalignment (what XCA corrects).
-    y_cm deviation captures vertical drift (what VMF corrects).
-    Both are combined into a single overall RMSE.
-
-    Parameters:
-    - tomo: Tomography object with .workingProjections and .ang (angles in radians).
-    - plot (bool): If True, plots both CM trajectories with fits and residuals.
-    - bg_percentile (float or None): If set (e.g. 10), subtracts the Nth percentile of
-      each projection as a background estimate before computing the CM. Improves accuracy
-      when bright background pulls the CM away from the sample signal.
-
-    Returns:
-    - combined_rmse (float): RMS of x and y RMSE combined — the single overall score.
-    - x_rmse (float): RMSE of x_cm vs best-fit sinusoid (horizontal alignment, pixels).
-    - y_rmse (float): RMSE of y_cm vs its mean (vertical alignment, pixels).
-    - x_cm, y_cm (ndarray): Measured CM trajectories, shape (n,).
+    Quantifies alignment quality using the Helgason-Ludwig consistency conditions.
+    Modified to handle datasets containing negative values.
+    Also displays a central-slice sinogram for visual alignment assessment.
     """
+    import numpy as np
+    import matplotlib.pyplot as plt
+
     n = tomo.num_angles
     angles = tomo.ang.ravel()
-    ny, nx = tomo.workingProjections.shape[1], tomo.workingProjections.shape[2]
+    data_to_measure = tomo.workingProjections
+    
+    ny, nx = data_to_measure.shape[1], data_to_measure.shape[2]
     x_coords = np.arange(nx, dtype=np.float64)
     y_coords = np.arange(ny, dtype=np.float64)
 
@@ -554,42 +746,44 @@ def sinogram_consistency_score(tomo, plot=True, bg_percentile=None):
     y_cm = np.zeros(n)
 
     for i in range(n):
-        img = tomo.workingProjections[i].astype(np.float64)
+        img = data_to_measure[i].astype(np.float64)
 
-        # Background subtraction: remove Nth percentile intensity before weighting.
-        # Prevents bright background from dominating the center-of-mass estimate.
+        # Shift to positive
+        img = img - np.min(img)
+
         if bg_percentile is not None:
             bg = np.percentile(img, bg_percentile)
             img = np.clip(img - bg, 0, None)
 
-        col_sums = img.sum(axis=0)  # (nx,) — mass at each column position
-        row_sums = img.sum(axis=1)  # (ny,) — mass at each row position
+        col_sums = img.sum(axis=0)
+        row_sums = img.sum(axis=1)
         total = col_sums.sum()
 
-        if total > 0:
+        if total > 1e-9:
             x_cm[i] = (x_coords * col_sums).sum() / total
             y_cm[i] = (y_coords * row_sums).sum() / total
         else:
             x_cm[i] = nx / 2.0
             y_cm[i] = ny / 2.0
 
-    # x_cm consistency: fit sinusoid A·cos(θ) + B·sin(θ) + C
+    # Fit sinusoid to x_cm
     design = np.column_stack([np.cos(angles), np.sin(angles), np.ones(n)])
     coeffs_x, _, _, _ = np.linalg.lstsq(design, x_cm, rcond=None)
     x_fit = design @ coeffs_x
     x_residuals = x_cm - x_fit
     x_rmse = np.sqrt(np.mean(x_residuals ** 2))
+    
     ss_tot_x = np.sum((x_cm - x_cm.mean()) ** 2)
-    r2_x = 1.0 - np.sum(x_residuals ** 2) / ss_tot_x if ss_tot_x > 0 else 1.0
+    r2_x = 1.0 - np.sum(x_residuals ** 2) / ss_tot_x if ss_tot_x > 0 else 0.0
 
-    # y_cm consistency: should be constant across angles (invariant to rotation)
+    # y_cm should be constant
     y_fit = np.full(n, y_cm.mean())
     y_residuals = y_cm - y_fit
     y_rmse = np.sqrt(np.mean(y_residuals ** 2))
+    
     ss_tot_y = np.sum((y_cm - y_cm.mean()) ** 2)
-    r2_y = 1.0 - np.sum(y_residuals ** 2) / ss_tot_y if ss_tot_y > 0 else 1.0
+    r2_y = 1.0 - np.sum(y_residuals ** 2) / ss_tot_y if ss_tot_y > 0 else 0.0
 
-    # Combined score: quadrature sum of both directions
     combined_rmse = np.sqrt((x_rmse ** 2 + y_rmse ** 2) / 2)
 
     print(f"Sinogram consistency:")
@@ -602,38 +796,340 @@ def sinogram_consistency_score(tomo, plot=True, bg_percentile=None):
         order = np.argsort(angles_deg)
         ad = angles_deg[order]
 
-        fig, axes = plt.subplots(2, 2, figsize=(14, 6), sharex=True)
+        # --- central slice sinogram ---
+        center_row = ny // 2
+        sinogram = data_to_measure[:, center_row, :]  # (angles, x)
+
+        # --- NEW LAYOUT ---
+        fig = plt.figure(figsize=(14, 8))
+        gs = gridspec.GridSpec(3, 2, height_ratios=[1, 1, 1.2])
+
         fig.suptitle(f'Sinogram Consistency  —  Combined RMSE={combined_rmse:.4f} px', fontsize=12)
 
-        axes[0, 0].plot(ad, x_cm[order], '.', markersize=3, label='x_cm')
-        axes[0, 0].plot(ad, x_fit[order], '-', linewidth=1.5, label='Sinusoid fit')
-        axes[0, 0].set_ylabel('x center of mass (px)')
-        axes[0, 0].set_title(f'Horizontal  RMSE={x_rmse:.4f} px  R²={r2_x:.4f}')
-        axes[0, 0].legend(markerscale=3)
+        ax00 = fig.add_subplot(gs[0, 0])
+        ax10 = fig.add_subplot(gs[1, 0])
+        ax01 = fig.add_subplot(gs[0, 1])
+        ax11 = fig.add_subplot(gs[1, 1])
+        ax_sino = fig.add_subplot(gs[2, :])  # span both columns
 
-        axes[1, 0].plot(ad, x_residuals[order], '.', markersize=3, color='tomato')
-        axes[1, 0].axhline(0, color='k', linewidth=0.8, linestyle='--')
-        axes[1, 0].set_xlabel('Angle (degrees)')
-        axes[1, 0].set_ylabel('Residual (px)')
+        # --- existing plots ---
+        ax00.plot(ad, x_cm[order], '.', markersize=3, label='x_cm')
+        ax00.plot(ad, x_fit[order], '-', linewidth=1.5, label='Sinusoid fit')
+        ax00.set_ylabel('x center of mass (px)')
+        ax00.set_title(f'Horizontal  RMSE={x_rmse:.4f} px')
+        ax00.legend(markerscale=3)
 
-        axes[0, 1].plot(ad, y_cm[order], '.', markersize=3, color='steelblue', label='y_cm')
-        axes[0, 1].axhline(y_cm.mean(), color='orange', linewidth=1.5, label='Mean (expected)')
-        axes[0, 1].set_ylabel('y center of mass (px)')
-        axes[0, 1].set_title(f'Vertical  RMSE={y_rmse:.4f} px  R²={r2_y:.4f}')
-        axes[0, 1].legend(markerscale=3)
+        ax10.plot(ad, x_residuals[order], '.', markersize=3, color='tomato')
+        ax10.axhline(0, color='k', linewidth=0.8, linestyle='--')
+        ax10.set_xlabel('Angle (degrees)')
+        ax10.set_ylabel('Residual (px)')
 
-        axes[1, 1].plot(ad, y_residuals[order], '.', markersize=3, color='tomato')
-        axes[1, 1].axhline(0, color='k', linewidth=0.8, linestyle='--')
-        axes[1, 1].set_xlabel('Angle (degrees)')
-        axes[1, 1].set_ylabel('Residual (px)')
+        ax01.plot(ad, y_cm[order], '.', markersize=3, color='steelblue', label='y_cm')
+        ax01.axhline(y_cm.mean(), color='orange', linewidth=1.5, label='Mean')
+        ax01.set_ylabel('y center of mass (px)')
+        ax01.set_title(f'Vertical  RMSE={y_rmse:.4f} px')
+        ax01.legend(markerscale=3)
+
+        ax11.plot(ad, y_residuals[order], '.', markersize=3, color='tomato')
+        ax11.axhline(0, color='k', linewidth=0.8, linestyle='--')
+        ax11.set_xlabel('Angle (degrees)')
+        ax11.set_ylabel('Residual (px)')
+
+        # --- sinogram (BIG, bottom) ---
+        im = ax_sino.imshow(
+            sinogram[order],
+            aspect='auto',
+            extent=[0, nx, ad.min(), ad.max()]
+        )
+        ax_sino.set_title('Central Slice Sinogram')
+        ax_sino.set_ylabel('Angle (deg)')
+        ax_sino.set_xlabel('Detector pixel')
+
+        plt.colorbar(im, ax=ax_sino)
 
         plt.tight_layout()
         plt.show()
 
     return combined_rmse, x_rmse, y_rmse, x_cm, y_cm
 
+def reconstruction_sharpness_score(recon, plot=True, percentile_crop=5):
+    """
+    Quantifies 3D reconstruction sharpness using two per-slice metrics:
+
+    1. Mean gradient magnitude  mean(|∇I|):
+       Measures average edge strength across each slice. A well-aligned reconstruction
+       has crisp boundaries between materials; misalignment smears those edges and
+       reduces this value. Uses np.gradient (central finite differences).
+
+    2. Variance of Laplacian  var(∇²I):
+       Classic autofocus metric from computational photography. The Laplacian is a
+       high-pass filter — sharp images have high variance in their high-frequency
+       content; blurry/streaky images have low variance. More sensitive to fine
+       structure than gradient magnitude alone.
+
+    Scores are raw (not normalized) so they unambiguously increase when sharpness
+    improves. Normalizing by mean intensity inverts the result because alignment
+    concentrates attenuation into the correct voxels, raising the mean faster than
+    the gradient — making a sharper reconstruction appear to score lower.
+
+    Scores are only meaningful as a before/after comparison on the same dataset
+    (same object, same intensity scale). Use percentile_crop to suppress ring
+    artifacts or hot pixels that would otherwise dominate.
+
+    The per-slice arrays let you identify which axial positions are worst-aligned
+    (e.g., a dip in the middle could indicate a specific angular range is off).
+
+    Parameters:
+    - recon: 3D numpy array (nz, ny, nx) — the reconstruction volume (e.g. tomo.recon).
+    - plot: If True, plots per-slice sharpness profiles for both metrics.
+    - percentile_crop: Clips intensities to [p, 100-p] percentile before scoring —
+      suppresses ring artifacts or edge streaks that would bias the score.
+
+    Returns:
+    - grad_score (float): Overall mean gradient magnitude — higher is sharper.
+    - lap_score (float): Overall Laplacian variance — higher is sharper.
+    - grad_per_slice (ndarray): Per-slice gradient scores, shape (nz,).
+    - lap_per_slice (ndarray): Per-slice Laplacian variance scores, shape (nz,).
+    """
+    vol = recon.astype(np.float64)
+
+    # Clip outliers (ring artifacts, hot pixels) that would inflate gradient/Laplacian
+    if percentile_crop is not None:
+        lo, hi = np.percentile(vol, [percentile_crop, 100 - percentile_crop])
+        vol = np.clip(vol, lo, hi)
+
+    nz = vol.shape[0]
+    grad_per_slice = np.zeros(nz)
+    lap_per_slice = np.zeros(nz)
+
+    for i in range(nz):
+        slc = vol[i]
+
+        # Gradient magnitude: finite-difference ∂I/∂x and ∂I/∂y, then mean of magnitude
+        gy, gx = np.gradient(slc)
+        grad_per_slice[i] = np.mean(np.sqrt(gx**2 + gy**2))
+
+        # Laplacian variance: scipy laplace = ∂²I/∂x² + ∂²I/∂y², then variance
+        lap = sp.ndimage.laplace(slc)
+        lap_per_slice[i] = lap.var()
+
+    grad_score = float(grad_per_slice.mean())
+    lap_score = float(lap_per_slice.mean())
+
+    print(f"Reconstruction sharpness:")
+    print(f"  Mean gradient magnitude: {grad_score:.6f}")
+    print(f"  Laplacian variance:      {lap_score:.6f}")
+
+    if plot:
+        fig, axes = plt.subplots(1, 2, figsize=(13, 4))
+        fig.suptitle(
+            f'Reconstruction Sharpness  —  Gradient={grad_score:.4f}  Laplacian={lap_score:.4f}',
+            fontsize=12
+        )
+
+        axes[0].plot(grad_per_slice, linewidth=1)
+        axes[0].axhline(grad_score, color='r', linestyle='--', linewidth=1,
+                        label=f'Mean = {grad_score:.4f}')
+        axes[0].set_xlabel('Slice index')
+        axes[0].set_ylabel('Mean |∇I| (normalized)')
+        axes[0].set_title('Gradient Magnitude per Slice')
+        axes[0].legend()
+
+        axes[1].plot(lap_per_slice, linewidth=1, color='steelblue')
+        axes[1].axhline(lap_score, color='r', linestyle='--', linewidth=1,
+                        label=f'Mean = {lap_score:.4f}')
+        axes[1].set_xlabel('Slice index')
+        axes[1].set_ylabel('var(∇²I) (normalized)')
+        axes[1].set_title('Laplacian Variance per Slice')
+        axes[1].legend()
+
+        plt.tight_layout()
+        plt.show()
+
+    return grad_score, lap_score, grad_per_slice, lap_per_slice
 
 
+
+import numpy as np
+import tomopy
+from tqdm import tqdm
+import matplotlib.pyplot as plt
+
+
+def reprojection_consistency_score(tomo, plot=True, use_circ_mask=True):
+    """
+    Computes the Reprojection Consistency Score (RCS) — Metric 1 for alignment quality.
+
+    For each angle, reprojects the 3D reconstruction and computes the Normalized
+    Root-Mean-Squared Error (NRMSE) against the corresponding measured projection:
+
+        NRMSE(θ) = ‖P_θ - P̂_θ‖₂ / ‖P_θ‖₂
+
+        RCS = mean over all θ of NRMSE(θ)
+
+    A lower score means the reconstruction is more self-consistent with the data.
+    Typical ranges:
+        < 0.10  →  excellent alignment
+        0.10–0.20  →  acceptable
+        0.20–0.35  →  moderate misalignment or noise
+        > 0.35   →  poor alignment, likely reconstruction artifacts
+
+    Parameters
+    ----------
+    tomo : tomoData
+        A tomoData object that has already been aligned and reconstructed.
+        Must have:
+          - tomo.finalProjections  : ndarray (n_angles, ny, nx)
+          - tomo.recon             : ndarray (nz, ny, nx)  — set by tomo.reconstruct()
+          - tomo.ang               : ndarray (n_angles,) in radians
+          - tomo.rotation_center   : float, set by tomo.reconstruct()
+    plot : bool
+        If True, produces two diagnostic plots:
+          1. Per-angle NRMSE bar chart — reveals which angles are worst-aligned.
+          2. Worst and best angle side-by-side: measured vs reprojection overlay.
+    use_circ_mask : bool
+        If True, applies a circular mask to the reconstruction before reprojecting,
+        consistent with the circ_mask applied during reconstruction in this codebase.
+
+    Returns
+    -------
+    rcs : float
+        The scalar Reprojection Consistency Score (mean NRMSE across all angles).
+    per_angle_nrmse : ndarray (n_angles,)
+        The per-angle NRMSE values, useful for diagnosing which angles drive errors.
+    reprojections : ndarray (n_angles, ny, nx)
+        The synthetic reprojections of the reconstruction, for further inspection.
+    """
+    if not hasattr(tomo, 'recon') or tomo.recon is None:
+        raise AttributeError(
+            "tomo.recon is not set. Run tomo.reconstruct() before calling this function."
+        )
+
+    measured = tomo.finalProjections           # (n_angles, ny, nx)
+    recon    = tomo.recon.copy()               # (nz, ny, nx)
+    angles   = tomo.ang                        # (n_angles,) in radians
+    center   = tomo.rotation_center
+    n_angles = tomo.num_angles
+
+    # Apply the same circular mask used during reconstruction so the
+    # reprojections are computed on the same effective volume.
+    if use_circ_mask:
+        recon = tomopy.circ_mask(recon, axis=0, ratio=0.95)
+
+    # --- Compute synthetic reprojections ---
+    # tomopy.project returns shape (n_angles, ny, nx), same layout as finalProjections.
+    print("Computing reprojections of reconstruction...")
+    reprojections = tomopy.project(
+        recon,
+        angles,
+        center=center,
+        emission=True,      # forward model: integrate along rays
+        pad=False,
+        ncore=None,         # use all available cores
+    )
+
+    # --- Compute per-angle NRMSE ---
+    print("Computing per-angle NRMSE...")
+    per_angle_nrmse = np.zeros(n_angles)
+
+    for i in tqdm(range(n_angles), desc="NRMSE per angle"):
+        meas = measured[i].astype(np.float64)
+        reproj = reprojections[i].astype(np.float64)
+
+        residual_norm = np.linalg.norm(meas - reproj)
+        meas_norm     = np.linalg.norm(meas)
+
+        # Guard against a zero-energy projection (e.g. blank frames)
+        if meas_norm < 1e-12:
+            per_angle_nrmse[i] = np.nan
+        else:
+            per_angle_nrmse[i] = residual_norm / meas_norm
+
+    # Scalar RCS: mean over valid (non-NaN) angles
+    valid_mask = ~np.isnan(per_angle_nrmse)
+    rcs = float(np.mean(per_angle_nrmse[valid_mask]))
+
+    # --- Console report ---
+    worst_idx = int(np.nanargmax(per_angle_nrmse))
+    best_idx  = int(np.nanargmin(per_angle_nrmse))
+    print("\n─── Reprojection Consistency Score ───────────────────────")
+    print(f"  RCS (mean NRMSE):   {rcs:.4f}")
+    print(f"  Best  angle [{best_idx:>4}]:  NRMSE = {per_angle_nrmse[best_idx]:.4f}")
+    print(f"  Worst angle [{worst_idx:>4}]:  NRMSE = {per_angle_nrmse[worst_idx]:.4f}")
+    print(f"  Std across angles:  {np.nanstd(per_angle_nrmse):.4f}")
+    if rcs < 0.10:
+        verdict = "✓  Excellent — reconstruction is highly self-consistent with data."
+    elif rcs < 0.20:
+        verdict = "~  Acceptable — minor residual misalignment or noise present."
+    elif rcs < 0.35:
+        verdict = "⚠  Moderate — consider additional PMA iterations or check alignment."
+    else:
+        verdict = "✗  Poor — significant misalignment or reconstruction failure."
+    print(f"  Verdict:  {verdict}")
+    print("───────────────────────────────────────────────────────────\n")
+
+    if not plot:
+        return rcs, per_angle_nrmse, reprojections
+
+    # --- Plot 1: per-angle NRMSE bar chart ---
+    angle_deg = np.degrees(angles.ravel())
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 4))
+
+    ax = axes[0]
+    colors = np.where(per_angle_nrmse > rcs + np.nanstd(per_angle_nrmse),
+                      '#d62728', '#1f77b4')   # red = outlier angles
+    ax.bar(angle_deg, per_angle_nrmse, color=colors, width=(angle_deg[1] - angle_deg[0]) * 0.9)
+    ax.axhline(rcs, color='black', linewidth=1.5, linestyle='--', label=f'RCS = {rcs:.4f}')
+    ax.axhline(rcs + np.nanstd(per_angle_nrmse), color='red', linewidth=1,
+               linestyle=':', label='mean + 1σ')
+    ax.set_xlabel("Projection angle (degrees)")
+    ax.set_ylabel("NRMSE")
+    ax.set_title("Per-Angle Reprojection NRMSE\n(red bars = outlier angles)")
+    ax.legend(fontsize=8)
+    ax.set_ylim(bottom=0)
+
+    # --- Plot 2: best and worst angle overlays ---
+    ax2 = axes[1]
+
+    best_meas   = measured[best_idx]
+    best_reproj = reprojections[best_idx]
+    worst_meas  = measured[worst_idx]
+    worst_reproj = reprojections[worst_idx]
+
+    # Normalize each pair to [0,1] for display
+    def _norm(arr):
+        lo, hi = arr.min(), arr.max()
+        return (arr - lo) / (hi - lo + 1e-12)
+
+    # Stack as RGB: measured=green channel, reprojection=magenta (R+B)
+    # Overlap → white; measurement only → green; reprojection only → magenta
+    def _overlay_rgb(meas, reproj):
+        m, r = _norm(meas), _norm(reproj)
+        rgb = np.stack([r, m, r], axis=-1)   # R=reproj, G=meas, B=reproj
+        return rgb
+
+    ny, nx = best_meas.shape
+    # Side-by-side: best (left half) and worst (right half)
+    combined = np.zeros((ny, nx * 2, 3))
+    combined[:, :nx, :] = _overlay_rgb(best_meas, best_reproj)
+    combined[:, nx:, :] = _overlay_rgb(worst_meas, worst_reproj)
+
+    ax2.imshow(combined, aspect='auto')
+    ax2.axvline(nx, color='white', linewidth=1.5, linestyle='--')
+    ax2.set_title(
+        f"Meas (green) vs Reproj (magenta) overlay\n"
+        f"Left: best angle {angle_deg[best_idx]:.1f}°  "
+        f"| Right: worst angle {angle_deg[worst_idx]:.1f}°"
+    )
+    ax2.axis('off')
+
+    fig.suptitle(f"Reprojection Consistency Score = {rcs:.4f}   |   {verdict}",
+                 fontsize=10, y=1.01)
+    plt.tight_layout()
+    plt.show()
+
+    return rcs, per_angle_nrmse, reprojections
 
 
 

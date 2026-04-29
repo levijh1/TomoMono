@@ -9,6 +9,17 @@ from scipy.ndimage import rotate
 # import svmbir
 from alignment_methods import *
 
+try:
+    import cupy as cp
+    if cp.is_available():
+        from cupyx.scipy.ndimage import shift as _ndimage_shift
+    else:
+        cp = None
+        _ndimage_shift = sp.ndimage.shift
+except ImportError:
+    cp = None
+    _ndimage_shift = sp.ndimage.shift
+
 class tomoData:
     """
     Class for handling tomographic data, including preprocessing, alignment, and reconstruction.
@@ -48,10 +59,11 @@ class tomoData:
         """
         self.workingProjections = np.copy(self.data)
         self.finalProjections = np.copy(self.data)
-        if cropBottomCenter:
-            self.crop_bottom_center(x_size, y_size)
-        else:
-            self.crop_center(x_size, y_size)
+        if x_size != None and y_size != None:
+            if cropBottomCenter:
+                self.crop_bottom_center(x_size, y_size)
+            else:
+                self.crop_center(x_size, y_size)
 
     def get_recon(self):
         """
@@ -92,10 +104,27 @@ class tomoData:
         for i in range(1, self.num_angles-1):
             x_shift = multiplier * (random.random() - 0.5)
             y_shift = multiplier * (random.random() - 0.5)
-            # self.data[i] = sp.ndimage.shift(self.data[i], (x_shift, y_shift), mode="constant")
-            self.data[i] = subpixel_shift(self.data[i], y_shift, x_shift)
-            self.data[i] = self.data[i] * (self.data[i] > 0)
+            arr = xp.asarray(self.data[i])
+            shifted = _ndimage_shift(arr, (y_shift, x_shift), mode='reflect')
+            self.data[i] = shifted.get() if xp is not np else shifted
+        self.workingProjections = self.data.copy()
+        self.finalProjections = self.data.copy()
 
+    def jitter_y(self, maxShift=5):
+        """
+        Applies random jitter to the projections to simulate real-world misalignments.
+        Jitter ranges from -maxShift to +maxShift pixels in both x and y directions. Affects data variable as well.
+
+        Parameters:
+        - maxShift (float): Maximum shift in pixels for both x and y directions.
+        """
+        multiplier = maxShift * 2
+        for i in range(1, self.num_angles-1):
+            x_shift = 0
+            y_shift = multiplier * (random.random() - 0.5)
+            arr = xp.asarray(self.data[i])
+            shifted = _ndimage_shift(arr, (y_shift, x_shift), mode='reflect')
+            self.data[i] = shifted.get() if xp is not np else shifted
         self.workingProjections = self.data.copy()
         self.finalProjections = self.data.copy()
 
@@ -201,7 +230,7 @@ class tomoData:
         if isPhaseData:
             self.workingProjections = -self.workingProjections
         self.workingProjections = (self.workingProjections - np.min(self.workingProjections)) / (np.max(self.workingProjections) - np.min(self.workingProjections))
-        self.finalProjections = np.copy(self.workingProjections)
+        # self.finalProjections = np.copy(self.workingProjections)
 
     def standardize(self, isPhaseData):
         """
@@ -355,5 +384,5 @@ class tomoData:
                 algorithm=algorithm,
                 sinogram_order=False
             )
-        self.recon = tomopy.circ_mask(self.recon, axis=0, ratio=0.98)
+        self.recon = tomopy.circ_mask(self.recon, axis=0, ratio=0.95)
         print("Reconstruction completed.")

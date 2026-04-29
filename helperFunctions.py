@@ -9,7 +9,18 @@ import time
 import sys
 from matplotlib.widgets import Slider
 import tifffile
-from scipy.ndimage import fourier_shift
+try:
+    import cupy as cp
+    if cp.is_available():
+        from cupyx.scipy.ndimage import fourier_shift
+        xp = cp
+    else:
+        from scipy.ndimage import fourier_shift
+        xp = np
+except ImportError:
+    cp = None
+    from scipy.ndimage import fourier_shift
+    xp = np
 
 
 
@@ -36,68 +47,50 @@ def add_noise(m):
   m = tomopy.prep.alignment.add_noise(m)
   return m
 
-def subpixel_shift(image, shift_y, shift_x, homemade=False):
+def subpixel_shift(image, shift_y, shift_x, homemade=False, reflect_all_walls_but_top=True):
     """
-    Shift a 2D image using a phase ramp in the Fourier domain and pad out-of-bounds regions with zeros (if that part of the code is uncommented).
+    Shift a 2D image using a phase ramp.
 
-    Parameters:
-    image (2D numpy array): The input image to be shifted.
-    shift_x (float): The shift in the x direction (horizontal shift).
-    shift_y (float): The shift in the y direction (vertical shift).
-
-    Returns:
-    shifted_image (2D numpy array): The shifted image with out-of-bounds areas padded with zeros.
+    If reflect_all_walls_but_top =True, pads before shifting to fill revealed pixels:
+      - Left, right, bottom walls: reflection padding
+      - Top wall: nearest-pixel (edge) padding — replicates top row upward
+    If reflect_walls=False, no padding is applied (Fourier shift wraps).
     """
-    # Fourier transform of the image
-    fft_image = np.fft.fft2(image)
+    rows, cols = image.shape
 
-    if homemade == True:
-        ### Using my own implementation
-        # Get the image dimensions
-        rows, cols = image.shape
+    if reflect_all_walls_but_top:
+        pad_y = int(np.ceil(abs(shift_y))) + 2
+        pad_x = int(np.ceil(abs(shift_x))) + 2
+        # Top: nearest-pixel (edge); bottom + left/right: reflect
+        temp = np.pad(image, ((pad_y, 0), (0, 0)), mode='edge')
+        padded_image = np.pad(temp, ((0, pad_y), (pad_x, pad_x)), mode='reflect')
+    else:
+        pad_y = 0
+        pad_x = 0
+        padded_image = image
 
-        # Create frequency coordinate grids
-        u = np.fft.fftfreq(cols)  # Frequency coordinates along the x-axis
-        v = np.fft.fftfreq(rows)  # Frequency coordinates along the y-axis
-        U, V = np.meshgrid(u, v)  # 2D grid of frequency coordinates
+    arr = xp.asarray(padded_image)
+    fft_image = xp.fft.fft2(arr)
 
-        # Calculate the phase ramp for shifting
-        phase_ramp = np.exp(-2j * np.pi * (shift_x * U + shift_y * V))
-
-        # Apply the phase ramp to the Fourier-transformed image
+    if homemade:
+        p_rows, p_cols = padded_image.shape
+        u = xp.fft.fftfreq(p_cols)
+        v = xp.fft.fftfreq(p_rows)
+        U, V = xp.meshgrid(u, v)
+        phase_ramp = xp.exp(-2j * np.pi * (shift_x * U + shift_y * V))
         shifted_fft_image = fft_image * phase_ramp
-    else: 
-        ### Using scipy's implementation
+    else:
         shifted_fft_image = fourier_shift(fft_image, (shift_y, shift_x))
 
-    # Inverse Fourier transform to get the shifted image
-    shifted_image = np.fft.ifft2(shifted_fft_image).real
+    shifted_padded = xp.fft.ifft2(shifted_fft_image).real
+    if xp is not np:
+        shifted_padded = shifted_padded.get()
 
+    if reflect_all_walls_but_top:
+        shifted_image = shifted_padded[pad_y:pad_y+rows, pad_x:pad_x+cols]
+    else:
+        shifted_image = shifted_padded
 
-    
-    # ##Uncomment this code if you want the shift to not wrap around the image and just be zeros at the edge instead
-    # # Create a mask of valid regions
-    # mask = np.ones_like(image)
-
-    # # Calculate how much to pad with zeros based on shift
-    # pad_x_left = int(np.ceil(shift_x)) if shift_x > 0 else 0
-    # pad_x_right = int(np.ceil(-shift_x)) if shift_x < 0 else 0
-    # pad_y_top = int(np.ceil(shift_y)) if shift_y > 0 else 0
-    # pad_y_bottom = int(np.ceil(-shift_y)) if shift_y < 0 else 0
-
-    # # Apply zero padding based on shifts
-    # if pad_y_top != 0:
-    #     mask[:pad_y_top, :] = 0  # Top padding
-    # if pad_y_bottom != 0:
-    #     mask[-pad_y_bottom:, :] = 0  # Bottom padding
-    # if pad_x_left != 0:
-    #     mask[:, :pad_x_left] = 0  # Left padding
-    # if pad_x_right != 0:
-    #     mask[:, -pad_x_right:] = 0  # Right padding
-
-    # # Apply the mask to the shifted image
-    # shifted_image *= mask
-    
     return shifted_image
 
 class MoviePlotter:

@@ -21,7 +21,13 @@ if __name__ == '__main__':
     print("Running TomoMono 3D Reconstruction Script!")
     print(f"Algorithms: {algorithms}")
     if torch.cuda.is_available():
-        print("GPU is available")
+        print("GPU is available (CUDA/ASTRA)")
+    try:
+        import cupy as cp
+        if cp.is_available():
+            print("CuPy GPU available — array operations will use GPU")
+    except ImportError:
+        pass
 
     # ============ Input File Locations ================
     alignedTifFileLocations = [

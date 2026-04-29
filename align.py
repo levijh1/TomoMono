@@ -56,6 +56,12 @@ if __name__ == '__main__':
         sys.stdout = DualLogger(f'logs/output_tomoMono_align{timestamp}.txt', 'w')
 
     print("Running Image Registration Script")
+    try:
+        import cupy as cp
+        if cp.is_available():
+            print("CuPy GPU available — array operations will use GPU")
+    except ImportError:
+        pass
 
     # -------------------------
     # DATA IMPORT (EXAMPLE FOR REAL DATA)
