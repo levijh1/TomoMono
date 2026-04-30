@@ -10,7 +10,6 @@ FRC Scan Split Test/
 frcInfo/
 Run135Info
 slurm*
-
 #tif or tiff files
 *.tif
 *.tiff

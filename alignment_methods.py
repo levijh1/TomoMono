@@ -1058,61 +1058,92 @@ def reprojection_consistency_score(tomo, plot=True, use_circ_mask=True):
     if not plot:
         return rcs, per_angle_nrmse, reprojections
 
-    # --- Plot 1: per-angle NRMSE bar chart ---
+    # --- Prepare shared quantities ---
     angle_deg = np.degrees(angles.ravel())
+    order = np.argsort(angle_deg)
+    ad = angle_deg[order]
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 4))
+    ny, nx = measured.shape[1], measured.shape[2]
+    center_row = ny // 2
+    sino_meas   = measured[:, center_row, :][order]      # (angles, x) sorted
+    sino_reproj = reprojections[:, center_row, :][order]
 
-    ax = axes[0]
+    # --- Build figure with gridspec ---
+    fig = plt.figure(figsize=(14, 10))
+    gs = gridspec.GridSpec(3, 2, height_ratios=[1, 1, 1.2])
+
+    fig.suptitle(f"Reprojection Consistency Score = {rcs:.4f}   |   {verdict}",
+                 fontsize=10)
+
+    ax_bar  = fig.add_subplot(gs[0, 0])
+    ax_over = fig.add_subplot(gs[0, 1])
+    ax_sino_meas   = fig.add_subplot(gs[1:, 0])
+    ax_sino_reproj = fig.add_subplot(gs[1:, 1])
+
+    # --- Plot 1: per-angle NRMSE bar chart ---
     colors = np.where(per_angle_nrmse > rcs + np.nanstd(per_angle_nrmse),
-                      '#d62728', '#1f77b4')   # red = outlier angles
-    ax.bar(angle_deg, per_angle_nrmse, color=colors, width=(angle_deg[1] - angle_deg[0]) * 0.9)
-    ax.axhline(rcs, color='black', linewidth=1.5, linestyle='--', label=f'RCS = {rcs:.4f}')
-    ax.axhline(rcs + np.nanstd(per_angle_nrmse), color='red', linewidth=1,
-               linestyle=':', label='mean + 1σ')
-    ax.set_xlabel("Projection angle (degrees)")
-    ax.set_ylabel("NRMSE")
-    ax.set_title("Per-Angle Reprojection NRMSE\n(red bars = outlier angles)")
-    ax.legend(fontsize=8)
-    ax.set_ylim(bottom=0)
+                      '#d62728', '#1f77b4')
+    ax_bar.bar(angle_deg, per_angle_nrmse, color=colors,
+               width=(angle_deg[1] - angle_deg[0]) * 0.9)
+    ax_bar.axhline(rcs, color='black', linewidth=1.5, linestyle='--',
+                   label=f'RCS = {rcs:.4f}')
+    ax_bar.axhline(rcs + np.nanstd(per_angle_nrmse), color='red', linewidth=1,
+                   linestyle=':', label='mean + 1σ')
+    ax_bar.set_xlabel("Projection angle (degrees)")
+    ax_bar.set_ylabel("NRMSE")
+    ax_bar.set_title("Per-Angle Reprojection NRMSE\n(red bars = outlier angles)")
+    ax_bar.legend(fontsize=8)
+    ax_bar.set_ylim(bottom=0)
 
     # --- Plot 2: best and worst angle overlays ---
-    ax2 = axes[1]
-
-    best_meas   = measured[best_idx]
-    best_reproj = reprojections[best_idx]
-    worst_meas  = measured[worst_idx]
-    worst_reproj = reprojections[worst_idx]
-
-    # Normalize each pair to [0,1] for display
     def _norm(arr):
         lo, hi = arr.min(), arr.max()
         return (arr - lo) / (hi - lo + 1e-12)
 
-    # Stack as RGB: measured=green channel, reprojection=magenta (R+B)
-    # Overlap → white; measurement only → green; reprojection only → magenta
     def _overlay_rgb(meas, reproj):
         m, r = _norm(meas), _norm(reproj)
-        rgb = np.stack([r, m, r], axis=-1)   # R=reproj, G=meas, B=reproj
-        return rgb
+        return np.stack([r, m, r], axis=-1)
 
-    ny, nx = best_meas.shape
-    # Side-by-side: best (left half) and worst (right half)
+    best_meas    = measured[best_idx]
+    best_reproj  = reprojections[best_idx]
+    worst_meas   = measured[worst_idx]
+    worst_reproj = reprojections[worst_idx]
+
     combined = np.zeros((ny, nx * 2, 3))
     combined[:, :nx, :] = _overlay_rgb(best_meas, best_reproj)
     combined[:, nx:, :] = _overlay_rgb(worst_meas, worst_reproj)
 
-    ax2.imshow(combined, aspect='auto')
-    ax2.axvline(nx, color='white', linewidth=1.5, linestyle='--')
-    ax2.set_title(
+    ax_over.imshow(combined, aspect='auto')
+    ax_over.axvline(nx, color='white', linewidth=1.5, linestyle='--')
+    ax_over.set_title(
         f"Meas (green) vs Reproj (magenta) overlay\n"
-        f"Left: best angle {angle_deg[best_idx]:.1f}°  "
-        f"| Right: worst angle {angle_deg[worst_idx]:.1f}°"
+        f"Left: best {angle_deg[best_idx]:.1f}°  "
+        f"| Right: worst {angle_deg[worst_idx]:.1f}°"
     )
-    ax2.axis('off')
+    ax_over.axis('off')
 
-    fig.suptitle(f"Reprojection Consistency Score = {rcs:.4f}   |   {verdict}",
-                 fontsize=10, y=1.01)
+    # --- Plot 3: central-slice sinograms ---
+    vmin = min(sino_meas.min(), sino_reproj.min())
+    vmax = max(sino_meas.max(), sino_reproj.max())
+
+    im_m = ax_sino_meas.imshow(
+        sino_meas, aspect='auto', vmin=vmin, vmax=vmax,
+        extent=[0, nx, ad.max(), ad.min()]
+    )
+    ax_sino_meas.set_title('Measured Sinogram (central slice)')
+    ax_sino_meas.set_ylabel('Angle (deg)')
+    ax_sino_meas.set_xlabel('Detector pixel')
+    plt.colorbar(im_m, ax=ax_sino_meas)
+
+    im_r = ax_sino_reproj.imshow(
+        sino_reproj, aspect='auto', vmin=vmin, vmax=vmax,
+        extent=[0, nx, ad.max(), ad.min()]
+    )
+    ax_sino_reproj.set_title('Reprojected Sinogram (central slice)')
+    ax_sino_reproj.set_ylabel('Angle (deg)')
+    ax_sino_reproj.set_xlabel('Detector pixel')
+    plt.colorbar(im_r, ax=ax_sino_reproj)
+
     plt.tight_layout()
     plt.show()
 

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --time=10:00:00   # walltime
+#SBATCH --time=12:00:00   # walltime
 #SBATCH --output=/home/ljh79/TomoMono/sbatch_output/output-%j.txt
 #SBATCH --error=/home/ljh79/TomoMono/sbatch_output/output-error-%j.txt
 #SBATCH --ntasks=1   # number of processor cores (i.e. tasks)
