@@ -54,6 +54,9 @@ class tomoData:
         self.finalProjections = np.copy(data)
         self.tracked_shifts = np.zeros((self.num_angles, 2))
         self.tracked_rotations = np.zeros(self.num_angles)
+        self.finalReprojections = None
+        self._shift_envelope = [0.0, 0.0, 0.0, 0.0]      # [top, bottom, left, right]
+        self._shift_envelope_idx = [0, 0, 0, 0]            # projection index for each max shift
         if angles is None:
             self.ang = tomopy.angles(nang=self.num_angles, ang1=0, ang2=360)
         else:
@@ -149,58 +152,47 @@ class tomoData:
         Crops each 2D array in the 3D array to a specified size centered in the middle.
 
         Parameters:
-        - new_x (int): Target width of the crop.
-        - new_y (int): Target height of the crop.
+        - new_x (int or None): Target width of the crop. If None, width is unchanged.
+        - new_y (int or None): Target height of the crop. If None, height is unchanged.
         """
         y, x = self.workingProjections[0].shape
-        startx = x // 2 - new_x // 2
-        endx = startx + new_x
-        starty = y // 2 - new_y // 2
-        endy = starty + new_y
-        startx, endx = max(0, startx), min(x, endx)
-        starty, endy = max(0, starty), min(y, endy)
+        if new_x is None:
+            startx, endx = 0, x
+        else:
+            startx = x // 2 - new_x // 2
+            endx = startx + new_x
+            startx, endx = max(0, startx), min(x, endx)
+        if new_y is None:
+            starty, endy = 0, y
+        else:
+            starty = y // 2 - new_y // 2
+            endy = starty + new_y
+            starty, endy = max(0, starty), min(y, endy)
         self.workingProjections = self.workingProjections[:,starty:endy, startx:endx]
         self.finalProjections = self.finalProjections[:,starty:endy, startx:endx]
         self.image_size = self.workingProjections.shape[1:]
-
-    # def crop_bottom_center(self, new_y, new_x):
-    #     """
-    #     Crops the center portion of the image without cutting off anything from the bottom.
-
-    #     Parameters:
-    #     - new_y (int): Target height of the crop.
-    #     - new_x (int): Target width of the crop.
-    #     """
-    #     cropped_array = np.zeros((self.workingProjections.shape[0], new_y, new_x), dtype=self.workingProjections.dtype)
-    #     print(f"Cropping projections to size: {new_x}x{new_y}")
-    #     for i, array in enumerate(self.workingProjections):
-    #         y, x = array.shape
-    #         startx = x // 2 - new_x // 2
-    #         endx = startx + new_x
-    #         starty = y - new_y
-    #         endy = y
-    #         startx, endx = max(0, startx), min(x, endx)
-    #         starty, endy = max(0, starty), min(y, endy)
-    #         cropped_array[i] = array[starty:endy, startx:endx]
-    #     self.workingProjections = cropped_array
-    #     self.finalProjections = cropped_array
-    #     self.image_size = self.workingProjections.shape[1:]
 
     def crop_bottom_center(self, new_y, new_x):
         """
         Crops each 2D array in the 3D array to a specified size, aligned to the bottom and centered horizontally.
 
         Parameters:
-        - new_y (int): Target height of the crop.
-        - new_x (int): Target width of the crop.
+        - new_y (int or None): Target height of the crop. If None, height is unchanged.
+        - new_x (int or None): Target width of the crop. If None, width is unchanged.
         """
         y, x = self.workingProjections[0].shape
-        startx = x // 2 - new_x // 2
-        endx = startx + new_x
-        starty = y - new_y
-        endy = y
-        startx, endx = max(0, startx), min(x, endx)
-        starty, endy = max(0, starty), min(y, endy)
+        if new_x is None:
+            startx, endx = 0, x
+        else:
+            startx = x // 2 - new_x // 2
+            endx = startx + new_x
+            startx, endx = max(0, startx), min(x, endx)
+        if new_y is None:
+            starty, endy = 0, y
+        else:
+            starty = y - new_y
+            endy = y
+            starty, endy = max(0, starty), min(y, endy)
         self.workingProjections = self.workingProjections[:, starty:endy, startx:endx]
         self.finalProjections = self.finalProjections[:, starty:endy, startx:endx]
         self.image_size = self.workingProjections.shape[1:]
@@ -220,6 +212,24 @@ class tomoData:
         Applies tracked subpixel shifts from workingProjections to the finalProjections and resets tracked shifts.
         This is done so that the finalProjections can be updated just once and not lose any information.
         """
+        # Accumulate envelope and winning indices before zeroing tracked_shifts
+        live = [
+            max(0.0, float(self.tracked_shifts[:, 0].max())),
+            max(0.0, float(-self.tracked_shifts[:, 0].min())),
+            max(0.0, float(self.tracked_shifts[:, 1].max())),
+            max(0.0, float(-self.tracked_shifts[:, 1].min())),
+        ]
+        live_idx = [
+            int(np.argmax(self.tracked_shifts[:, 0])),
+            int(np.argmin(self.tracked_shifts[:, 0])),
+            int(np.argmax(self.tracked_shifts[:, 1])),
+            int(np.argmin(self.tracked_shifts[:, 1])),
+        ]
+        for i in range(4):
+            if live[i] > self._shift_envelope[i]:
+                self._shift_envelope[i] = live[i]
+                self._shift_envelope_idx[i] = live_idx[i]
+
         for m in tqdm(range(self.num_angles), desc='Apply shifts to final projections'):
             self.finalProjections[m] = subpixel_shift(self.finalProjections[m], self.tracked_shifts[m, 0], self.tracked_shifts[m, 1])
         self.tracked_shifts = np.zeros((self.num_angles, 2))
@@ -267,11 +277,63 @@ class tomoData:
         """
         self.workingProjections = (self.workingProjections <= threshold).astype(float)
 
-    def makeNotebookProjMovie(self):
+    @property
+    def shift_envelope(self):
+        """
+        Returns (top, bottom, left, right) — the total number of pixels from each
+        edge that have been exposed across all projections due to accumulated shifts,
+        including shifts already committed via make_updates_shift. Pixels inside
+        this box are unaffected by any shift.
+        """
+        return (
+            max(self._shift_envelope[0], max(0.0, float(self.tracked_shifts[:, 0].max()))),
+            max(self._shift_envelope[1], max(0.0, float(-self.tracked_shifts[:, 0].min()))),
+            max(self._shift_envelope[2], max(0.0, float(self.tracked_shifts[:, 1].max()))),
+            max(self._shift_envelope[3], max(0.0, float(-self.tracked_shifts[:, 1].min()))),
+        )
+
+    @property
+    def shift_envelope_idx(self):
+        """
+        Returns (idx_top, idx_bottom, idx_left, idx_right) — projection indices responsible
+        for the largest shift in each direction, merging stored history with live tracked_shifts.
+        """
+        live = [
+            max(0.0, float(self.tracked_shifts[:, 0].max())),
+            max(0.0, float(-self.tracked_shifts[:, 0].min())),
+            max(0.0, float(self.tracked_shifts[:, 1].max())),
+            max(0.0, float(-self.tracked_shifts[:, 1].min())),
+        ]
+        live_idx = [
+            int(np.argmax(self.tracked_shifts[:, 0])),
+            int(np.argmin(self.tracked_shifts[:, 0])),
+            int(np.argmax(self.tracked_shifts[:, 1])),
+            int(np.argmin(self.tracked_shifts[:, 1])),
+        ]
+        return tuple(
+            live_idx[i] if live[i] > self._shift_envelope[i] else self._shift_envelope_idx[i]
+            for i in range(4)
+        )
+
+    def makeNotebookProjMovie(self, show_trust_region=True):
         """
         Displays a movie of the final projections in a Jupyter notebook.
+        If show_trust_region=True, overlays red dashed lines marking the box of
+        pixels unaffected by shifting in any projection.
+        Prints the projection indices responsible for the largest shift in each
+        direction, if any shifts have been applied.
         """
-        MoviePlotter(self.finalProjections)
+        top, bottom, left, right = self.shift_envelope
+        if top > 0 or bottom > 0 or left > 0 or right > 0:
+            idx_top, idx_bottom, idx_left, idx_right = self.shift_envelope_idx
+            print("Largest shifts per direction:")
+            print(f"  Top    (down  {top:.2f} px) — projection {idx_top}")
+            print(f"  Bottom (up    {bottom:.2f} px) — projection {idx_bottom}")
+            print(f"  Left   (right {left:.2f} px) — projection {idx_left}")
+            print(f"  Right  (left  {right:.2f} px) — projection {idx_right}")
+
+        trust_box = self.shift_envelope if show_trust_region else None
+        MoviePlotter(self.finalProjections, trust_box=trust_box)
 
     def makeScriptProjMovie(self):
         """
@@ -322,6 +384,14 @@ class tomoData:
     def shift_min_to_middle(self, *args, **kwargs):
         print("\n")
         return shift_min_to_middle(self, *args, **kwargs)
+    
+    def sinogram_consistency_score(self, *args, **kwargs):
+        print("\n")
+        return sinogram_consistency_score(self, *args, **kwargs)
+    
+    def reprojection_consistency_score(self, *args, **kwargs):
+        print("\n")
+        return reprojection_consistency_score(self, *args, **kwargs)
 
     def center_projections(self):
         """

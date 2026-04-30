@@ -2,12 +2,13 @@
 """
 Hyperparameter search for tomographic alignment pipeline.
 
-Searches over XCA, VMF, and PMA parameters using the real APS dataset.
-Each config runs: XCA (multi-pass) → VMF (optional) → PMA (optional)
+Pipeline (fixed): reset → normalize → XCA (3-pass best params) → PMA (varied)
                   → make_updates_shift → SIRT_CUDA reconstruction → RCS score.
 
+Varied: PMA stepRatio, of_sigma, levels, iterations_per_level.
+
 Results are continuously appended to a CSV log so partial runs are safe to
-inspect or resume.  Run on a GPU node;
+inspect or resume.  Run on a GPU node.
 
 Usage:
     python hyperparameter_search.py
@@ -16,11 +17,9 @@ Usage:
 """
 
 import os
-import sys
 import csv
 import time
 import h5py
-import itertools
 import traceback
 import argparse
 import numpy as np
@@ -30,96 +29,68 @@ from tomoDataClass import tomoData
 from alignment_methods import reprojection_consistency_score
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CONFIGURATION  — edit these before submitting to the cluster
+# CONFIGURATION
 # ══════════════════════════════════════════════════════════════════════════════
 
-# FILENAME = (
-#     "/Users/levihancock/Library/CloudStorage/Box-Box/"
-#     "BYU_CXI_Research_Team/ProjectFolders/IFE-STAR/IFE-Ptycho-Tomo/"
-#     "APS_2ID_GUP1013052_August_2025/levi_tomoReconstructions/"
-#     "tomo_data_run_final_2.hdf5"
-# )
-FILENAME = ("/home/ljh79/groups/grp_ptychi/nobackup/autodelete/Oct2025APSdata/tomo_data_run_final_2.hdf5")
+FILENAME = "/home/ljh79/groups/grp_ptychi/nobackup/autodelete/Oct2025APSdata/tomo_data_run_final_2.hdf5"
 
-DEFAULT_RECON_ALG = 'SIRT_CUDA'   # change to 'art' or 'gridrec' for CPU testing
-LOG_FILE = f"hyperparam_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+DEFAULT_RECON_ALG  = 'SIRT_CUDA'
+LOG_FILE           = f"hyperparam_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+DOWNSAMPLE_SPATIAL = 4   # matches notebook: zoom(..., 1/4, 1/4)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PARAMETER GRIDS
+# FIXED XCA PASSES  (best params from previous sweep)
 # ══════════════════════════════════════════════════════════════════════════════
-# Each XCA config is a list of per-pass kwargs (coarse → fine).
-# Fixed across all passes: tolerance=0, maxShiftTolerance=0, use_grad=True.
+# Fixed across all passes: tolerance=0, maxShiftTolerance=0,
+#                          yROI_Range=None, xROI_Range=None,
+#                          isFull360=False, use_grad=True.
 
-XCA_CONFIGS = {
-    'xca_baseline': [
-        dict(downsample=4, max_iterations=10, stepRatio=0.9),
-        dict(downsample=2, max_iterations=10, stepRatio=0.9),
-        dict(downsample=1, max_iterations=5,  stepRatio=0.8),
-    ],
-    'xca_more_iters': [
-        dict(downsample=4, max_iterations=15, stepRatio=0.9),
-        dict(downsample=2, max_iterations=15, stepRatio=0.9),
-        dict(downsample=1, max_iterations=20, stepRatio=0.8),
-    ],
-    'xca_fine_heavy': [
-        dict(downsample=4, max_iterations=10, stepRatio=0.9),
-        dict(downsample=2, max_iterations=10, stepRatio=0.9),
-        dict(downsample=1, max_iterations=30, stepRatio=0.75),
-    ],
-    'xca_conservative': [
-        dict(downsample=4, max_iterations=10, stepRatio=0.85),
-        dict(downsample=2, max_iterations=10, stepRatio=0.85),
-        dict(downsample=1, max_iterations=15, stepRatio=0.75),
-    ],
-}
+XCA_PASSES = [
+    dict(downsample=4, max_iterations=10, stepRatio=0.9),
+    dict(downsample=2, max_iterations=10, stepRatio=0.9),
+    dict(downsample=1, max_iterations=5,  stepRatio=0.8),
+]
 
-# run=False → skip this stage entirely
-VMF_CONFIGS = {
-    'vmf_skip': dict(run=False),
-    'vmf_soft_light': dict(
-        run=True, max_iterations=3, smooth_sigma=1.0,
-        window='soft_roi', roi_sigma=0.3,
-    ),
-    'vmf_soft_heavy': dict(
-        run=True, max_iterations=5, smooth_sigma=1.0,
-        window='soft_roi', roi_sigma=0.3,
-    ),
-    'vmf_soft_wide_sigma': dict(
-        run=True, max_iterations=5, smooth_sigma=2.0,
-        window='soft_roi', roi_sigma=0.4,
-    ),
-    'vmf_hanning': dict(
-        run=True, max_iterations=5, smooth_sigma=2.0,
-        window='hanning', roi_sigma=0.3,
-    ),
-}
+# ══════════════════════════════════════════════════════════════════════════════
+# PMA PARAMETER GRID
+# ══════════════════════════════════════════════════════════════════════════════
+# Varied axes: stepRatio, of_sigma, levels, iterations_per_level.
+# scale=4 matches the notebook example.
+# Kept short per config to avoid cluster wall-time issues.
 
 PMA_CONFIGS = {
     'pma_skip': dict(run=False),
-    'pma_of_2lev': dict(
-        run=True, levels=2, scale=2,
-        iterations_per_level=[5, 5],
-        shift_method='optical_flow', of_sigma=3.0,
+
+    # ── 3-level (matches notebook format) ─────────────────────────────────────
+    'pma_3lev_sr09_sig3': dict(
+        run=True, levels=3, scale=4, iterations_per_level=[5, 5, 2],
+        shift_method='optical_flow', of_sigma=3.0, stepRatio=0.9,
     ),
-    'pma_of_2lev_sigma2': dict(
-        run=True, levels=2, scale=2,
-        iterations_per_level=[5, 5],
-        shift_method='optical_flow', of_sigma=2.0,
+    'pma_3lev_sr08_sig3': dict(
+        run=True, levels=3, scale=4, iterations_per_level=[5, 5, 2],
+        shift_method='optical_flow', of_sigma=3.0, stepRatio=0.8,
     ),
-    'pma_of_3lev': dict(
-        run=True, levels=3, scale=2,
-        iterations_per_level=[5, 5, 3],
-        shift_method='optical_flow', of_sigma=3.0,
+    'pma_3lev_sr09_sig2': dict(
+        run=True, levels=3, scale=4, iterations_per_level=[5, 5, 2],
+        shift_method='optical_flow', of_sigma=2.0, stepRatio=0.9,
     ),
-    'pma_of_3lev_more': dict(
-        run=True, levels=3, scale=2,
-        iterations_per_level=[10, 5, 3],
-        shift_method='optical_flow', of_sigma=3.0,
+    'pma_3lev_sr09_sig3_heavy': dict(
+        run=True, levels=3, scale=4, iterations_per_level=[5, 5, 5],
+        shift_method='optical_flow', of_sigma=3.0, stepRatio=0.9,
     ),
-    'pma_cc_2lev': dict(
-        run=True, levels=2, scale=2,
-        iterations_per_level=[5, 5],
-        shift_method='cross_correlation', of_sigma=3.0,
+
+    # ── 2-level (faster; useful as an upper bound check) ──────────────────────
+    'pma_2lev_sr09_sig3': dict(
+        run=True, levels=2, scale=4, iterations_per_level=[5, 5],
+        shift_method='optical_flow', of_sigma=3.0, stepRatio=0.9,
+    ),
+    'pma_2lev_sr08_sig3': dict(
+        run=True, levels=2, scale=4, iterations_per_level=[5, 5],
+        shift_method='optical_flow', of_sigma=3.0, stepRatio=0.8,
+    ),
+    'pma_2lev_sr09_sig2': dict(
+        run=True, levels=2, scale=4, iterations_per_level=[5, 5],
+        shift_method='optical_flow', of_sigma=2.0, stepRatio=0.9,
     ),
 }
 
@@ -128,11 +99,9 @@ PMA_CONFIGS = {
 # ══════════════════════════════════════════════════════════════════════════════
 
 CSV_FIELDS = [
-    'config_id', 'xca_name', 'vmf_name', 'pma_name',
-    'xca_passes',
-    'vmf_run', 'vmf_max_iters', 'vmf_smooth_sigma', 'vmf_window', 'vmf_roi_sigma',
+    'config_id', 'pma_name',
     'pma_run', 'pma_levels', 'pma_scale', 'pma_iters_per_level',
-    'pma_shift_method', 'pma_of_sigma',
+    'pma_of_sigma', 'pma_step_ratio',
     'rcs', 'time_s', 'status',
 ]
 
@@ -148,7 +117,6 @@ def append_row(path, row):
 
 
 def load_done_ids(path):
-    """Return set of config_ids already successfully completed in an existing log."""
     done = set()
     if not os.path.exists(path):
         return done
@@ -159,25 +127,16 @@ def load_done_ids(path):
     return done
 
 
-def build_row(config_id, xca_name, vmf_name, pma_name,
-              xca_passes, vmf_cfg, pma_cfg, rcs, elapsed, status):
+def build_row(config_id, pma_name, pma_cfg, rcs, elapsed, status):
     return dict(
         config_id=config_id,
-        xca_name=xca_name,
-        vmf_name=vmf_name,
         pma_name=pma_name,
-        xca_passes=str(xca_passes),
-        vmf_run=vmf_cfg.get('run', False),
-        vmf_max_iters=vmf_cfg.get('max_iterations', ''),
-        vmf_smooth_sigma=vmf_cfg.get('smooth_sigma', ''),
-        vmf_window=vmf_cfg.get('window', ''),
-        vmf_roi_sigma=vmf_cfg.get('roi_sigma', ''),
         pma_run=pma_cfg.get('run', False),
         pma_levels=pma_cfg.get('levels', ''),
         pma_scale=pma_cfg.get('scale', ''),
         pma_iters_per_level=str(pma_cfg.get('iterations_per_level', '')),
-        pma_shift_method=pma_cfg.get('shift_method', ''),
         pma_of_sigma=pma_cfg.get('of_sigma', ''),
+        pma_step_ratio=pma_cfg.get('stepRatio', ''),
         rcs=f'{rcs:.6f}' if not np.isnan(rcs) else 'nan',
         time_s=f'{elapsed:.1f}',
         status=status,
@@ -199,17 +158,22 @@ def load_data(filename):
 # PIPELINE RUNNER
 # ══════════════════════════════════════════════════════════════════════════════
 
-def run_pipeline(projections, angles, xca_passes, vmf_cfg, pma_cfg, recon_alg):
+def run_pipeline(projections, angles, pma_cfg, recon_alg):
     """
     Run one complete alignment + reconstruction pipeline and return the RCS score.
     Creates a fresh tomoData object each time so configs don't bleed into each other.
     """
     t = tomoData(projections, angles)
-    t.reset_workingProjections(x_size=None, y_size=None)
+
+    x_crop = 500 // DOWNSAMPLE_SPATIAL   # matches notebook: shape[2] - (500//downsample)
+    t.reset_workingProjections(
+        x_size=projections.shape[2] - x_crop,
+        y_size=projections.shape[1],
+    )
     t.normalize(isPhaseData=True)
 
-    # ── Cross-correlation alignment (coarse → fine multi-pass) ────────────────
-    for pass_cfg in xca_passes:
+    # ── Fixed XCA: best params from sweep ────────────────────────────────────
+    for pass_cfg in XCA_PASSES:
         t.cross_correlate_align(
             tolerance=0, maxShiftTolerance=0,
             yROI_Range=None, xROI_Range=None,
@@ -217,18 +181,7 @@ def run_pipeline(projections, angles, xca_passes, vmf_cfg, pma_cfg, recon_alg):
             **pass_cfg,
         )
 
-    # ── Vertical mass fluctuation alignment (optional) ────────────────────────
-    if vmf_cfg.get('run'):
-        t.vertical_mass_fluctuation_align(
-            tolerance=0, y_range=None, sigma=None,
-            use_gradient=True, plot=False,
-            max_iterations=vmf_cfg['max_iterations'],
-            smooth_sigma=vmf_cfg['smooth_sigma'],
-            window=vmf_cfg['window'],
-            roi_sigma=vmf_cfg['roi_sigma'],
-        )
-
-    # ── Projection matching alignment (optional) ──────────────────────────────
+    # ── PMA (optional) ────────────────────────────────────────────────────────
     if pma_cfg.get('run'):
         t.PMA(
             tolerance=0, algorithm=recon_alg, plot=False,
@@ -237,6 +190,7 @@ def run_pipeline(projections, angles, xca_passes, vmf_cfg, pma_cfg, recon_alg):
             iterations_per_level=pma_cfg['iterations_per_level'],
             shift_method=pma_cfg['shift_method'],
             of_sigma=pma_cfg['of_sigma'],
+            stepRatio=pma_cfg['stepRatio'],
         )
 
     # ── Apply accumulated shifts, reconstruct, score ──────────────────────────
@@ -280,7 +234,7 @@ def main():
     try:
         import cupy as cp
         if cp.is_available():
-            print("  CuPy GPU : available — array ops will run on GPU")
+            print("  CuPy GPU : available")
     except ImportError:
         pass
     print(f"  Recon alg: {recon_alg}")
@@ -292,18 +246,14 @@ def main():
     projections_og, angles_og = load_data(FILENAME)
     print(f"  Original shape : {projections_og.shape}")
 
-    projections = projections_og[::2, ::4, ::4]   # same as notebook
-    angles      = angles_og[::2]
+    from scipy.ndimage import zoom
+    projections = zoom(projections_og, (1, 1 / DOWNSAMPLE_SPATIAL, 1 / DOWNSAMPLE_SPATIAL), order=1)
+    angles      = angles_og
     print(f"  Downsampled to : {projections.shape}  ({len(angles)} angles)\n")
 
-    # ── Build full config list ─────────────────────────────────────────────────
-    all_combos = list(itertools.product(
-        XCA_CONFIGS.items(),
-        VMF_CONFIGS.items(),
-        PMA_CONFIGS.items(),
-    ))
-    n_search = len(all_combos)
-    n_total  = n_search + 1   # +1 for the no-alignment baseline
+    pma_items  = list(PMA_CONFIGS.items())
+    n_configs  = len(pma_items)
+    n_total    = n_configs + 1   # +1 for no-alignment baseline
 
     # ── Init or resume CSV ────────────────────────────────────────────────────
     if args.resume and os.path.exists(log_path):
@@ -314,25 +264,19 @@ def main():
         init_csv(log_path)
         done_ids = set()
         print(f"Starting fresh search over {n_total} configs "
-              f"({len(XCA_CONFIGS)} XCA × {len(VMF_CONFIGS)} VMF × {len(PMA_CONFIGS)} PMA + 1 baseline).\n")
+              f"({n_configs} PMA variants + 1 baseline).\n")
 
-    # ── Baseline: no alignment ────────────────────────────────────────────────
+    # ── Baseline: XCA only, no PMA ────────────────────────────────────────────
     BASELINE_ID = -1
     NO_CFG      = dict(run=False)
 
     if BASELINE_ID not in done_ids:
         print("━" * 70)
-        print("  BASELINE  (no alignment)")
+        print("  BASELINE  (XCA only, no PMA)")
         print("━" * 70)
         t0 = time.time()
         try:
-            tb = tomoData(projections, angles)
-            tb.reset_workingProjections(x_size=None, y_size=None)
-            tb.normalize(isPhaseData=True)
-            tb.make_updates_shift()
-            tb.reconstruct(algorithm=recon_alg)
-            rcs_base, _, _ = reprojection_consistency_score(tb, plot=False)
-            del tb
+            rcs_base = run_pipeline(projections, angles, NO_CFG, recon_alg)
             status = 'ok'
         except Exception as e:
             traceback.print_exc()
@@ -340,31 +284,25 @@ def main():
             status = f'error: {str(e)[:100]}'
 
         elapsed = time.time() - t0
-        append_row(log_path, build_row(
-            BASELINE_ID, 'none', 'none', 'none',
-            [], NO_CFG, NO_CFG, rcs_base, elapsed, status,
-        ))
+        append_row(log_path, build_row(BASELINE_ID, 'none', NO_CFG, rcs_base, elapsed, status))
         print(f"  → RCS = {rcs_base:.6f}  |  time = {elapsed:.0f}s  |  {status}\n")
     else:
         print("  Baseline already done — skipping.\n")
 
-    # ── Parameter search ──────────────────────────────────────────────────────
-    for cfg_id, ((xca_name, xca_passes), (vmf_name, vmf_cfg), (pma_name, pma_cfg)) \
-            in enumerate(all_combos):
+    # ── PMA parameter search ──────────────────────────────────────────────────
+    for cfg_id, (pma_name, pma_cfg) in enumerate(pma_items):
 
         if cfg_id in done_ids:
-            print(f"  [{cfg_id+1}/{n_search}] skipping {xca_name}+{vmf_name}+{pma_name} (done)")
+            print(f"  [{cfg_id+1}/{n_configs}] skipping {pma_name} (done)")
             continue
 
         print("━" * 70)
-        print(f"  [{cfg_id+1}/{n_search}]  {xca_name}  +  {vmf_name}  +  {pma_name}")
+        print(f"  [{cfg_id+1}/{n_configs}]  {pma_name}")
         print("━" * 70)
 
         t0 = time.time()
         try:
-            rcs = run_pipeline(
-                projections, angles, xca_passes, vmf_cfg, pma_cfg, recon_alg,
-            )
+            rcs = run_pipeline(projections, angles, pma_cfg, recon_alg)
             status = 'ok'
         except Exception as e:
             traceback.print_exc()
@@ -372,10 +310,7 @@ def main():
             status = f'error: {str(e)[:100]}'
 
         elapsed = time.time() - t0
-        append_row(log_path, build_row(
-            cfg_id, xca_name, vmf_name, pma_name,
-            xca_passes, vmf_cfg, pma_cfg, rcs, elapsed, status,
-        ))
+        append_row(log_path, build_row(cfg_id, pma_name, pma_cfg, rcs, elapsed, status))
         print(f"\n  → RCS = {rcs:.6f}  |  time = {elapsed:.0f}s  |  {status}\n")
 
     # ── Final summary ─────────────────────────────────────────────────────────
@@ -390,7 +325,8 @@ def main():
         df_sorted = df_ok.sort_values('rcs').reset_index(drop=True)
         df_sorted.index.name = 'rank'
         print(df_sorted[
-            ['config_id', 'xca_name', 'vmf_name', 'pma_name', 'rcs', 'time_s']
+            ['config_id', 'pma_name', 'pma_levels', 'pma_iters_per_level',
+             'pma_of_sigma', 'pma_step_ratio', 'rcs', 'time_s']
         ].to_string())
     except ImportError:
         print("(pandas not available — open the CSV directly for the full table.)")

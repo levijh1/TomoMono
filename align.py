@@ -106,7 +106,7 @@ if __name__ == '__main__':
     tomo.cross_correlate_align(tolerance=0, maxShiftTolerance=0, max_iterations=10, stepRatio=0.9, yROI_Range=None, xROI_Range=None, isFull360=False, downsample=2, use_grad=True)
     tomo.cross_correlate_align(tolerance=0, maxShiftTolerance=0, max_iterations=5, stepRatio=0.8, yROI_Range=None, xROI_Range=None, isFull360=False, downsample=1, use_grad=True)
 
-    tomo.vertical_mass_fluctuation_align(tolerance=0, max_iterations=5, y_range=None, sigma=None, smooth_sigma=1.0, window='soft_roi', roi_sigma=0.3, use_gradient=True, plot=False)
+    tomo.vertical_mass_fluctuation_align(tolerance=0, max_iterations=5, y_range=None, window='soft_roi', roi_sigma=0.3, use_gradient=True, plot=False)
 
     tomo.PMA(max_iterations=5, tolerance=0, algorithm=recon_alg, levels=3, scale=4, iterations_per_level=[5,5,2], shift_method='optical_flow', of_sigma=3.0, plot=False)
     tomo.make_updates_shift()

@@ -260,11 +260,13 @@ def PMA(
 
         # --- NEW: shift clamp ---
         max_step=0.5,
+
+        stepRatio=1,
         ):
     """
     PMA with improved stability tweaks.
     """
-    ratio = 0.95
+    recon_crop_ratio = 0.95
     print(f"Projection Matching Alignment (PMA) [{shift_method}]")
 
     if crop_bottom_center_x is not None and crop_bottom_center_y is not None:
@@ -302,9 +304,8 @@ def PMA(
         level_snapshot = scaled_projs.copy()
 
         for k in tqdm(range(n_iters), desc=f'PMA Level {level} iterations'):
-            recon  = _pma_reconstruct(scaled_projs, tomo.ang, scaled_center, algorithm, ratio)
+            recon  = _pma_reconstruct(scaled_projs, tomo.ang, scaled_center, algorithm, recon_crop_ratio)
             reproj = tomopy.project(recon, tomo.ang, pad=False)
-            # reproj = reproj[:, :, ::-1]  # tomopy.project uses opposite x-axis convention from tomopy.recon
 
             if standardize:
                 reproj = (reproj - np.mean(reproj)) / np.std(reproj)
@@ -369,6 +370,9 @@ def PMA(
             dy = np.clip(dy, -max_step, max_step)
             dx = np.clip(dx, -max_step, max_step)
 
+            dy *= stepRatio
+            dx *= stepRatio
+
             level_shifts[:, 0] += dy
             level_shifts[:, 1] += dx
 
@@ -377,9 +381,9 @@ def PMA(
                 scaled_projs[i] = subpixel_shift(level_snapshot[i], level_shifts[i, 0], level_shifts[i, 1])
 
             avg_shift = np.mean(np.sqrt(dy**2 + dx**2))
-            print(f"  Iter {k+1}: avg={avg_shift:.4f} px")
+            print(f"  Iter {k+1}: avg={downsample_factor * avg_shift:.4f} px")
 
-            if avg_shift < tolerance:
+            if downsample_factor * avg_shift < tolerance:
                 print(f"  Convergence at level {level} after {k+1} iterations.")
                 break
 
@@ -397,17 +401,14 @@ def vertical_mass_fluctuation_align(
     max_iterations=10,
     y_range=None,
     upsample_factor=50,
-    smooth_sigma=1.0,
     window='hanning',     # 'hanning', 'soft_roi', or None — suppresses cut-off boundary artifacts
     roi_sigma=0.3,        # Gaussian half-width as fraction of frame height (only for 'soft_roi')
     use_gradient=True,   # Differentiate mass profile — sensitive to internal features, ignores bulk cut-off
     plot=False,           # Plot window profile, final overall profile, and second projection profile
-    sigma=None,           # High-pass: removes the "bulk" mass, keeps the "fluctuations"
+    stepRatio=1.0,        # Fraction of computed shift to apply each iteration (damping)
 
 ):
-    if sigma is None:
-        sigma = tomo.workingProjections.shape[1] / 128  # heuristic: adjust based on image height
-    print(f"VMF Alignment (sigma={sigma}, upsample={upsample_factor}, window={window}, gradient={use_gradient})")
+    print(f"VMF Alignment (upsample={upsample_factor}, window={window}, gradient={use_gradient}, stepRatio={stepRatio})")
     n = tomo.num_angles
 
     for iteration in range(max_iterations):
@@ -455,11 +456,7 @@ def vertical_mass_fluctuation_align(
             if plot and k == 0:
                 win_to_plot = win.copy()
 
-            # # 5. High-Pass Filter to extract 'Fluctuations'
-            # # (Signal - LowPass) = HighPass
-            # fluctuation = m - gaussian_filter(m, sigma=sigma)
-            # profiles.append(fluctuation)
-            profiles.append(m) #High pass filter might be too bad with noise
+            profiles.append(m)
 
         profiles = np.array(profiles)
 
@@ -478,9 +475,7 @@ def vertical_mass_fluctuation_align(
         # Subtract the mean shift to keep the volume centered in the FOV
         shifts_y -= np.mean(shifts_y)
 
-        # Apply smoothing to the shift vector to prevent 'jittery' alignment
-        if smooth_sigma:
-            shifts_y = gaussian_filter1d(shifts_y, sigma=smooth_sigma)
+        shifts_y *= stepRatio
 
         # Apply shifts
         for i in range(n):
@@ -784,16 +779,33 @@ def sinogram_consistency_score(tomo, plot=True, bg_percentile=None):
     print(f"  y_cm (vertical)   — RMSE: {y_rmse:.4f} px  |  R²: {r2_y:.6f}")
     print(f"  Combined RMSE:       {combined_rmse:.4f} px")
 
+    # Compute or reuse reprojections for the sinogram comparison panel
+    reprojections = None
+    if hasattr(tomo, 'finalReprojections') and tomo.finalReprojections is not None:
+        reprojections = tomo.finalReprojections
+    elif hasattr(tomo, 'recon') and tomo.recon is not None:
+        print("Computing reprojections from reconstruction for sinogram comparison...")
+        recon_masked = tomopy.circ_mask(tomo.recon.copy(), axis=0, ratio=0.95)
+        reprojections = tomopy.project(
+            recon_masked, tomo.ang, center=tomo.rotation_center,
+            emission=True, pad=False, ncore=None,
+        )
+        nx_m = data_to_measure.shape[2]
+        nx_r = reprojections.shape[2]
+        if nx_r != nx_m:
+            start = (nx_r - nx_m) // 2
+            reprojections = reprojections[:, :, start:start + nx_m]
+        tomo.finalReprojections = reprojections
+
     if plot:
         angles_deg = np.rad2deg(angles)
         order = np.argsort(angles_deg)
         ad = angles_deg[order]
 
-        # --- central slice sinogram ---
+        # --- central slice sinograms ---
         center_row = ny // 2
-        sinogram = data_to_measure[:, center_row, :]  # (angles, x)
+        sinogram_data = data_to_measure[:, center_row, :]  # (angles, x)
 
-        # --- NEW LAYOUT ---
         fig = plt.figure(figsize=(14, 8))
         gs = gridspec.GridSpec(3, 2, height_ratios=[1, 1, 1.2])
 
@@ -803,9 +815,9 @@ def sinogram_consistency_score(tomo, plot=True, bg_percentile=None):
         ax10 = fig.add_subplot(gs[1, 0])
         ax01 = fig.add_subplot(gs[0, 1])
         ax11 = fig.add_subplot(gs[1, 1])
-        ax_sino = fig.add_subplot(gs[2, :])  # span both columns
+        ax_sino_data   = fig.add_subplot(gs[2, 0])
+        ax_sino_reproj = fig.add_subplot(gs[2, 1])
 
-        # --- existing plots ---
         ax00.plot(ad, x_cm[order], '.', markersize=3, label='x_cm')
         ax00.plot(ad, x_fit[order], '-', linewidth=1.5, label='Sinusoid fit')
         ax00.set_ylabel('x center of mass (px)')
@@ -828,17 +840,41 @@ def sinogram_consistency_score(tomo, plot=True, bg_percentile=None):
         ax11.set_xlabel('Angle (degrees)')
         ax11.set_ylabel('Residual (px)')
 
-        # --- sinogram (BIG, bottom) ---
-        im = ax_sino.imshow(
-            sinogram[order],
-            aspect='auto',
-            extent=[0, nx, ad.min(), ad.max()]
-        )
-        ax_sino.set_title('Central Slice Sinogram')
-        ax_sino.set_ylabel('Angle (deg)')
-        ax_sino.set_xlabel('Detector pixel')
+        # --- data sinogram ---
+        sino_data_sorted = sinogram_data[order]
+        vmin = sino_data_sorted.min()
+        vmax = sino_data_sorted.max()
 
-        plt.colorbar(im, ax=ax_sino)
+        im_d = ax_sino_data.imshow(
+            sino_data_sorted, aspect='auto', vmin=vmin, vmax=vmax,
+            extent=[0, nx, ad.max(), ad.min()]
+        )
+        ax_sino_data.set_title('Data Sinogram (central slice)')
+        ax_sino_data.set_ylabel('Angle (deg)')
+        ax_sino_data.set_xlabel('Detector pixel')
+        plt.colorbar(im_d, ax=ax_sino_data)
+
+        # --- reprojected sinogram (if available) ---
+        if reprojections is not None:
+            sino_reproj = reprojections[:, center_row, :]
+            sino_reproj_sorted = sino_reproj[order]
+            vmin_r = min(vmin, sino_reproj_sorted.min())
+            vmax_r = max(vmax, sino_reproj_sorted.max())
+            im_r = ax_sino_reproj.imshow(
+                sino_reproj_sorted, aspect='auto', vmin=vmin_r, vmax=vmax_r,
+                extent=[0, nx, ad.max(), ad.min()]
+            )
+            ax_sino_reproj.set_title('Reprojected Sinogram (central slice)')
+            plt.colorbar(im_r, ax=ax_sino_reproj)
+        else:
+            ax_sino_reproj.text(
+                0.5, 0.5,
+                "No reprojections available.\nRun tomo.reconstruct() first.",
+                ha='center', va='center', transform=ax_sino_reproj.transAxes, fontsize=9
+            )
+            ax_sino_reproj.set_title('Reprojected Sinogram (central slice)')
+        ax_sino_reproj.set_ylabel('Angle (deg)')
+        ax_sino_reproj.set_xlabel('Detector pixel')
 
         plt.tight_layout()
         plt.show()
@@ -1003,17 +1039,31 @@ def reprojection_consistency_score(tomo, plot=True, use_circ_mask=True):
     if use_circ_mask:
         recon = tomopy.circ_mask(recon, axis=0, ratio=0.95)
 
-    # --- Compute synthetic reprojections ---
-    # tomopy.project returns shape (n_angles, ny, nx), same layout as finalProjections.
-    print("Computing reprojections of reconstruction...")
-    reprojections = tomopy.project(
-        recon,
-        angles,
-        center=center,
-        emission=True,      # forward model: integrate along rays
-        pad=False,
-        ncore=None,         # use all available cores
-    )
+    nx_m = measured.shape[2]
+
+    def _compute_reprojections():
+        print("Computing reprojections of reconstruction...")
+        raw = tomopy.project(
+            recon, angles, center=center,
+            emission=True, pad=False, ncore=None,
+        )
+        # tomopy pads the reconstruction volume, so reprojections may be wider
+        # than the measured projections. Crop the center columns to match.
+        nx_r = raw.shape[2]
+        if nx_r != nx_m:
+            start = (nx_r - nx_m) // 2
+            raw = raw[:, :, start:start + nx_m]
+        return raw
+
+    # Reuse cached reprojections only if they match the current projection width.
+    if (hasattr(tomo, 'finalReprojections')
+            and tomo.finalReprojections is not None
+            and tomo.finalReprojections.shape[2] == nx_m):
+        print("Reusing cached reprojections from tomo.finalReprojections.")
+        reprojections = tomo.finalReprojections
+    else:
+        reprojections = _compute_reprojections()
+        tomo.finalReprojections = reprojections
 
     # --- Compute per-angle NRMSE ---
     print("Computing per-angle NRMSE...")
@@ -1064,21 +1114,24 @@ def reprojection_consistency_score(tomo, plot=True, use_circ_mask=True):
     ad = angle_deg[order]
 
     ny, nx = measured.shape[1], measured.shape[2]
-    center_row = ny // 2
-    sino_meas   = measured[:, center_row, :][order]      # (angles, x) sorted
-    sino_reproj = reprojections[:, center_row, :][order]
 
-    # --- Build figure with gridspec ---
-    fig = plt.figure(figsize=(14, 10))
-    gs = gridspec.GridSpec(3, 2, height_ratios=[1, 1, 1.2])
+    best_meas    = measured[best_idx]
+    best_reproj  = reprojections[best_idx]
+    worst_meas   = measured[worst_idx]
+    worst_reproj = reprojections[worst_idx]
+
+    # --- Build figure: bar chart (top), 2x2 image grid (bottom) ---
+    fig = plt.figure(figsize=(12, 12))
+    gs = gridspec.GridSpec(3, 2, height_ratios=[1, 1.5, 1.5], hspace=0.4, wspace=0.3)
 
     fig.suptitle(f"Reprojection Consistency Score = {rcs:.4f}   |   {verdict}",
                  fontsize=10)
 
-    ax_bar  = fig.add_subplot(gs[0, 0])
-    ax_over = fig.add_subplot(gs[0, 1])
-    ax_sino_meas   = fig.add_subplot(gs[1:, 0])
-    ax_sino_reproj = fig.add_subplot(gs[1:, 1])
+    ax_bar          = fig.add_subplot(gs[0, :])
+    ax_best_orig    = fig.add_subplot(gs[1, 0])
+    ax_best_reproj  = fig.add_subplot(gs[1, 1])
+    ax_worst_orig   = fig.add_subplot(gs[2, 0])
+    ax_worst_reproj = fig.add_subplot(gs[2, 1])
 
     # --- Plot 1: per-angle NRMSE bar chart ---
     colors = np.where(per_angle_nrmse > rcs + np.nanstd(per_angle_nrmse),
@@ -1095,54 +1148,42 @@ def reprojection_consistency_score(tomo, plot=True, use_circ_mask=True):
     ax_bar.legend(fontsize=8)
     ax_bar.set_ylim(bottom=0)
 
-    # --- Plot 2: best and worst angle overlays ---
-    def _norm(arr):
-        lo, hi = arr.min(), arr.max()
-        return (arr - lo) / (hi - lo + 1e-12)
+    # --- Plot 2: 2x2 grid — best (top) and worst (bottom), original vs reprojection ---
+    def _shared_clim(a, b):
+        lo = min(a.min(), b.min())
+        hi = max(a.max(), b.max())
+        return lo, hi
 
-    def _overlay_rgb(meas, reproj):
-        m, r = _norm(meas), _norm(reproj)
-        return np.stack([r, m, r], axis=-1)
+    best_vmin, best_vmax = _shared_clim(best_meas, best_reproj)
+    worst_vmin, worst_vmax = _shared_clim(worst_meas, worst_reproj)
 
-    best_meas    = measured[best_idx]
-    best_reproj  = reprojections[best_idx]
-    worst_meas   = measured[worst_idx]
-    worst_reproj = reprojections[worst_idx]
+    kw = dict(aspect='auto', cmap='gray')
+    tick_kw = dict(labelsize=7)
 
-    combined = np.zeros((ny, nx * 2, 3))
-    combined[:, :nx, :] = _overlay_rgb(best_meas, best_reproj)
-    combined[:, nx:, :] = _overlay_rgb(worst_meas, worst_reproj)
+    def _set_img_axes(ax):
+        ax.tick_params(axis='both', **tick_kw)
+        ax.set_xlabel("Width (px)", fontsize=8)
+        ax.set_ylabel("Height (px)", fontsize=8)
 
-    ax_over.imshow(combined, aspect='auto')
-    ax_over.axvline(nx, color='white', linewidth=1.5, linestyle='--')
-    ax_over.set_title(
-        f"Meas (green) vs Reproj (magenta) overlay\n"
-        f"Left: best {angle_deg[best_idx]:.1f}°  "
-        f"| Right: worst {angle_deg[worst_idx]:.1f}°"
-    )
-    ax_over.axis('off')
+    im = ax_best_orig.imshow(best_meas, vmin=best_vmin, vmax=best_vmax, **kw)
+    ax_best_orig.set_title(f"Best {angle_deg[best_idx]:.1f}° — Original\nNRMSE={per_angle_nrmse[best_idx]:.4f}", fontsize=9)
+    _set_img_axes(ax_best_orig)
+    plt.colorbar(im, ax=ax_best_orig, fraction=0.046, pad=0.04)
 
-    # --- Plot 3: central-slice sinograms ---
-    vmin = min(sino_meas.min(), sino_reproj.min())
-    vmax = max(sino_meas.max(), sino_reproj.max())
+    im = ax_best_reproj.imshow(best_reproj, vmin=best_vmin, vmax=best_vmax, **kw)
+    ax_best_reproj.set_title(f"Best {angle_deg[best_idx]:.1f}° — Reprojection", fontsize=9)
+    _set_img_axes(ax_best_reproj)
+    plt.colorbar(im, ax=ax_best_reproj, fraction=0.046, pad=0.04)
 
-    im_m = ax_sino_meas.imshow(
-        sino_meas, aspect='auto', vmin=vmin, vmax=vmax,
-        extent=[0, nx, ad.max(), ad.min()]
-    )
-    ax_sino_meas.set_title('Measured Sinogram (central slice)')
-    ax_sino_meas.set_ylabel('Angle (deg)')
-    ax_sino_meas.set_xlabel('Detector pixel')
-    plt.colorbar(im_m, ax=ax_sino_meas)
+    im = ax_worst_orig.imshow(worst_meas, vmin=worst_vmin, vmax=worst_vmax, **kw)
+    ax_worst_orig.set_title(f"Worst {angle_deg[worst_idx]:.1f}° — Original\nNRMSE={per_angle_nrmse[worst_idx]:.4f}", fontsize=9)
+    _set_img_axes(ax_worst_orig)
+    plt.colorbar(im, ax=ax_worst_orig, fraction=0.046, pad=0.04)
 
-    im_r = ax_sino_reproj.imshow(
-        sino_reproj, aspect='auto', vmin=vmin, vmax=vmax,
-        extent=[0, nx, ad.max(), ad.min()]
-    )
-    ax_sino_reproj.set_title('Reprojected Sinogram (central slice)')
-    ax_sino_reproj.set_ylabel('Angle (deg)')
-    ax_sino_reproj.set_xlabel('Detector pixel')
-    plt.colorbar(im_r, ax=ax_sino_reproj)
+    im = ax_worst_reproj.imshow(worst_reproj, vmin=worst_vmin, vmax=worst_vmax, **kw)
+    ax_worst_reproj.set_title(f"Worst {angle_deg[worst_idx]:.1f}° — Reprojection", fontsize=9)
+    _set_img_axes(ax_worst_reproj)
+    plt.colorbar(im, ax=ax_worst_reproj, fraction=0.046, pad=0.04)
 
     plt.tight_layout()
     plt.show()

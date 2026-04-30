@@ -44,35 +44,41 @@ def add_noise(m):
   m = tomopy.prep.alignment.add_noise(m)
   return m
 
-def subpixel_shift(image, shift_y, shift_x, homemade=False, reflect_all_walls_but_top=True):
+def subpixel_shift(image, shift_y, shift_x, homemade=False):
     """
-    Shift a 2D image using a phase ramp.
+    Shift a 2D image by (shift_y, shift_x) pixels using a Fourier phase ramp.
 
-    If reflect_all_walls_but_top =True, pads before shifting to fill revealed pixels:
-      - Left, right, bottom walls: reflection padding
-      - Top wall: nearest-pixel (edge) padding — replicates top row upward
-    If reflect_walls=False, no padding is applied (Fourier shift wraps).
+    Pads top/left/right with zeros and bottom with reflection before shifting,
+    then crops back. The padding tapers linearly to zero at its outer edge to
+    prevent Gibbs ringing.
     """
     rows, cols = image.shape
+    pad_y = int(np.ceil(abs(shift_y))) + 2
+    pad_x = int(np.ceil(abs(shift_x))) + 2
 
-    if reflect_all_walls_but_top:
-        pad_y = int(np.ceil(abs(shift_y))) + 2
-        pad_x = int(np.ceil(abs(shift_x))) + 2
-        # Top: nearest-pixel (edge); bottom + left/right: reflect
-        temp = np.pad(image, ((pad_y, 0), (0, 0)), mode='edge')
-        padded_image = np.pad(temp, ((0, pad_y), (pad_x, pad_x)), mode='reflect')
-    else:
-        pad_y = 0
-        pad_x = 0
-        padded_image = image
+    # Bottom: reflect; top/left/right: zeros
+    padded_image = np.pad(image, ((0, pad_y), (0, 0)), mode='reflect')
+    padded_image = np.pad(padded_image, ((pad_y, 0), (pad_x, pad_x)), mode='constant', constant_values=0)
+
+    ph, pw = padded_image.shape
+
+    # Separable taper: 1 over the image region, linearly decays to 0 at outer padding edge
+    wy = np.ones(ph)
+    wy[:pad_y]      = np.linspace(0, 1, pad_y + 1)[:-1]
+    wy[pad_y+rows:] = np.linspace(1, 0, pad_y + 1)[1:]
+
+    wx = np.ones(pw)
+    wx[:pad_x]      = np.linspace(0, 1, pad_x + 1)[:-1]
+    wx[pad_x+cols:] = np.linspace(1, 0, pad_x + 1)[1:]
+
+    padded_image *= wy[:, None] * wx[None, :]
 
     arr = xp.asarray(padded_image)
     fft_image = xp.fft.fft2(arr)
 
     if homemade:
-        p_rows, p_cols = padded_image.shape
-        u = xp.fft.fftfreq(p_cols)
-        v = xp.fft.fftfreq(p_rows)
+        u = xp.fft.fftfreq(pw)
+        v = xp.fft.fftfreq(ph)
         U, V = xp.meshgrid(u, v)
         phase_ramp = xp.exp(-2j * np.pi * (shift_x * U + shift_y * V))
         shifted_fft_image = fft_image * phase_ramp
@@ -83,21 +89,15 @@ def subpixel_shift(image, shift_y, shift_x, homemade=False, reflect_all_walls_bu
     if xp is not np:
         shifted_padded = shifted_padded.get()
 
-    if reflect_all_walls_but_top:
-        shifted_image = shifted_padded[pad_y:pad_y+rows, pad_x:pad_x+cols]
-    else:
-        shifted_image = shifted_padded
-
-    return shifted_image
+    return shifted_padded[pad_y:pad_y+rows, pad_x:pad_x+cols]
 
 class MoviePlotter:
     """Plots a sequence of images as a movie in a Jupyter Notebook with interactive controls using widgets.Play."""
-    def __init__(self, x):
+    def __init__(self, x, trust_box=None):
         self.x = x  # (M, N, N) array where M is the total number of images and N is the number of pixels in x and y
-        # Calculate global min and max for color normalization
+        self.trust_box = trust_box  # (top, bottom, left, right) pixel margins, or None
         self.global_min = np.min(x)
         self.global_max = np.max(x)
-        # Play and Slider widgets
         self.play = widgets.Play(
             value=0,
             min=0,
@@ -108,26 +108,31 @@ class MoviePlotter:
             disabled=False
         )
         self.slider = widgets.IntSlider(min=0, max=len(x) - 1, value=0, step=1, description='Frame')
-        # Link the slider and the play widget
         widgets.jslink((self.play, 'value'), (self.slider, 'value'))
-        # Slider changes update the plot
         self.slider.observe(self.slider_update, names='value')
-        # Output for the plot
         self.output = widgets.Output()
         display(widgets.HBox([self.play, self.slider]))
         display(self.output)
-        # Initial plot
-        self.update_plot(0)  # Update initially with the first frame
+        self.update_plot(0)
 
     def slider_update(self, change):
         self.update_plot(change['new'])
 
     def update_plot(self, frame):
         with self.output:
-            self.output.clear_output(wait=True)  # Clear the previous frame
+            self.output.clear_output(wait=True)
             plt.imshow(self.x[frame], vmin=self.global_min, vmax=self.global_max)
+            ax = plt.gca()  # capture before colorbar changes current axes
             plt.colorbar(label='Intensity')
             plt.title(f"Frame {frame}")
+            if self.trust_box is not None:
+                top, bottom, left, right = self.trust_box
+                ny, nx = self.x.shape[1], self.x.shape[2]
+                kw = dict(color='red', linewidth=1.5, linestyle='--')
+                if top > 0:    ax.axhline(int(np.ceil(top)) - 0.5,        **kw)
+                if bottom > 0: ax.axhline(ny - int(np.ceil(bottom)) - 0.5, **kw)
+                if left > 0:   ax.axvline(int(np.ceil(left)) - 0.5,        **kw)
+                if right > 0:  ax.axvline(nx - int(np.ceil(right)) - 0.5,  **kw)
             plt.show()
 
 ### Matplotlib widget
