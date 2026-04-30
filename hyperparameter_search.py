@@ -7,8 +7,7 @@ Each config runs: XCA (multi-pass) → VMF (optional) → PMA (optional)
                   → make_updates_shift → SIRT_CUDA reconstruction → RCS score.
 
 Results are continuously appended to a CSV log so partial runs are safe to
-inspect or resume.  Run on a GPU node; make sure 'import torch' is uncommented
-in tomoDataClass.py.
+inspect or resume.  Run on a GPU node;
 
 Usage:
     python hyperparameter_search.py
@@ -34,12 +33,13 @@ from alignment_methods import reprojection_consistency_score
 # CONFIGURATION  — edit these before submitting to the cluster
 # ══════════════════════════════════════════════════════════════════════════════
 
-FILENAME = (
-    "/Users/levihancock/Library/CloudStorage/Box-Box/"
-    "BYU_CXI_Research_Team/ProjectFolders/IFE-STAR/IFE-Ptycho-Tomo/"
-    "APS_2ID_GUP1013052_August_2025/levi_tomoReconstructions/"
-    "tomo_data_run_final_2.hdf5"
-)
+# FILENAME = (
+#     "/Users/levihancock/Library/CloudStorage/Box-Box/"
+#     "BYU_CXI_Research_Team/ProjectFolders/IFE-STAR/IFE-Ptycho-Tomo/"
+#     "APS_2ID_GUP1013052_August_2025/levi_tomoReconstructions/"
+#     "tomo_data_run_final_2.hdf5"
+# )
+FILENAME = ("/home/ljh79/groups/grp_ptychi/nobackup/autodelete/Oct2025APSdata/tomo_data_run_final_2.hdf5")
 
 DEFAULT_RECON_ALG = 'SIRT_CUDA'   # change to 'art' or 'gridrec' for CPU testing
 LOG_FILE = f"hyperparam_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"

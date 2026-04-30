@@ -11,13 +11,10 @@ from matplotlib.widgets import Slider
 import tifffile
 try:
     import cupy as cp
-    if cp.is_available():
-        from cupyx.scipy.ndimage import fourier_shift
-        xp = cp
-    else:
-        from scipy.ndimage import fourier_shift
-        xp = np
-except ImportError:
+    cp.array([1])  # real allocation — raises if GPU is unavailable or busy
+    from cupyx.scipy.ndimage import fourier_shift
+    xp = cp
+except Exception:
     cp = None
     from scipy.ndimage import fourier_shift
     xp = np

@@ -4,6 +4,8 @@ reconstructions/*
 alignedProjections/*
 data/*
 figures/*
+hyperparam_results/*
+sbatch_output/*
 FRC Scan Split Test/
 frcInfo/
 Run135Info

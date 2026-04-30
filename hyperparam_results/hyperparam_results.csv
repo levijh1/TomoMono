@@ -1,0 +1,4 @@
+config_id,xca_name,vmf_name,pma_name,xca_passes,vmf_run,vmf_max_iters,vmf_smooth_sigma,vmf_window,vmf_roi_sigma,pma_run,pma_levels,pma_scale,pma_iters_per_level,pma_shift_method,pma_of_sigma,rcs,time_s,status
+-1,none,none,none,[],False,,,,,False,,,,,,0.282777,84.9,ok
+0,xca_baseline,vmf_skip,pma_skip,"[{'downsample': 4, 'max_iterations': 10, 'stepRatio': 0.9}, {'downsample': 2, 'max_iterations': 10, 'stepRatio': 0.9}, {'downsample': 1, 'max_iterations': 5, 'stepRatio': 0.8}]",False,,,,,False,,,,,,0.122325,187.7,ok
+1,xca_baseline,vmf_skip,pma_of_2lev,"[{'downsample': 4, 'max_iterations': 10, 'stepRatio': 0.9}, {'downsample': 2, 'max_iterations': 10, 'stepRatio': 0.9}, {'downsample': 1, 'max_iterations': 5, 'stepRatio': 0.8}]",False,,,,,True,2,2,"[5, 5]",optical_flow,3.0,0.115622,704.3,ok

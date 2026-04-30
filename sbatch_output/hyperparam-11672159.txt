@@ -1,0 +1,241 @@
+PyTorch imported successfully.
+SVMBIR imported successfully.
+======================================================================
+TOMOGRAPHIC ALIGNMENT HYPERPARAMETER SEARCH
+======================================================================
+  CUDA GPU : Tesla P100-PCIE-16GB
+  CuPy GPU : available — array ops will run on GPU
+  Recon alg: SIRT_CUDA
+  Log file : /home/ljh79/TomoMono/hyperparam_results/hyperparam_results.csv
+
+Loading /home/ljh79/groups/grp_ptychi/nobackup/autodelete/Oct2025APSdata/tomo_data_run_final_2.hdf5 ...
+  Original shape : (558, 585, 1810)
+  Downsampled to : (279, 147, 453)  (279 angles)
+
+Starting fresh search over 121 configs (4 XCA × 5 VMF × 6 PMA + 1 baseline).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  BASELINE  (no alignment)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+Normalizing projections
+
+
+Using GPU-accelerated reconstruction, Algorithm:  SIRT_CUDA
+Reconstruction completed.
+Computing reprojections of reconstruction...
+Computing per-angle NRMSE...
+
+─── Reprojection Consistency Score ───────────────────────
+  RCS (mean NRMSE):   0.2828
+  Best  angle [  47]:  NRMSE = 0.0910
+  Worst angle [ 229]:  NRMSE = 1.0016
+  Std across angles:  0.1481
+  Verdict:  ⚠  Moderate — consider additional PMA iterations or check alignment.
+───────────────────────────────────────────────────────────
+
+  → RCS = 0.282777  |  time = 85s  |  ok
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  [1/120]  xca_baseline  +  vmf_skip  +  pma_skip
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+Normalizing projections
+
+
+Cross-Correlation Alignment  [4x downsample | full frame | gradient mode]
+Iteration 1: avg shift = 15.8789 px, max shift = 93.4762 px
+Iteration 2: avg shift = 1.4932 px, max shift = 10.8255 px
+Iteration 3: avg shift = 0.2322 px, max shift = 2.8174 px
+Iteration 4: avg shift = 0.1226 px, max shift = 0.9178 px
+Iteration 5: avg shift = 0.0954 px, max shift = 3.4389 px
+Iteration 6: avg shift = 0.0767 px, max shift = 0.9000 px
+Iteration 7: avg shift = 0.0668 px, max shift = 0.9693 px
+Iteration 8: avg shift = 0.0699 px, max shift = 4.3536 px
+Iteration 9: avg shift = 0.0800 px, max shift = 7.8419 px
+Iteration 10: avg shift = 0.0590 px, max shift = 1.0496 px
+Maximum iterations reached without convergence.
+
+
+Cross-Correlation Alignment  [2x downsample | full frame | gradient mode]
+Iteration 1: avg shift = 0.3680 px, max shift = 19.0707 px
+Iteration 2: avg shift = 0.1331 px, max shift = 2.6850 px
+Iteration 3: avg shift = 0.0623 px, max shift = 0.5474 px
+Iteration 4: avg shift = 0.0422 px, max shift = 1.3708 px
+Iteration 5: avg shift = 0.0311 px, max shift = 1.0262 px
+Iteration 6: avg shift = 0.0220 px, max shift = 0.5474 px
+Iteration 7: avg shift = 0.0196 px, max shift = 0.3711 px
+Iteration 8: avg shift = 0.0445 px, max shift = 5.1740 px
+Iteration 9: avg shift = 0.0419 px, max shift = 3.6900 px
+Iteration 10: avg shift = 0.0228 px, max shift = 0.4025 px
+Maximum iterations reached without convergence.
+
+
+Cross-Correlation Alignment  [full resolution | full frame | gradient mode]
+Iteration 1: avg shift = 0.1429 px, max shift = 4.0106 px
+Iteration 2: avg shift = 0.0604 px, max shift = 4.3320 px
+Iteration 3: avg shift = 0.0283 px, max shift = 0.9330 px
+Iteration 4: avg shift = 0.0237 px, max shift = 0.2912 px
+Iteration 5: avg shift = 0.0147 px, max shift = 0.2683 px
+Maximum iterations reached without convergence.
+
+
+Using GPU-accelerated reconstruction, Algorithm:  SIRT_CUDA
+Reconstruction completed.
+Computing reprojections of reconstruction...
+Computing per-angle NRMSE...
+
+─── Reprojection Consistency Score ───────────────────────
+  RCS (mean NRMSE):   0.1223
+  Best  angle [  95]:  NRMSE = 0.0526
+  Worst angle [ 133]:  NRMSE = 0.4909
+  Std across angles:  0.0480
+  Verdict:  ~  Acceptable — minor residual misalignment or noise present.
+───────────────────────────────────────────────────────────
+
+
+  → RCS = 0.122325  |  time = 188s  |  ok
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  [2/120]  xca_baseline  +  vmf_skip  +  pma_of_2lev
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+Normalizing projections
+
+
+Cross-Correlation Alignment  [4x downsample | full frame | gradient mode]
+Iteration 1: avg shift = 15.8789 px, max shift = 93.4762 px
+Iteration 2: avg shift = 1.4932 px, max shift = 10.8255 px
+Iteration 3: avg shift = 0.2322 px, max shift = 2.8174 px
+Iteration 4: avg shift = 0.1226 px, max shift = 0.9178 px
+Iteration 5: avg shift = 0.0954 px, max shift = 3.4389 px
+Iteration 6: avg shift = 0.0767 px, max shift = 0.9000 px
+Iteration 7: avg shift = 0.0668 px, max shift = 0.9693 px
+Iteration 8: avg shift = 0.0699 px, max shift = 4.3536 px
+Iteration 9: avg shift = 0.0800 px, max shift = 7.8419 px
+Iteration 10: avg shift = 0.0590 px, max shift = 1.0496 px
+Maximum iterations reached without convergence.
+
+
+Cross-Correlation Alignment  [2x downsample | full frame | gradient mode]
+Iteration 1: avg shift = 0.3680 px, max shift = 19.0707 px
+Iteration 2: avg shift = 0.1331 px, max shift = 2.6850 px
+Iteration 3: avg shift = 0.0623 px, max shift = 0.5474 px
+Iteration 4: avg shift = 0.0422 px, max shift = 1.3708 px
+Iteration 5: avg shift = 0.0311 px, max shift = 1.0262 px
+Iteration 6: avg shift = 0.0220 px, max shift = 0.5474 px
+Iteration 7: avg shift = 0.0196 px, max shift = 0.3711 px
+Iteration 8: avg shift = 0.0445 px, max shift = 5.1740 px
+Iteration 9: avg shift = 0.0419 px, max shift = 3.6900 px
+Iteration 10: avg shift = 0.0228 px, max shift = 0.4025 px
+Maximum iterations reached without convergence.
+
+
+Cross-Correlation Alignment  [full resolution | full frame | gradient mode]
+Iteration 1: avg shift = 0.1429 px, max shift = 4.0106 px
+Iteration 2: avg shift = 0.0604 px, max shift = 4.3320 px
+Iteration 3: avg shift = 0.0283 px, max shift = 0.9330 px
+Iteration 4: avg shift = 0.0237 px, max shift = 0.2912 px
+Iteration 5: avg shift = 0.0147 px, max shift = 0.2683 px
+Maximum iterations reached without convergence.
+
+
+Projection Matching Alignment (PMA) [optical_flow]
+Centering Projections
+Original center: 239.75
+Center of frame: 226
+Aligned projections shifted by -13.25 pixels
+Projections are currently centered at pixel 226.5. Residual offset: 0.5
+
+--- PMA Level 1 (2x downsampled, 5 iterations) ---
+  Iter 1: avg=0.0593 px
+  Iter 2: avg=0.0679 px
+  Iter 3: avg=0.1001 px
+  Iter 4: avg=0.1357 px
+  Iter 5: avg=0.1525 px
+
+--- PMA Level 0 (1x downsampled, 5 iterations) ---
+  Iter 1: avg=0.0994 px
+  Iter 2: avg=0.1278 px
+  Iter 3: avg=0.1394 px
+  Iter 4: avg=0.1326 px
+  Iter 5: avg=0.1057 px
+
+PMA complete.
+
+
+Using GPU-accelerated reconstruction, Algorithm:  SIRT_CUDA
+Reconstruction completed.
+Computing reprojections of reconstruction...
+Computing per-angle NRMSE...
+
+─── Reprojection Consistency Score ───────────────────────
+  RCS (mean NRMSE):   0.1156
+  Best  angle [  58]:  NRMSE = 0.0382
+  Worst angle [ 133]:  NRMSE = 0.5610
+  Std across angles:  0.0512
+  Verdict:  ~  Acceptable — minor residual misalignment or noise present.
+───────────────────────────────────────────────────────────
+
+
+  → RCS = 0.115622  |  time = 704s  |  ok
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  [3/120]  xca_baseline  +  vmf_skip  +  pma_of_2lev_sigma2
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+Normalizing projections
+
+
+Cross-Correlation Alignment  [4x downsample | full frame | gradient mode]
+Iteration 1: avg shift = 15.8789 px, max shift = 93.4762 px
+Iteration 2: avg shift = 1.4932 px, max shift = 10.8255 px
+Iteration 3: avg shift = 0.2322 px, max shift = 2.8174 px
+Iteration 4: avg shift = 0.1226 px, max shift = 0.9178 px
+Iteration 5: avg shift = 0.0954 px, max shift = 3.4389 px
+Iteration 6: avg shift = 0.0767 px, max shift = 0.9000 px
+Iteration 7: avg shift = 0.0668 px, max shift = 0.9693 px
+Iteration 8: avg shift = 0.0699 px, max shift = 4.3536 px
+Iteration 9: avg shift = 0.0800 px, max shift = 7.8419 px
+Iteration 10: avg shift = 0.0590 px, max shift = 1.0496 px
+Maximum iterations reached without convergence.
+
+
+Cross-Correlation Alignment  [2x downsample | full frame | gradient mode]
+Iteration 1: avg shift = 0.3680 px, max shift = 19.0707 px
+Iteration 2: avg shift = 0.1331 px, max shift = 2.6850 px
+Iteration 3: avg shift = 0.0623 px, max shift = 0.5474 px
+Iteration 4: avg shift = 0.0422 px, max shift = 1.3708 px
+Iteration 5: avg shift = 0.0311 px, max shift = 1.0262 px
+Iteration 6: avg shift = 0.0220 px, max shift = 0.5474 px
+Iteration 7: avg shift = 0.0196 px, max shift = 0.3711 px
+Iteration 8: avg shift = 0.0445 px, max shift = 5.1740 px
+Iteration 9: avg shift = 0.0419 px, max shift = 3.6900 px
+Iteration 10: avg shift = 0.0228 px, max shift = 0.4025 px
+Maximum iterations reached without convergence.
+
+
+Cross-Correlation Alignment  [full resolution | full frame | gradient mode]
+Iteration 1: avg shift = 0.1429 px, max shift = 4.0106 px
+Iteration 2: avg shift = 0.0604 px, max shift = 4.3320 px
+Iteration 3: avg shift = 0.0283 px, max shift = 0.9330 px
+Iteration 4: avg shift = 0.0237 px, max shift = 0.2912 px
+Iteration 5: avg shift = 0.0147 px, max shift = 0.2683 px
+Maximum iterations reached without convergence.
+
+
+Projection Matching Alignment (PMA) [optical_flow]
+Centering Projections
+Original center: 239.75
+Center of frame: 226
+Aligned projections shifted by -13.25 pixels
+Projections are currently centered at pixel 226.5. Residual offset: 0.5
+
+--- PMA Level 1 (2x downsampled, 5 iterations) ---
+  Iter 1: avg=0.0579 px
+  Iter 2: avg=0.0692 px
+  Iter 3: avg=0.1037 px

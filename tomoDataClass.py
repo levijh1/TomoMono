@@ -10,15 +10,26 @@ from scipy.ndimage import rotate
 from alignment_methods import *
 
 try:
-    import cupy as cp
-    if cp.is_available():
-        from cupyx.scipy.ndimage import shift as _ndimage_shift
-    else:
-        cp = None
-        _ndimage_shift = sp.ndimage.shift
+    import torch
+    print("PyTorch imported successfully.")
+    import svmbir
+    print("SVMBIR imported successfully.")
+    if not torch.cuda.is_available() and not torch.backends.mps.is_available():
+        torch = None
+        svmbir = None
 except ImportError:
+    torch = None
+    svmbir = None
+
+try:
+    import cupy as cp
+    cp.array([1])  # real allocation — raises if GPU is unavailable or busy
+    from cupyx.scipy.ndimage import shift as _ndimage_shift
+    xp = cp
+except Exception:
     cp = None
     _ndimage_shift = sp.ndimage.shift
+    xp = np
 
 class tomoData:
     """
@@ -229,7 +240,9 @@ class tomoData:
         print("Normalizing projections")
         if isPhaseData:
             self.workingProjections = -self.workingProjections
-        self.workingProjections = (self.workingProjections - np.min(self.workingProjections)) / (np.max(self.workingProjections) - np.min(self.workingProjections))
+        arr = xp.asarray(self.workingProjections)
+        arr = (arr - xp.min(arr)) / (xp.max(arr) - xp.min(arr))
+        self.workingProjections = arr.get() if xp is not np else arr
         # self.finalProjections = np.copy(self.workingProjections)
 
     def standardize(self, isPhaseData):
@@ -239,10 +252,11 @@ class tomoData:
         Parameters:
         - isPhaseData (bool): If True, inverts the sign of the projections, which is often necessary for phase data since it can be negative.
         """
-        self.workingProjections = (self.workingProjections - np.mean(self.workingProjections)) / np.std(self.workingProjections)
+        arr = xp.asarray(self.workingProjections)
+        arr = (arr - xp.mean(arr)) / xp.std(arr)
         if isPhaseData:
-            #This is done to invert the sign of the projections, which is necessary for phase data since it is often negative.
-            self.workingProjections *= -1
+            arr *= -1
+        self.workingProjections = arr.get() if xp is not np else arr
 
     def threshold(self, threshold=-0.1):
         """

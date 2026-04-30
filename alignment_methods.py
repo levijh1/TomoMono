@@ -22,14 +22,10 @@ except ImportError:
 
 try:
     import cupy as cp
-    if cp.is_available():
-        from cupyx.scipy.ndimage import gaussian_filter as _gaussian_filter
-        xp = cp
-    else:
-        cp = None
-        _gaussian_filter = gaussian_filter
-        xp = np
-except ImportError:
+    cp.array([1])  # real allocation — raises if GPU is unavailable or busy
+    from cupyx.scipy.ndimage import gaussian_filter as _gaussian_filter
+    xp = cp
+except Exception:
     cp = None
     _gaussian_filter = gaussian_filter
     xp = np
@@ -731,9 +727,6 @@ def sinogram_consistency_score(tomo, plot=True, bg_percentile=None):
     Modified to handle datasets containing negative values.
     Also displays a central-slice sinogram for visual alignment assessment.
     """
-    import numpy as np
-    import matplotlib.pyplot as plt
-
     n = tomo.num_angles
     angles = tomo.ang.ravel()
     data_to_measure = tomo.workingProjections
@@ -948,12 +941,6 @@ def reconstruction_sharpness_score(recon, plot=True, percentile_crop=5):
 
     return grad_score, lap_score, grad_per_slice, lap_per_slice
 
-
-
-import numpy as np
-import tomopy
-from tqdm import tqdm
-import matplotlib.pyplot as plt
 
 
 def reprojection_consistency_score(tomo, plot=True, use_circ_mask=True):
