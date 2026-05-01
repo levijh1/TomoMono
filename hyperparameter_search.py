@@ -2,18 +2,21 @@
 """
 Hyperparameter search for tomographic alignment pipeline.
 
-Pipeline (fixed): reset → normalize → XCA (3-pass best params) → PMA (varied)
-                  → make_updates_shift → SIRT_CUDA reconstruction → RCS score.
+Pipeline: reset → normalize → XCA (varied) → PMA (varied)
+          → make_updates_shift → SIRT_CUDA reconstruction → RCS score.
 
-Varied: PMA stepRatio, of_sigma, levels, iterations_per_level.
+Varied axes:
+  XCA: multi-pass strategy, use_grad, stepRatio
+  PMA: stepRatio, of_sigma, levels, iterations_per_level
 
-Results are continuously appended to a CSV log so partial runs are safe to
-inspect or resume.  Run on a GPU node.
+All (XCA config × PMA config) combinations are evaluated.  Results are
+continuously appended to a CSV log so partial runs are safe to inspect
+or resume.  Run on a GPU node.
 
 Usage:
     python hyperparameter_search.py
-    python hyperparameter_search.py --resume          # skip already-done configs
-    python hyperparameter_search.py --recon art       # CPU fallback for testing
+    python hyperparameter_search.py --resume --logfile <path>   # resume a timed-out run
+    python hyperparameter_search.py --recon art                 # CPU fallback for testing
 """
 
 import os
@@ -35,33 +38,68 @@ from alignment_methods import reprojection_consistency_score
 FILENAME = "/home/ljh79/groups/grp_ptychi/nobackup/autodelete/Oct2025APSdata/tomo_data_run_final_2.hdf5"
 
 DEFAULT_RECON_ALG  = 'SIRT_CUDA'
-LOG_FILE           = f"hyperparam_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+LOG_FILE           = f"hyperparam_results/xca_pma_search_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
 DOWNSAMPLE_SPATIAL = 4   # matches notebook: zoom(..., 1/4, 1/4)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# FIXED XCA PASSES  (best params from previous sweep)
+# XCA CONFIGS  (each entry is a list of per-pass kwargs)
 # ══════════════════════════════════════════════════════════════════════════════
-# Fixed across all passes: tolerance=0, maxShiftTolerance=0,
-#                          yROI_Range=None, xROI_Range=None,
-#                          isFull360=False, use_grad=True.
+# Fixed for all passes: tolerance=0, maxShiftTolerance=0,
+#                       yROI_Range=None, xROI_Range=None, isFull360=False.
 
-XCA_PASSES = [
-    dict(downsample=4, max_iterations=10, stepRatio=0.9),
-    dict(downsample=2, max_iterations=10, stepRatio=0.9),
-    dict(downsample=1, max_iterations=5,  stepRatio=0.8),
-]
+XCA_CONFIGS = {
+    # 3-pass, gradient mode — best strategy from previous sweep
+    'xca_3p_grad': [
+        dict(downsample=4, max_iterations=10, stepRatio=0.9, use_grad=True),
+        dict(downsample=2, max_iterations=10, stepRatio=0.9, use_grad=True),
+        dict(downsample=1, max_iterations=5,  stepRatio=0.8, use_grad=True),
+    ],
+    # 3-pass, intensity mode (no gradient preprocessing)
+    'xca_3p_nograd': [
+        dict(downsample=4, max_iterations=10, stepRatio=0.9, use_grad=False),
+        dict(downsample=2, max_iterations=10, stepRatio=0.9, use_grad=False),
+        dict(downsample=1, max_iterations=5,  stepRatio=0.8, use_grad=False),
+    ],
+    # 3-pass, gradient, conservative stepRatio throughout
+    'xca_3p_grad_sr08': [
+        dict(downsample=4, max_iterations=10, stepRatio=0.8, use_grad=True),
+        dict(downsample=2, max_iterations=10, stepRatio=0.8, use_grad=True),
+        dict(downsample=1, max_iterations=5,  stepRatio=0.8, use_grad=True),
+    ],
+    # 2-pass, gradient (skip ds=2 middle pass — faster, less coarse-to-fine)
+    'xca_2p_grad': [
+        dict(downsample=4, max_iterations=10, stepRatio=0.9, use_grad=True),
+        dict(downsample=1, max_iterations=5,  stepRatio=0.8, use_grad=True),
+    ],
+    # 3-pass, gradient, stepRatio=0.6
+    'xca_3p_grad_sr06': [
+        dict(downsample=4, max_iterations=10, stepRatio=0.6, use_grad=True),
+        dict(downsample=2, max_iterations=10, stepRatio=0.6, use_grad=True),
+        dict(downsample=1, max_iterations=5,  stepRatio=0.6, use_grad=True),
+    ],
+    # 3-pass, gradient, stepRatio=0.7
+    'xca_3p_grad_sr07': [
+        dict(downsample=4, max_iterations=10, stepRatio=0.7, use_grad=True),
+        dict(downsample=2, max_iterations=10, stepRatio=0.7, use_grad=True),
+        dict(downsample=1, max_iterations=5,  stepRatio=0.7, use_grad=True),
+    ],
+    # 4-pass, gradient, stepRatio=0.8 (adds ds=8 coarse pass)
+    'xca_4p_grad_sr08': [
+        dict(downsample=8, max_iterations=10, stepRatio=0.8, use_grad=True),
+        dict(downsample=4, max_iterations=10, stepRatio=0.8, use_grad=True),
+        dict(downsample=2, max_iterations=10, stepRatio=0.8, use_grad=True),
+        dict(downsample=1, max_iterations=5,  stepRatio=0.8, use_grad=True),
+    ],
+}
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PMA PARAMETER GRID
 # ══════════════════════════════════════════════════════════════════════════════
-# Varied axes: stepRatio, of_sigma, levels, iterations_per_level.
-# scale=4 matches the notebook example.
-# Kept short per config to avoid cluster wall-time issues.
 
 PMA_CONFIGS = {
     'pma_skip': dict(run=False),
 
-    # ── 3-level (matches notebook format) ─────────────────────────────────────
+    # ── 3-level ───────────────────────────────────────────────────────────────
     'pma_3lev_sr09_sig3': dict(
         run=True, levels=3, scale=4, iterations_per_level=[5, 5, 2],
         shift_method='optical_flow', of_sigma=3.0, stepRatio=0.9,
@@ -79,7 +117,23 @@ PMA_CONFIGS = {
         shift_method='optical_flow', of_sigma=3.0, stepRatio=0.9,
     ),
 
-    # ── 2-level (faster; useful as an upper bound check) ──────────────────────
+    # ── 2-level ───────────────────────────────────────────────────────────────
+    'pma_2lev_sr09_sig1': dict(
+        run=True, levels=2, scale=4, iterations_per_level=[5, 5],
+        shift_method='optical_flow', of_sigma=1.0, stepRatio=0.9,
+    ),
+    'pma_2lev_sr08_sig1': dict(
+        run=True, levels=2, scale=4, iterations_per_level=[5, 5],
+        shift_method='optical_flow', of_sigma=1.0, stepRatio=0.8,
+    ),
+    'pma_2lev_sr09_sig2': dict(
+        run=True, levels=2, scale=4, iterations_per_level=[5, 5],
+        shift_method='optical_flow', of_sigma=2.0, stepRatio=0.9,
+    ),
+    'pma_2lev_sr08_sig2': dict(
+        run=True, levels=2, scale=4, iterations_per_level=[5, 5],
+        shift_method='optical_flow', of_sigma=2.0, stepRatio=0.8,
+    ),
     'pma_2lev_sr09_sig3': dict(
         run=True, levels=2, scale=4, iterations_per_level=[5, 5],
         shift_method='optical_flow', of_sigma=3.0, stepRatio=0.9,
@@ -88,10 +142,6 @@ PMA_CONFIGS = {
         run=True, levels=2, scale=4, iterations_per_level=[5, 5],
         shift_method='optical_flow', of_sigma=3.0, stepRatio=0.8,
     ),
-    'pma_2lev_sr09_sig2': dict(
-        run=True, levels=2, scale=4, iterations_per_level=[5, 5],
-        shift_method='optical_flow', of_sigma=2.0, stepRatio=0.9,
-    ),
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -99,7 +149,9 @@ PMA_CONFIGS = {
 # ══════════════════════════════════════════════════════════════════════════════
 
 CSV_FIELDS = [
-    'config_id', 'pma_name',
+    'config_id',
+    'xca_name', 'xca_n_passes',
+    'pma_name',
     'pma_run', 'pma_levels', 'pma_scale', 'pma_iters_per_level',
     'pma_of_sigma', 'pma_step_ratio',
     'rcs', 'time_s', 'status',
@@ -107,6 +159,7 @@ CSV_FIELDS = [
 
 
 def init_csv(path):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w', newline='') as f:
         csv.DictWriter(f, fieldnames=CSV_FIELDS).writeheader()
 
@@ -127,9 +180,11 @@ def load_done_ids(path):
     return done
 
 
-def build_row(config_id, pma_name, pma_cfg, rcs, elapsed, status):
+def build_row(config_id, xca_name, xca_passes, pma_name, pma_cfg, rcs, elapsed, status):
     return dict(
         config_id=config_id,
+        xca_name=xca_name,
+        xca_n_passes=len(xca_passes),
         pma_name=pma_name,
         pma_run=pma_cfg.get('run', False),
         pma_levels=pma_cfg.get('levels', ''),
@@ -158,30 +213,43 @@ def load_data(filename):
 # PIPELINE RUNNER
 # ══════════════════════════════════════════════════════════════════════════════
 
-def run_pipeline(projections, angles, pma_cfg, recon_alg):
+def run_pipeline(projections, angles, xca_passes, pma_cfg, recon_alg):
     """
     Run one complete alignment + reconstruction pipeline and return the RCS score.
     Creates a fresh tomoData object each time so configs don't bleed into each other.
+
+    Crop timing matches the notebook: run the first (coarsest) XCA pass on the
+    full-width data, commit those shifts, crop, then run the remaining passes.
     """
     t = tomoData(projections, angles)
 
-    x_crop = 500 // DOWNSAMPLE_SPATIAL   # matches notebook: shape[2] - (500//downsample)
-    t.reset_workingProjections(
-        x_size=projections.shape[2] - x_crop,
-        y_size=projections.shape[1],
-    )
+    # No crop yet — first pass sees the full-width projections
+    t.reset_workingProjections(x_size=None, y_size=None)
     t.normalize(isPhaseData=True)
 
-    # ── Fixed XCA: best params from sweep ────────────────────────────────────
-    for pass_cfg in XCA_PASSES:
+    # First XCA pass (coarsest downsample) on full-width data
+    t.cross_correlate_align(
+        tolerance=0, maxShiftTolerance=0,
+        yROI_Range=None, xROI_Range=None,
+        isFull360=False,
+        **xca_passes[0],
+    )
+
+    # Commit shifts then crop — matching notebook timing
+    t.make_updates_shift()
+    x_size = projections.shape[2] - (500 // DOWNSAMPLE_SPATIAL)
+    t.crop_center(new_x=x_size, new_y=None)
+
+    # Remaining XCA passes on the cropped data
+    for pass_cfg in xca_passes[1:]:
         t.cross_correlate_align(
             tolerance=0, maxShiftTolerance=0,
             yROI_Range=None, xROI_Range=None,
-            isFull360=False, use_grad=True,
+            isFull360=False,
             **pass_cfg,
         )
 
-    # ── PMA (optional) ────────────────────────────────────────────────────────
+    # PMA (optional)
     if pma_cfg.get('run'):
         t.PMA(
             tolerance=0, algorithm=recon_alg, plot=False,
@@ -193,11 +261,10 @@ def run_pipeline(projections, angles, pma_cfg, recon_alg):
             stepRatio=pma_cfg['stepRatio'],
         )
 
-    # ── Apply accumulated shifts, reconstruct, score ──────────────────────────
     t.make_updates_shift()
     t.reconstruct(algorithm=recon_alg)
     rcs, _, _ = reprojection_consistency_score(t, plot=False)
-    return rcs
+    return rcs, t.recon
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -217,7 +284,6 @@ def main():
     recon_alg = args.recon
     log_path  = args.logfile
 
-    # ── GPU / environment check ───────────────────────────────────────────────
     print("=" * 70)
     print("TOMOGRAPHIC ALIGNMENT HYPERPARAMETER SEARCH")
     print("=" * 70)
@@ -229,8 +295,7 @@ def main():
             print("  WARNING: No CUDA GPU detected. "
                   "SIRT_CUDA will fail — pass --recon art for CPU testing.")
     except ImportError:
-        print("  WARNING: torch not importable. "
-              "Uncomment 'import torch' in tomoDataClass.py, or use --recon art.")
+        print("  WARNING: torch not importable.")
     try:
         import cupy as cp
         if cp.is_available():
@@ -241,7 +306,7 @@ def main():
     print(f"  Log file : {log_path}")
     print()
 
-    # ── Data loading + downsampling ───────────────────────────────────────────
+    # Data loading + downsampling
     print(f"Loading {FILENAME} ...")
     projections_og, angles_og = load_data(FILENAME)
     print(f"  Original shape : {projections_og.shape}")
@@ -251,11 +316,48 @@ def main():
     angles      = angles_og
     print(f"  Downsampled to : {projections.shape}  ({len(angles)} angles)\n")
 
-    pma_items  = list(PMA_CONFIGS.items())
-    n_configs  = len(pma_items)
-    n_total    = n_configs + 1   # +1 for no-alignment baseline
+    # Explicit experiment list — (config_id, xca_name, pma_name)
+    EXPERIMENTS = [
+        # === xca_3p_grad_sr06 ===
+        (43, 'xca_3p_grad_sr06', 'pma_skip'),
+        (44, 'xca_3p_grad_sr06', 'pma_2lev_sr09_sig1'),
+        (45, 'xca_3p_grad_sr06', 'pma_2lev_sr08_sig1'),
+        (46, 'xca_3p_grad_sr06', 'pma_2lev_sr09_sig2'),
+        (47, 'xca_3p_grad_sr06', 'pma_2lev_sr08_sig2'),
+        (48, 'xca_3p_grad_sr06', 'pma_2lev_sr09_sig3'),
+        (49, 'xca_3p_grad_sr06', 'pma_2lev_sr08_sig3'),
+        # === xca_3p_grad_sr07 ===
+        (50, 'xca_3p_grad_sr07', 'pma_skip'),
+        (51, 'xca_3p_grad_sr07', 'pma_2lev_sr09_sig1'),
+        (52, 'xca_3p_grad_sr07', 'pma_2lev_sr08_sig1'),
+        (53, 'xca_3p_grad_sr07', 'pma_2lev_sr09_sig2'),
+        (54, 'xca_3p_grad_sr07', 'pma_2lev_sr08_sig2'),
+        (55, 'xca_3p_grad_sr07', 'pma_2lev_sr09_sig3'),
+        (56, 'xca_3p_grad_sr07', 'pma_2lev_sr08_sig3'),
+        # === xca_3p_grad_sr08 (3 new configs — 4 already done) ===
+        (57, 'xca_3p_grad_sr08', 'pma_2lev_sr09_sig1'),
+        (58, 'xca_3p_grad_sr08', 'pma_2lev_sr08_sig1'),
+        (59, 'xca_3p_grad_sr08', 'pma_2lev_sr08_sig2'),
+        # === xca_4p_grad_sr08 ===
+        (60, 'xca_4p_grad_sr08', 'pma_skip'),
+        (61, 'xca_4p_grad_sr08', 'pma_2lev_sr09_sig1'),
+        (62, 'xca_4p_grad_sr08', 'pma_2lev_sr08_sig1'),
+        (63, 'xca_4p_grad_sr08', 'pma_2lev_sr09_sig2'),
+        (64, 'xca_4p_grad_sr08', 'pma_2lev_sr08_sig2'),
+        (65, 'xca_4p_grad_sr08', 'pma_2lev_sr09_sig3'),
+        (66, 'xca_4p_grad_sr08', 'pma_2lev_sr08_sig3'),
+    ]
 
-    # ── Init or resume CSV ────────────────────────────────────────────────────
+    all_configs = [
+        (cfg_id, xca_name, XCA_CONFIGS[xca_name], pma_name, PMA_CONFIGS[pma_name])
+        for cfg_id, xca_name, pma_name in EXPERIMENTS
+    ]
+    n_total = len(all_configs)
+
+    print(f"Running {n_total} explicit configs (IDs {all_configs[0][0]}–{all_configs[-1][0]})")
+    print()
+
+    # Init or resume CSV
     if args.resume and os.path.exists(log_path):
         done_ids = load_done_ids(log_path)
         print(f"Resuming: {len(done_ids)}/{n_total} already done, "
@@ -263,46 +365,30 @@ def main():
     else:
         init_csv(log_path)
         done_ids = set()
-        print(f"Starting fresh search over {n_total} configs "
-              f"({n_configs} PMA variants + 1 baseline).\n")
+        print(f"Starting fresh search over {n_total} configs.\n")
 
-    # ── Baseline: XCA only, no PMA ────────────────────────────────────────────
-    BASELINE_ID = -1
-    NO_CFG      = dict(run=False)
+    best_rcs   = float('inf')
+    best_recon = None
+    best_cfg_id = None
 
-    if BASELINE_ID not in done_ids:
-        print("━" * 70)
-        print("  BASELINE  (XCA only, no PMA)")
-        print("━" * 70)
-        t0 = time.time()
-        try:
-            rcs_base = run_pipeline(projections, angles, NO_CFG, recon_alg)
-            status = 'ok'
-        except Exception as e:
-            traceback.print_exc()
-            rcs_base = float('nan')
-            status = f'error: {str(e)[:100]}'
-
-        elapsed = time.time() - t0
-        append_row(log_path, build_row(BASELINE_ID, 'none', NO_CFG, rcs_base, elapsed, status))
-        print(f"  → RCS = {rcs_base:.6f}  |  time = {elapsed:.0f}s  |  {status}\n")
-    else:
-        print("  Baseline already done — skipping.\n")
-
-    # ── PMA parameter search ──────────────────────────────────────────────────
-    for cfg_id, (pma_name, pma_cfg) in enumerate(pma_items):
+    # Main loop
+    for i, (cfg_id, xca_name, xca_passes, pma_name, pma_cfg) in enumerate(all_configs):
 
         if cfg_id in done_ids:
-            print(f"  [{cfg_id+1}/{n_configs}] skipping {pma_name} (done)")
+            print(f"  [{i+1}/{n_total}] skipping {xca_name} + {pma_name} (done)")
             continue
 
         print("━" * 70)
-        print(f"  [{cfg_id+1}/{n_configs}]  {pma_name}")
+        print(f"  [{i+1}/{n_total}]  cfg_id={cfg_id}  {xca_name}  +  {pma_name}")
         print("━" * 70)
 
         t0 = time.time()
         try:
-            rcs = run_pipeline(projections, angles, pma_cfg, recon_alg)
+            rcs, recon = run_pipeline(projections, angles, xca_passes, pma_cfg, recon_alg)
+            if rcs < best_rcs:
+                best_rcs    = rcs
+                best_recon  = recon
+                best_cfg_id = cfg_id
             status = 'ok'
         except Exception as e:
             traceback.print_exc()
@@ -310,10 +396,19 @@ def main():
             status = f'error: {str(e)[:100]}'
 
         elapsed = time.time() - t0
-        append_row(log_path, build_row(cfg_id, pma_name, pma_cfg, rcs, elapsed, status))
+        append_row(log_path, build_row(cfg_id, xca_name, xca_passes, pma_name, pma_cfg,
+                                       rcs, elapsed, status))
         print(f"\n  → RCS = {rcs:.6f}  |  time = {elapsed:.0f}s  |  {status}\n")
 
-    # ── Final summary ─────────────────────────────────────────────────────────
+    # Save best reconstruction
+    if best_recon is not None:
+        tiff_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'paramSearchBestRecon.tiff')
+        tifffile.imwrite(tiff_path, best_recon.astype(np.float32))
+        print(f"Best recon (cfg_id={best_cfg_id}, RCS={best_rcs:.6f}) saved to: {tiff_path}\n")
+    else:
+        print("No successful runs — best recon not saved.\n")
+
+    # Final summary
     print("=" * 70)
     print("SEARCH COMPLETE")
     print("=" * 70)
@@ -325,7 +420,8 @@ def main():
         df_sorted = df_ok.sort_values('rcs').reset_index(drop=True)
         df_sorted.index.name = 'rank'
         print(df_sorted[
-            ['config_id', 'pma_name', 'pma_levels', 'pma_iters_per_level',
+            ['config_id', 'xca_name', 'pma_name',
+             'pma_levels', 'pma_iters_per_level',
              'pma_of_sigma', 'pma_step_ratio', 'rcs', 'time_s']
         ].to_string())
     except ImportError:

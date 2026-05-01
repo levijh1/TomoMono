@@ -12,12 +12,15 @@ import tifffile
 try:
     import cupy as cp
     cp.array([1])  # real allocation — raises if GPU is unavailable or busy
-    from cupyx.scipy.ndimage import fourier_shift
+    from cupyx.scipy.ndimage import fourier_shift, gaussian_filter as _gpu_gf
     xp = cp
 except Exception:
     cp = None
     from scipy.ndimage import fourier_shift
+    _gpu_gf = None
     xp = np
+
+from scipy.ndimage import gaussian_filter as _cpu_gf
 
 
 
@@ -44,58 +47,211 @@ def add_noise(m):
   m = tomopy.prep.alignment.add_noise(m)
   return m
 
-def subpixel_shift(image, shift_y, shift_x, homemade=False):
+# def gpu_available():
+#     """Returns True if CuPy/CUDA GPU acceleration is available on this device."""
+#     return cp is not None
+
+
+# def _gf(arr, sigma, truncate=2):
+#     """Gaussian filter dispatched to GPU (cupyx) or CPU (scipy) based on xp."""
+#     if xp is not np:
+#         return _gpu_gf(arr, sigma=sigma, truncate=truncate)
+#     return _cpu_gf(arr, sigma=sigma, truncate=truncate)
+
+
+# def fadeoutImage(img, fadeMethod='rectangle', fadeToVal=None, transitionLength=None,
+#                  ellipseSize=None, numSegments=1, angularOffsetSegments=0,
+#                  windowShift=None):
+#     """
+#     Fade the edges of an image to a constant value using a smooth window.
+
+#     GPU-accelerated via CuPy when available; falls back to NumPy/SciPy otherwise.
+
+#     Parameters
+#     ----------
+#     img : array_like [N, M]
+#     fadeMethod : {'ellipse', 'rectangle'}
+#     fadeToVal : float, optional
+#         Target fade value. Defaults to the mean of the boundary ring.
+#     transitionLength : [ty, tx], optional
+#         Transition width in pixels. Defaults to mean(shape) / 8.
+#     ellipseSize : [ry, rx], optional
+#         Fractional mask size in each axis (0–1). Default [0.8, 0.8].
+#     numSegments : int
+#         Angular segments for spatially-varying fadeout. Default 1.
+#     angularOffsetSegments : float
+#         Segment boundary angular offset in radians. Default 0.
+#     windowShift : [dy, dx], optional
+#         Shift of the fade window centre in pixels. Default [0, 0].
+
+#     Returns
+#     -------
+#     imgFaded : np.ndarray [N, M], float32
+#     transitionMask : np.ndarray [N, M], float32
+#     """
+#     if fadeMethod not in ('ellipse', 'rectangle'):
+#         raise ValueError(f"fadeMethod must be 'ellipse' or 'rectangle', got '{fadeMethod}'")
+
+#     img = np.asarray(img, dtype=np.float32)
+#     rows, cols = img.shape
+
+#     if transitionLength is None:
+#         tl = int(np.ceil(np.mean([rows, cols]) / 8))
+#         transitionLength = [tl, tl]
+#     if windowShift is None:
+#         windowShift = [0, 0]
+#     if ellipseSize is None:
+#         ellipseSize = [0.8, 0.8]
+
+#     tly, tlx = float(transitionLength[0]), float(transitionLength[1])
+#     wsy, wsx = float(windowShift[0]), float(windowShift[1])
+
+#     arr = xp.asarray(img)
+
+#     # Coordinate grids centred on the image
+#     Y_vec = xp.arange(-rows / 2 + 0.5, rows / 2, 1.0, dtype=xp.float32)
+#     X_vec = xp.arange(-cols / 2 + 0.5, cols / 2, 1.0, dtype=xp.float32)
+#     Xg, Yg = xp.meshgrid(X_vec, Y_vec)
+#     Xg_s = Xg - wsx   # shifted grids for mask geometry
+#     Yg_s = Yg + wsy
+
+#     # --- Outer mask, inner mask, boundary ring ---
+#     if fadeMethod == 'ellipse':
+#         ry = (ellipseSize[0] * rows - 2) / 2
+#         rx = (ellipseSize[1] * cols - 2) / 2
+#         outer = Xg_s ** 2 / rx ** 2 + Yg_s ** 2 / ry ** 2 < 1
+#         ryI = max(1.0, ry - tly)
+#         rxI = max(1.0, rx - tlx)
+#         inner = Xg_s ** 2 / rxI ** 2 + Yg_s ** 2 / ryI ** 2 < 1
+#         idxBoundary = outer ^ inner
+#         transitionMask = outer.astype(xp.float32)
+
+#     else:  # rectangle
+#         ry = int(np.ceil(ellipseSize[0] * rows))
+#         rx = int(np.ceil(ellipseSize[1] * cols))
+#         outer = xp.zeros((rows, cols), dtype=xp.float32)
+#         y0 = max(0, (rows - ry) // 2)
+#         x0 = max(0, (cols - rx) // 2)
+#         outer[y0:y0 + min(ry, rows - y0), x0:x0 + min(rx, cols - x0)] = 1.0
+#         outer = xp.roll(outer, (-int(wsy), int(wsx)), axis=(0, 1))
+
+#         ryI = max(1, int(ry - tly))
+#         rxI = max(1, int(rx - tlx))
+#         inner = xp.zeros((rows, cols), dtype=xp.float32)
+#         y0i = max(0, (rows - ryI) // 2)
+#         x0i = max(0, (cols - rxI) // 2)
+#         inner[y0i:y0i + min(ryI, rows - y0i), x0i:x0i + min(rxI, cols - x0i)] = 1.0
+#         inner = xp.roll(inner, (-int(wsy), int(wsx)), axis=(0, 1))
+
+#         idxBoundary = (outer > 0.5) ^ (inner > 0.5)
+#         transitionMask = outer
+
+#     # --- Determine fadeToVals ---
+#     if fadeToVal is not None:
+#         fadeToVals = xp.float32(fadeToVal)
+
+#     elif numSegments > 1:
+#         # Gaussian pre-filter for stable boundary estimation
+#         imFilt = _gf(arr, sigma=10.0 / 2.35, truncate=2)
+
+#         theta = xp.arctan2(Yg - wsy, Xg - wsx)
+#         theta = xp.mod(theta + xp.float32(angularOffsetSegments), xp.float32(2 * np.pi))
+#         segIdx = xp.minimum(
+#             (xp.floor(numSegments / (2 * np.pi) * theta) + 1).astype(xp.int32),
+#             xp.int32(numSegments))
+#         # Mirror across Y-axis for left-right symmetry in the fadeout values
+#         mirTheta = xp.mod(xp.float32(np.pi) - theta, xp.float32(2 * np.pi))
+#         mirSegIdx = xp.minimum(
+#             (xp.floor(numSegments / (2 * np.pi) * mirTheta) + 1).astype(xp.int32),
+#             xp.int32(numSegments))
+
+#         fadeToVals = xp.zeros_like(arr)
+#         for seg in range(1, numSegments + 1):
+#             combined = idxBoundary & ((segIdx == seg) | (mirSegIdx == seg))
+#             val = float(imFilt[combined].mean()) if bool(combined.any()) else float(arr.mean())
+#             fadeToVals[segIdx == seg] = xp.float32(val)
+
+#         fadeToVals = _gf(fadeToVals, sigma=(tly / 2.35, tlx / 2.35), truncate=2)
+#         fadeToVals = xp.asarray(fadeToVals)
+
+#     else:
+#         val = float(arr[idxBoundary].mean()) if bool(idxBoundary.any()) else float(arr.mean())
+#         fadeToVals = xp.float32(val)
+
+#     # --- Smooth the transition mask with a Gaussian (standard holography approach) ---
+#     if tly > 1 and tlx > 1:
+#         transitionMask = _gf(transitionMask.astype(xp.float32), sigma=(tly / 2.35, tlx / 2.35), truncate=2)
+#         transitionMask = xp.asarray(transitionMask)
+
+#     # --- Apply fadeout ---
+#     imgFaded = arr * transitionMask + fadeToVals * (1 - transitionMask)
+
+#     imgFaded = xp.where(xp.isnan(imgFaded) | xp.isinf(imgFaded), xp.float32(1.0), imgFaded)
+
+#     if xp is not np:
+#         return imgFaded.get().astype(np.float32), transitionMask.get().astype(np.float32)
+#     return imgFaded.astype(np.float32), transitionMask.astype(np.float32)
+
+
+def subpixel_shift(image, shift_y, shift_x):
     """
     Shift a 2D image by (shift_y, shift_x) pixels using a Fourier phase ramp.
 
-    Pads top/left/right with zeros and bottom with reflection before shifting,
-    then crops back. The padding tapers linearly to zero at its outer edge to
-    prevent Gibbs ringing.
+    Pads by replicating edge values outward, then applies a cosine taper over the
+    padded strip toward the estimated background value (mean of the two upper corner patches).
+    The top taper spans 1/4 of the pad distance; the bottom taper is 4x the pad distance.
+    GPU-accelerated via CuPy when available.
     """
     rows, cols = image.shape
-    pad_y = int(np.ceil(abs(shift_y))) + 2
-    pad_x = int(np.ceil(abs(shift_x))) + 2
 
-    # Bottom: reflect; top/left/right: zeros
-    padded_image = np.pad(image, ((0, pad_y), (0, 0)), mode='reflect')
-    padded_image = np.pad(padded_image, ((pad_y, 0), (pad_x, pad_x)), mode='constant', constant_values=0)
+    # Only pad the side each shift component exposes
+    pad_top    = int(np.ceil( shift_y)) + 1 if shift_y > 0 else 0
+    pad_bottom = int(np.ceil(-shift_y))*4 + 1 if shift_y < 0 else 0
+    pad_left   = int(np.ceil( shift_x)) + 1 if shift_x > 0 else 0
+    pad_right  = int(np.ceil(-shift_x)) + 1 if shift_x < 0 else 0
 
-    ph, pw = padded_image.shape
+    padded = np.pad(image, ((pad_top, pad_bottom), (pad_left, pad_right)), mode='edge')
+    ph, pw = padded.shape
 
-    # Separable taper: 1 over the image region, linearly decays to 0 at outer padding edge
-    wy = np.ones(ph)
-    wy[:pad_y]      = np.linspace(0, 1, pad_y + 1)[:-1]
-    wy[pad_y+rows:] = np.linspace(1, 0, pad_y + 1)[1:]
+    cs = max(4, min(32, rows // 6, cols // 6))
+    bg_mean = np.float32(np.mean([image[:cs, :cs], image[:cs, -cs:]]))
 
-    wx = np.ones(pw)
-    wx[:pad_x]      = np.linspace(0, 1, pad_x + 1)[:-1]
-    wx[pad_x+cols:] = np.linspace(1, 0, pad_x + 1)[1:]
+    def _taper_1d(size, pad_start, pad_end):
+        t = np.ones(size, dtype=np.float32)
+        if pad_start > 0:
+            t[:pad_start] = np.sin(0.5 * np.pi * np.arange(pad_start, dtype=np.float32) / pad_start)**2
+        if pad_end > 0:
+            t[size - pad_end:] = (np.sin(0.5 * np.pi * np.arange(pad_end, dtype=np.float32) / pad_end)**2)[::-1]
+        return t
 
-    padded_image *= wy[:, None] * wx[None, :]
+    # y window: top uses inner-edge ascending taper (outer wall = 0), bottom uses outer-edge taper
+    wy = np.ones(ph, dtype=np.float32)
+    if pad_top > 0:
+        taper_len_top = max(1, int(np.ceil(shift_y / 6)))
+        wy[:pad_top - taper_len_top] = 0.0
+        wy[pad_top - taper_len_top:pad_top] = np.sin(
+            0.5 * np.pi * np.arange(taper_len_top, dtype=np.float32) / taper_len_top)**2
+    if pad_bottom > 0:
+        wy[ph - pad_bottom:] = (np.sin(
+            0.5 * np.pi * np.arange(pad_bottom, dtype=np.float32) / (pad_bottom))**2)[::-1]
 
-    arr = xp.asarray(padded_image)
-    fft_image = xp.fft.fft2(arr)
+    window = wy[:, None] * _taper_1d(pw, pad_left, pad_right)[None, :]
+    padded = np.asarray(padded, dtype=np.float32) * window + bg_mean * (1.0 - window)
 
-    if homemade:
-        u = xp.fft.fftfreq(pw)
-        v = xp.fft.fftfreq(ph)
-        U, V = xp.meshgrid(u, v)
-        phase_ramp = xp.exp(-2j * np.pi * (shift_x * U + shift_y * V))
-        shifted_fft_image = fft_image * phase_ramp
-    else:
-        shifted_fft_image = fourier_shift(fft_image, (shift_y, shift_x))
-
-    shifted_padded = xp.fft.ifft2(shifted_fft_image).real
+    arr = xp.asarray(padded)
+    shifted_fft = fourier_shift(xp.fft.fft2(arr), (shift_y, shift_x))
+    shifted_padded = xp.fft.ifft2(shifted_fft).real
     if xp is not np:
         shifted_padded = shifted_padded.get()
 
-    return shifted_padded[pad_y:pad_y+rows, pad_x:pad_x+cols]
+    return np.asarray(shifted_padded[pad_top:pad_top + rows, pad_left:pad_left + cols])
 
 class MoviePlotter:
     """Plots a sequence of images as a movie in a Jupyter Notebook with interactive controls using widgets.Play."""
-    def __init__(self, x, trust_box=None):
+    def __init__(self, x, trust_box=None, color='gray'):
         self.x = x  # (M, N, N) array where M is the total number of images and N is the number of pixels in x and y
         self.trust_box = trust_box  # (top, bottom, left, right) pixel margins, or None
+        self.color = color
         self.global_min = np.min(x)
         self.global_max = np.max(x)
         self.play = widgets.Play(
@@ -121,7 +277,7 @@ class MoviePlotter:
     def update_plot(self, frame):
         with self.output:
             self.output.clear_output(wait=True)
-            plt.imshow(self.x[frame], vmin=self.global_min, vmax=self.global_max)
+            plt.imshow(self.x[frame], vmin=self.global_min, vmax=self.global_max, cmap=self.color)
             ax = plt.gca()  # capture before colorbar changes current axes
             plt.colorbar(label='Intensity')
             plt.title(f"Frame {frame}")

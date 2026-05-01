@@ -171,6 +171,12 @@ class tomoData:
         self.workingProjections = self.workingProjections[:,starty:endy, startx:endx]
         self.finalProjections = self.finalProjections[:,starty:endy, startx:endx]
         self.image_size = self.workingProjections.shape[1:]
+        removed_top, removed_bottom = starty, y - endy
+        removed_left, removed_right = startx, x - endx
+        self._shift_envelope[0] = max(0.0, self._shift_envelope[0] - removed_top)
+        self._shift_envelope[1] = max(0.0, self._shift_envelope[1] - removed_bottom)
+        self._shift_envelope[2] = max(0.0, self._shift_envelope[2] - removed_left)
+        self._shift_envelope[3] = max(0.0, self._shift_envelope[3] - removed_right)
 
     def crop_bottom_center(self, new_y, new_x):
         """
@@ -196,6 +202,12 @@ class tomoData:
         self.workingProjections = self.workingProjections[:, starty:endy, startx:endx]
         self.finalProjections = self.finalProjections[:, starty:endy, startx:endx]
         self.image_size = self.workingProjections.shape[1:]
+        removed_top, removed_bottom = starty, y - endy
+        removed_left, removed_right = startx, x - endx
+        self._shift_envelope[0] = max(0.0, self._shift_envelope[0] - removed_top)
+        self._shift_envelope[1] = max(0.0, self._shift_envelope[1] - removed_bottom)
+        self._shift_envelope[2] = max(0.0, self._shift_envelope[2] - removed_left)
+        self._shift_envelope[3] = max(0.0, self._shift_envelope[3] - removed_right)
 
 
     def track_shifts(self):
@@ -315,7 +327,7 @@ class tomoData:
             for i in range(4)
         )
 
-    def makeNotebookProjMovie(self, show_trust_region=True):
+    def makeNotebookProjMovie(self, show_trust_region=False):
         """
         Displays a movie of the final projections in a Jupyter notebook.
         If show_trust_region=True, overlays red dashed lines marking the box of
@@ -323,17 +335,22 @@ class tomoData:
         Prints the projection indices responsible for the largest shift in each
         direction, if any shifts have been applied.
         """
-        top, bottom, left, right = self.shift_envelope
-        if top > 0 or bottom > 0 or left > 0 or right > 0:
-            idx_top, idx_bottom, idx_left, idx_right = self.shift_envelope_idx
-            print("Largest shifts per direction:")
-            print(f"  Top    (down  {top:.2f} px) — projection {idx_top}")
-            print(f"  Bottom (up    {bottom:.2f} px) — projection {idx_bottom}")
-            print(f"  Left   (right {left:.2f} px) — projection {idx_left}")
-            print(f"  Right  (left  {right:.2f} px) — projection {idx_right}")
 
-        trust_box = self.shift_envelope if show_trust_region else None
-        MoviePlotter(self.finalProjections, trust_box=trust_box)
+        if show_trust_region:
+            top, bottom, left, right = self.shift_envelope
+            if top > 0 or bottom > 0 or left > 0 or right > 0:
+                idx_top, idx_bottom, idx_left, idx_right = self.shift_envelope_idx
+                print("Largest shifts per direction:")
+                print(f"  Top    (down  {top:.2f} px) — projection {idx_top}")
+                print(f"  Bottom (up    {bottom:.2f} px) — projection {idx_bottom}")
+                print(f"  Left   (right {left:.2f} px) — projection {idx_left}")
+                print(f"  Right  (left  {right:.2f} px) — projection {idx_right}")
+
+                trust_box = self.shift_envelope
+        else:
+            trust_box = None
+            
+        MoviePlotter(self.finalProjections, trust_box=trust_box, color='twilight')
 
     def makeScriptProjMovie(self):
         """
@@ -352,6 +369,30 @@ class tomoData:
         Displays a movie of the reconstructed volume in a script environment.
         """
         runwidget(self.recon)
+
+    def displayReconOrthogonalSlices(self):
+        import matplotlib.pyplot as plt
+        recon = self.recon
+        nz, ny, nx = recon.shape
+        cx, cy, cz = nx // 2, ny // 2, nz // 2
+
+        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+        axes[0].imshow(recon[cz, :, :], cmap='gray', aspect='equal')
+        axes[0].set_title(f'XY  (z={cz})')
+
+        axes[1].imshow(recon[:, cy, :], cmap='gray', aspect='auto')
+        axes[1].set_title(f'XZ  (y={cy})')
+
+        axes[2].imshow(recon[:, :, cx], cmap='gray', aspect='auto')
+        axes[2].set_title(f'YZ  (x={cx})')
+
+        for ax in axes:
+            ax.axis('off')
+
+        plt.suptitle('Orthogonal slices through reconstruction')
+        plt.tight_layout()
+        plt.show()
 
     def bilateralFilter(self, *args, **kwargs):
         print("\n")

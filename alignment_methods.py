@@ -420,7 +420,7 @@ def vertical_mass_fluctuation_align(
         for k in range(n):
             img = snapshot[k] if y_range is None else snapshot[k][y_range[0]:y_range[1]]
 
-            # 1. Generate Vertical Mass Profile
+            # 1. Generate Vertical Profile
             m = np.sum(img, axis=1).astype(np.float64)
 
             # 2. (Optional) Gradient-based profile — the derivative highlights internal
