@@ -33,7 +33,7 @@ except Exception:
 def compute_grad_image(image):
     arr = xp.asarray(image)
     gy, gx = xp.gradient(arr)
-    result = xp.sqrt(gx**2 + gy**2)
+    result = xp.hypot(gx, gy)  # equivalent to sqrt(gx²+gy²) but avoids allocating gx², gy², and their sum as separate temporaries
     return result.get() if xp is not np else result
 
 def cross_correlate_align(
@@ -290,14 +290,15 @@ def PMA(
         current_projs = np.stack([
             subpixel_shift(original[i], pma_shifts[i, 0], pma_shifts[i, 1])
             for i in range(tomo.num_angles)
-        ])
+        ], dtype=np.float32)
 
         if level > 0:
-            scaled_projs = list(pyramid_gaussian(
+            *_, scaled_projs = pyramid_gaussian(
                 current_projs, downscale=scale, max_layer=level, channel_axis=0
-            ))[level].astype(np.float32)
+            )
+            scaled_projs = scaled_projs.astype(np.float32)
         else:
-            scaled_projs = current_projs.astype(np.float32)
+            scaled_projs = current_projs
 
         scaled_center = tomo.rotation_center / downsample_factor
         level_shifts = np.zeros((tomo.num_angles, 2), dtype=np.float64)
@@ -313,9 +314,8 @@ def PMA(
             dy = np.zeros(tomo.num_angles)
             dx = np.zeros(tomo.num_angles)
 
-            # --- NEW: store ref/mov for plotting ---
-            ref_list = []
-            mov_list = []
+            plot_idx = tomo.num_angles // 2
+            plot_ref = plot_mov = None
 
             for i in range(tomo.num_angles):
 
@@ -327,8 +327,8 @@ def PMA(
                     ref = _preprocess_for_matching(ref, matching_sigma)
                     mov = _preprocess_for_matching(mov, matching_sigma)
 
-                ref_list.append(ref)
-                mov_list.append(mov)
+                if plot and k == 0 and i == plot_idx:
+                    plot_ref, plot_mov = ref, mov
 
                 if shift_method == 'optical_flow':
                     dy[i], dx[i] = _optical_flow_shift(mov, ref, of_sigma)
@@ -337,19 +337,18 @@ def PMA(
 
             # --- Plot ACTUAL matching inputs ---
             if plot and k == 0:
-                idx = tomo.num_angles//2
-                vmin = min(mov_list[idx].min(), ref_list[idx].min())
-                vmax = max(mov_list[idx].max(), ref_list[idx].max())
+                vmin = min(plot_mov.min(), plot_ref.min())
+                vmax = max(plot_mov.max(), plot_ref.max())
 
                 fig, axes = plt.subplots(1, 2, figsize=(10, 4))
-                fig.suptitle(f"PMA Level {level} — Matching Inputs (Projection {idx})")
+                fig.suptitle(f"PMA Level {level} — Matching Inputs (Projection {plot_idx})")
 
-                im0 = axes[0].imshow(mov_list[idx], cmap='gray', aspect='auto', vmin=vmin, vmax=vmax)
+                im0 = axes[0].imshow(plot_mov, cmap='gray', aspect='auto', vmin=vmin, vmax=vmax)
                 axes[0].set_title("mov (projection)")
                 axes[0].axis('off')
                 plt.colorbar(im0, ax=axes[0], fraction=0.046, pad=0.04)
 
-                im1 = axes[1].imshow(ref_list[idx], cmap='gray', aspect='auto', vmin=vmin, vmax=vmax)
+                im1 = axes[1].imshow(plot_ref, cmap='gray', aspect='auto', vmin=vmin, vmax=vmax)
                 axes[1].set_title("ref (reprojection)")
                 axes[1].axis('off')
                 plt.colorbar(im1, ax=axes[1], fraction=0.046, pad=0.04)

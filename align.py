@@ -3,14 +3,16 @@ if __name__ == '__main__':
     import sys
     import tomoDataClass
     from datetime import datetime
+    from scipy.ndimage import zoom
     from helperFunctions import DualLogger, convert_to_tiff, subpixel_shift, degree_to_positiveRadians, runwidget
+    from alignment_methods import reprojection_consistency_score
 
     # -------------------------
     # CONFIGURATION FLAGS
     # -------------------------
     log = True           # Set to True to enable logging output to a file
     saveToFile = True     # Set to True to save aligned projection data to a TIFF file
-    reconstruct = True     # Set to True to save the reconstruction to a TIFF file
+    saveRecon = True    # Set to True to save reconstructed volume to a TIFF file
     recon_alg = "SIRT_CUDA"
     # -------------------------
     # SETUP: Timing & Logging
@@ -32,21 +34,13 @@ if __name__ == '__main__':
         pass
 
     # -------------------------
-    # DATA IMPORT (EXAMPLE FOR REAL DATA)
+    # DATA IMPORT
     # -------------------------
-    # Uncomment the following lines to use experimental projection data from a TIFF file:
-    # tif_file = "alignedProjections/aligned_manually_3_3_25.tif"
-    # obj, scale_info = convert_to_numpy(tif_file)
-    # print(obj.shape)
-
-    #Importing data from Taylor Buckway h5 file (APS data)
     import h5py
     import numpy as np
-    # filename = "/home/ljh79/groups/grp_ptychi/nobackup/autodelete/Oct2025APSdata/tomo_data_run_final_2.hdf5"
     filename = "/home/ljh79/groups/grp_ptychi/nobackup/autodelete/Oct2025APSdata/tomo_data_run_final_2.hdf5"
 
-
-    def tomo_data(file,redo_align=False):
+    def tomo_data(file, redo_align=False):
         try:
             with h5py.File(file) as hf:
                 projs = hf['data'][...]
@@ -57,71 +51,96 @@ if __name__ == '__main__':
                 angles = hf['angles'][...]
         angles = angles * np.pi / 180
         return projs, angles
-    
+
     data, angles = tomo_data(filename, redo_align=True)
-
-
     print("data shape is: ", data.shape)
     print("angles shape is: ", len(angles))
 
-    tomo = tomoDataClass.tomoData(data, angles)
     scale_info = None
-
-    # # -------------------------
-    # # ALIGNMENT INSTRUCTIONS
-    # # -------------------------
-
-    
-    # """
-    # Alignment Options (defined in alignment_methods.py):
-    # - cross_correlate_align
-    # - rotate_correlate_align
-    # - vertical_mass_fluctuation_align
-    # - tomopy_align            # TomoPy’s implementation of joint reprojection alignment (PMA)
-    # - PMA                     # Custom projection matching algorithm
-    # - optical_flow_align
-    # - center_projections
-    # """
-
-    print("Starting alignment")
-
-    saveName = "1stRun"
-
-    savePath = f"/home/ljh79/TomoMono/alignedProjections/APSbeamtime_Oct25/{saveName}_aligned_{timestamp}.tif"
-    
-    print("\n\nCreating aligned projections:", savePath)
+    run_results = []  # (downsample_factor, rcs, elapsed_s)
 
     # -------------------------
-    # ALIGNMENT STRATEGY
+    # DOWNSAMPLE SWEEP
     # -------------------------
-    # Choose and configure alignment algorithm below:
-    tomo.reset_workingProjections(x_size=data.shape[2]-500, y_size=data.shape[1])
-    tomo.normalize(isPhaseData=True)
+    for DOWNSAMPLE_SPATIAL in [4, 2, 1]:
+        run_start = time.time()
+        label = f"ds{DOWNSAMPLE_SPATIAL}x" if DOWNSAMPLE_SPATIAL > 1 else "full_res"
+        saveName = f"cfg59_{label}"
 
-    #Best XC params from sweep:
-    # Coarse passes: stepRatio=0.9 (stable global convergence)
-    tomo.cross_correlate_align(tolerance=0, maxShiftTolerance=0, max_iterations=20, stepRatio=0.9, yROI_Range=None, xROI_Range=None, isFull360=False, downsample=16, use_grad=True)
-    tomo.cross_correlate_align(tolerance=0, maxShiftTolerance=0, max_iterations=20, stepRatio=0.9, yROI_Range=None, xROI_Range=None, isFull360=False, downsample=8, use_grad=True)
-    tomo.cross_correlate_align(tolerance=0, maxShiftTolerance=0, max_iterations=10, stepRatio=0.9, yROI_Range=None, xROI_Range=None, isFull360=False, downsample=4, use_grad=True)
-    tomo.cross_correlate_align(tolerance=0, maxShiftTolerance=0, max_iterations=10, stepRatio=0.9, yROI_Range=None, xROI_Range=None, isFull360=False, downsample=2, use_grad=True)
-    tomo.cross_correlate_align(tolerance=0, maxShiftTolerance=0, max_iterations=5, stepRatio=0.8, yROI_Range=None, xROI_Range=None, isFull360=False, downsample=1, use_grad=True)
+        print(f"\n{'=' * 60}")
+        print(f"  Run: {saveName}  ({DOWNSAMPLE_SPATIAL}x spatial downsample)")
+        print(f"{'=' * 60}")
 
-    tomo.vertical_mass_fluctuation_align(tolerance=0, max_iterations=5, y_range=None, window='soft_roi', roi_sigma=0.3, use_gradient=True, plot=False)
+        if DOWNSAMPLE_SPATIAL > 1:
+            data_ds = zoom(data, (1, 1 / DOWNSAMPLE_SPATIAL, 1 / DOWNSAMPLE_SPATIAL), order=1)
+        else:
+            data_ds = data
+        print(f"Working shape: {data_ds.shape}")
 
-    tomo.PMA(max_iterations=5, tolerance=0, algorithm=recon_alg, levels=3, scale=4, iterations_per_level=[5,5,2], shift_method='optical_flow', of_sigma=3.0, plot=False)
-    tomo.make_updates_shift()
+        tomo = tomoDataClass.tomoData(data_ds, angles)
 
-    runwidget(tomo.get_finalProjections())
-    # -------------------------
-    # SAVE RESULTS (Optional)
-    # -------------------------
-    if saveToFile:
-        convert_to_tiff(tomo.get_finalProjections(), savePath, scale_info)
-    if reconstruct:
+        savePath = f"/home/ljh79/TomoMono/alignedProjections/APSbeamtime_Oct25/{saveName}_aligned_{timestamp}.tif"
+        print("Output:", savePath)
+
+        # -------------------------
+        # ALIGNMENT STRATEGY — config 59 (best from hyperparameter search)
+        # xca_3p_grad_sr08 + pma_2lev_sr08_sig2
+        # -------------------------
+
+        # Full-width first pass
+        tomo.reset_workingProjections(x_size=None, y_size=None)
+        tomo.normalize(isPhaseData=True)
+
+        tomo.cross_correlate_align(tolerance=0, maxShiftTolerance=0, max_iterations=10, stepRatio=0.8,
+                                   yROI_Range=None, xROI_Range=None, isFull360=False, downsample=4, use_grad=True)
+
+        # Commit shifts, then crop (500 px at full-res → scaled by downsample)
+        tomo.make_updates_shift()
+        x_size = data_ds.shape[2] - (500 // DOWNSAMPLE_SPATIAL)
+        tomo.crop_center(new_x=x_size, new_y=None)
+
+        tomo.cross_correlate_align(tolerance=0, maxShiftTolerance=0, max_iterations=10, stepRatio=0.8,
+                                   yROI_Range=None, xROI_Range=None, isFull360=False, downsample=2, use_grad=True)
+        tomo.cross_correlate_align(tolerance=0, maxShiftTolerance=0, max_iterations=5,  stepRatio=0.8,
+                                   yROI_Range=None, xROI_Range=None, isFull360=False, downsample=1, use_grad=True)
+
+        tomo.PMA(tolerance=0, algorithm=recon_alg, plot=False,
+                 levels=2, scale=4, iterations_per_level=[5, 5],
+                 shift_method='optical_flow', of_sigma=2.0, stepRatio=0.8)
+        tomo.make_updates_shift()
+
+        runwidget(tomo.get_finalProjections())
+
+        # -------------------------
+        # SAVE ALIGNED PROJECTIONS
+        # -------------------------
+        if saveToFile:
+            convert_to_tiff(tomo.get_finalProjections(), savePath, scale_info)
+
+        # -------------------------
+        # RECONSTRUCT + RCS
+        # -------------------------
         tomo.reconstruct(algorithm=recon_alg, snr_db=None)
-        recon_path = f"reconstructions/APSbeamtime_Oct25/{saveName}_recon_{timestamp}.tif"
-        convert_to_tiff(tomo.get_recon(), recon_path, scale_info)
 
+        if saveRecon:
+            recon_path = f"reconstructions/APSbeamtime_Oct25/{saveName}_recon_{timestamp}.tif"
+            convert_to_tiff(tomo.get_recon(), recon_path, scale_info)
 
+        rcs, _, _ = reprojection_consistency_score(tomo, plot=False)
+        run_elapsed = time.time() - run_start
 
+        print(f"\n  [{saveName}]  RCS = {rcs:.4f}  |  time = {run_elapsed / 60:.1f} min ({run_elapsed:.0f} s)")
+        run_results.append((DOWNSAMPLE_SPATIAL, label, rcs, run_elapsed))
 
+    # -------------------------
+    # SUMMARY
+    # -------------------------
+    total_elapsed = time.time() - start_time
+    print(f"\n{'=' * 60}")
+    print("  SUMMARY")
+    print(f"{'=' * 60}")
+    for ds, label, rcs, elapsed in run_results:
+        print(f"  cfg59_{label}:  RCS = {rcs:.4f}  |  {elapsed / 60:.1f} min ({elapsed:.0f} s)")
+    print(f"{'─' * 60}")
+    print(f"  Total runtime: {total_elapsed / 60:.1f} min ({total_elapsed:.0f} s)")
+    print(f"{'=' * 60}")

@@ -260,10 +260,11 @@ class tomoData:
         """
         print("\n")
         print("Normalizing projections")
-        if isPhaseData:
-            self.workingProjections = -self.workingProjections
         arr = xp.asarray(self.workingProjections)
-        arr = (arr - xp.min(arr)) / (xp.max(arr) - xp.min(arr))
+        if isPhaseData:
+            arr *= -1
+        arr -= xp.min(arr)
+        arr /= xp.max(arr)
         self.workingProjections = arr.get() if xp is not np else arr
         # self.finalProjections = np.copy(self.workingProjections)
 
@@ -275,7 +276,8 @@ class tomoData:
         - isPhaseData (bool): If True, inverts the sign of the projections, which is often necessary for phase data since it can be negative.
         """
         arr = xp.asarray(self.workingProjections)
-        arr = (arr - xp.mean(arr)) / xp.std(arr)
+        arr -= xp.mean(arr)
+        arr /= xp.std(arr)
         if isPhaseData:
             arr *= -1
         self.workingProjections = arr.get() if xp is not np else arr

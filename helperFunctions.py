@@ -1,8 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import tomopy
-import numpy as np
-import matplotlib.pyplot as plt
 from IPython.display import display, clear_output
 import ipywidgets as widgets
 import time
@@ -236,7 +234,10 @@ def subpixel_shift(image, shift_y, shift_x):
             0.5 * np.pi * np.arange(pad_bottom, dtype=np.float32) / (pad_bottom))**2)[::-1]
 
     window = wy[:, None] * _taper_1d(pw, pad_left, pad_right)[None, :]
-    padded = np.asarray(padded, dtype=np.float32) * window + bg_mean * (1.0 - window)
+    padded = np.asarray(padded, dtype=np.float32)
+    padded -= bg_mean   # equivalent in-place form of: padded*window + bg_mean*(1-window)
+    padded *= window    # avoids allocating (padded*window), (1-window), and (bg_mean*(1-window))
+    padded += bg_mean   # as separate temporaries
 
     arr = xp.asarray(padded)
     shifted_fft = fourier_shift(xp.fft.fft2(arr), (shift_y, shift_x))
@@ -294,8 +295,9 @@ class MoviePlotter:
 ### Matplotlib widget
 def runwidget(m):
     """Makes a movie of a list of images (3D array) that is good for running in a script"""
+    vmin, vmax = np.min(m), np.max(m)
     fig, ax = plt.subplots(figsize=(9, 6))
-    ax.imshow(m[0], vmin=np.min(m), vmax=np.max(m), cmap='gray')
+    ax.imshow(m[0], vmin=vmin, vmax=vmax, cmap='gray')
     plt.title("Frame 0")
 
     plt.subplots_adjust(bottom=0.25)
@@ -308,8 +310,8 @@ def runwidget(m):
         # nem = 100
         # q = np.quantile(zplot[nem:-nem, nem:-nem], [0.01,0.99])
         # plt.imshow(m[indx], cmap='bone', vmin=q[0], vmax=q[1])
-        
-        ax.imshow(m[indx], vmin=np.min(m), vmax=np.max(m), cmap='gray')
+
+        ax.imshow(m[indx], vmin=vmin, vmax=vmax, cmap='gray')
         plt.title(f"Frame {indx}")
         plt.draw()
 

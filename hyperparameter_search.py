@@ -27,6 +27,7 @@ import traceback
 import argparse
 import numpy as np
 from datetime import datetime
+import tifffile
 
 from tomoDataClass import tomoData
 from alignment_methods import reprojection_consistency_score
@@ -37,9 +38,8 @@ from alignment_methods import reprojection_consistency_score
 
 FILENAME = "/home/ljh79/groups/grp_ptychi/nobackup/autodelete/Oct2025APSdata/tomo_data_run_final_2.hdf5"
 
-DEFAULT_RECON_ALG  = 'SIRT_CUDA'
-LOG_FILE           = f"hyperparam_results/xca_pma_search_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-DOWNSAMPLE_SPATIAL = 4   # matches notebook: zoom(..., 1/4, 1/4)
+DEFAULT_RECON_ALG       = 'SIRT_CUDA'
+DEFAULT_DOWNSAMPLE      = 4   # matches notebook: zoom(..., 1/4, 1/4)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # XCA CONFIGS  (each entry is a list of per-pass kwargs)
@@ -90,6 +90,32 @@ XCA_CONFIGS = {
         dict(downsample=2, max_iterations=10, stepRatio=0.8, use_grad=True),
         dict(downsample=1, max_iterations=5,  stepRatio=0.8, use_grad=True),
     ],
+    # 4-pass, gradient, stepRatio=0.75
+    'xca_4p_grad_sr075': [
+        dict(downsample=8, max_iterations=10, stepRatio=0.75, use_grad=True),
+        dict(downsample=4, max_iterations=10, stepRatio=0.75, use_grad=True),
+        dict(downsample=2, max_iterations=10, stepRatio=0.75, use_grad=True),
+        dict(downsample=1, max_iterations=5,  stepRatio=0.75, use_grad=True),
+    ],
+    # 4-pass, gradient, stepRatio=0.85
+    'xca_4p_grad_sr085': [
+        dict(downsample=8, max_iterations=10, stepRatio=0.85, use_grad=True),
+        dict(downsample=4, max_iterations=10, stepRatio=0.85, use_grad=True),
+        dict(downsample=2, max_iterations=10, stepRatio=0.85, use_grad=True),
+        dict(downsample=1, max_iterations=5,  stepRatio=0.85, use_grad=True),
+    ],
+    # 3-pass, gradient, stepRatio=0.75
+    'xca_3p_grad_sr075': [
+        dict(downsample=4, max_iterations=10, stepRatio=0.75, use_grad=True),
+        dict(downsample=2, max_iterations=10, stepRatio=0.75, use_grad=True),
+        dict(downsample=1, max_iterations=5,  stepRatio=0.75, use_grad=True),
+    ],
+    # 3-pass, gradient, stepRatio=0.85
+    'xca_3p_grad_sr085': [
+        dict(downsample=4, max_iterations=10, stepRatio=0.85, use_grad=True),
+        dict(downsample=2, max_iterations=10, stepRatio=0.85, use_grad=True),
+        dict(downsample=1, max_iterations=5,  stepRatio=0.85, use_grad=True),
+    ],
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -104,8 +130,16 @@ PMA_CONFIGS = {
         run=True, levels=3, scale=4, iterations_per_level=[5, 5, 2],
         shift_method='optical_flow', of_sigma=3.0, stepRatio=0.9,
     ),
+    'pma_3lev_sr08_sig4': dict(
+        run=True, levels=3, scale=4, iterations_per_level=[8, 5, 3],
+        shift_method='optical_flow', of_sigma=4.0, stepRatio=0.8,
+    ),
+    'pma_3lev_sr09_sig4': dict(
+        run=True, levels=3, scale=4, iterations_per_level=[8, 5, 3],
+        shift_method='optical_flow', of_sigma=4.0, stepRatio=0.9,
+    ),
     'pma_3lev_sr08_sig3': dict(
-        run=True, levels=3, scale=4, iterations_per_level=[5, 5, 2],
+        run=True, levels=3, scale=4, iterations_per_level=[8, 5, 3],
         shift_method='optical_flow', of_sigma=3.0, stepRatio=0.8,
     ),
     'pma_3lev_sr09_sig2': dict(
@@ -142,6 +176,46 @@ PMA_CONFIGS = {
         run=True, levels=2, scale=4, iterations_per_level=[5, 5],
         shift_method='optical_flow', of_sigma=3.0, stepRatio=0.8,
     ),
+
+    # ── sigma=1.5 interpolation ───────────────────────────────────────────────
+    'pma_2lev_sr09_sig15': dict(
+        run=True, levels=2, scale=4, iterations_per_level=[5, 5],
+        shift_method='optical_flow', of_sigma=1.5, stepRatio=0.9,
+    ),
+    'pma_2lev_sr08_sig15': dict(
+        run=True, levels=2, scale=4, iterations_per_level=[5, 5],
+        shift_method='optical_flow', of_sigma=1.5, stepRatio=0.8,
+    ),
+
+    # ── more fine-level iterations ────────────────────────────────────────────
+    'pma_2lev_sr08_sig2_heavy': dict(
+        run=True, levels=2, scale=4, iterations_per_level=[5, 10],
+        shift_method='optical_flow', of_sigma=2.0, stepRatio=0.8,
+    ),
+    'pma_2lev_sr08_sig2_xheavy': dict(
+        run=True, levels=2, scale=4, iterations_per_level=[5, 20],
+        shift_method='optical_flow', of_sigma=2.0, stepRatio=0.8,
+    ),
+
+    # ── 3-level, scale=4 ─────────────────────────────────────────────────────
+    'pma_3lev_sr08_sig2': dict(
+        run=True, levels=3, scale=4, iterations_per_level=[8, 5, 3],
+        shift_method='optical_flow', of_sigma=2.0, stepRatio=0.8,
+    ),
+    'pma_3lev_sr08_sig1': dict(
+        run=True, levels=3, scale=4, iterations_per_level=[5, 5, 2],
+        shift_method='optical_flow', of_sigma=1.0, stepRatio=0.8,
+    ),
+
+    # ── scale=2 pyramid ───────────────────────────────────────────────────────
+    'pma_2lev_sc2_sr08_sig2': dict(
+        run=True, levels=2, scale=2, iterations_per_level=[5, 5],
+        shift_method='optical_flow', of_sigma=2.0, stepRatio=0.8,
+    ),
+    'pma_3lev_sc2_sr08_sig2': dict(
+        run=True, levels=3, scale=2, iterations_per_level=[5, 5, 5],
+        shift_method='optical_flow', of_sigma=2.0, stepRatio=0.8,
+    ),
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -154,7 +228,7 @@ CSV_FIELDS = [
     'pma_name',
     'pma_run', 'pma_levels', 'pma_scale', 'pma_iters_per_level',
     'pma_of_sigma', 'pma_step_ratio',
-    'rcs', 'time_s', 'status',
+    'rcs', 'align_time_s', 'recon_time_s', 'status',
 ]
 
 
@@ -180,7 +254,7 @@ def load_done_ids(path):
     return done
 
 
-def build_row(config_id, xca_name, xca_passes, pma_name, pma_cfg, rcs, elapsed, status):
+def build_row(config_id, xca_name, xca_passes, pma_name, pma_cfg, rcs, align_time, recon_time, status):
     return dict(
         config_id=config_id,
         xca_name=xca_name,
@@ -193,7 +267,8 @@ def build_row(config_id, xca_name, xca_passes, pma_name, pma_cfg, rcs, elapsed, 
         pma_of_sigma=pma_cfg.get('of_sigma', ''),
         pma_step_ratio=pma_cfg.get('stepRatio', ''),
         rcs=f'{rcs:.6f}' if not np.isnan(rcs) else 'nan',
-        time_s=f'{elapsed:.1f}',
+        align_time_s=f'{align_time:.1f}',
+        recon_time_s=f'{recon_time:.1f}',
         status=status,
     )
 
@@ -213,7 +288,7 @@ def load_data(filename):
 # PIPELINE RUNNER
 # ══════════════════════════════════════════════════════════════════════════════
 
-def run_pipeline(projections, angles, xca_passes, pma_cfg, recon_alg):
+def run_pipeline(projections, angles, xca_passes, pma_cfg, recon_alg, downsample):
     """
     Run one complete alignment + reconstruction pipeline and return the RCS score.
     Creates a fresh tomoData object each time so configs don't bleed into each other.
@@ -222,6 +297,8 @@ def run_pipeline(projections, angles, xca_passes, pma_cfg, recon_alg):
     full-width data, commit those shifts, crop, then run the remaining passes.
     """
     t = tomoData(projections, angles)
+
+    t0_align = time.time()
 
     # No crop yet — first pass sees the full-width projections
     t.reset_workingProjections(x_size=None, y_size=None)
@@ -237,7 +314,7 @@ def run_pipeline(projections, angles, xca_passes, pma_cfg, recon_alg):
 
     # Commit shifts then crop — matching notebook timing
     t.make_updates_shift()
-    x_size = projections.shape[2] - (500 // DOWNSAMPLE_SPATIAL)
+    x_size = projections.shape[2] - (500 // downsample)
     t.crop_center(new_x=x_size, new_y=None)
 
     # Remaining XCA passes on the cropped data
@@ -262,9 +339,14 @@ def run_pipeline(projections, angles, xca_passes, pma_cfg, recon_alg):
         )
 
     t.make_updates_shift()
+    align_time = time.time() - t0_align
+
+    t0_recon = time.time()
     t.reconstruct(algorithm=recon_alg)
     rcs, _, _ = reprojection_consistency_score(t, plot=False)
-    return rcs, t.recon
+    recon_time = time.time() - t0_recon
+
+    return rcs, t.recon, align_time, recon_time
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -273,16 +355,23 @@ def run_pipeline(projections, angles, xca_passes, pma_cfg, recon_alg):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--resume',  action='store_true',
+    parser.add_argument('--resume',     action='store_true',
                         help='Skip configs already marked ok in the log file')
-    parser.add_argument('--recon',   default=DEFAULT_RECON_ALG,
+    parser.add_argument('--recon',      default=DEFAULT_RECON_ALG,
                         help='Reconstruction algorithm (default: SIRT_CUDA)')
-    parser.add_argument('--logfile', default=LOG_FILE,
-                        help='CSV output path')
+    parser.add_argument('--downsample', type=int, default=DEFAULT_DOWNSAMPLE,
+                        help='Spatial downsample factor applied to projections (default: 4)')
+    parser.add_argument('--logfile',    default=None,
+                        help='CSV output path (default: auto-generated with downsample factor in name)')
     args = parser.parse_args()
 
-    recon_alg = args.recon
-    log_path  = args.logfile
+    recon_alg  = args.recon
+    downsample = args.downsample
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_path   = args.logfile or (
+        f"hyperparam_results/xca_pma_search_ds{downsample}_"
+        f"{timestamp}.csv"
+    )
 
     print("=" * 70)
     print("TOMOGRAPHIC ALIGNMENT HYPERPARAMETER SEARCH")
@@ -312,40 +401,31 @@ def main():
     print(f"  Original shape : {projections_og.shape}")
 
     from scipy.ndimage import zoom
-    projections = zoom(projections_og, (1, 1 / DOWNSAMPLE_SPATIAL, 1 / DOWNSAMPLE_SPATIAL), order=1)
+    projections = zoom(projections_og, (1, 1 / downsample, 1 / downsample), order=1) if downsample > 1 else projections_og
     angles      = angles_og
-    print(f"  Downsampled to : {projections.shape}  ({len(angles)} angles)\n")
+    print(f"  Downsample     : {downsample}x")
+    print(f"  Working shape  : {projections.shape}  ({len(angles)} angles)\n")
 
     # Explicit experiment list — (config_id, xca_name, pma_name)
     EXPERIMENTS = [
-        # === xca_3p_grad_sr06 ===
-        (43, 'xca_3p_grad_sr06', 'pma_skip'),
-        (44, 'xca_3p_grad_sr06', 'pma_2lev_sr09_sig1'),
-        (45, 'xca_3p_grad_sr06', 'pma_2lev_sr08_sig1'),
-        (46, 'xca_3p_grad_sr06', 'pma_2lev_sr09_sig2'),
-        (47, 'xca_3p_grad_sr06', 'pma_2lev_sr08_sig2'),
-        (48, 'xca_3p_grad_sr06', 'pma_2lev_sr09_sig3'),
-        (49, 'xca_3p_grad_sr06', 'pma_2lev_sr08_sig3'),
-        # === xca_3p_grad_sr07 ===
-        (50, 'xca_3p_grad_sr07', 'pma_skip'),
-        (51, 'xca_3p_grad_sr07', 'pma_2lev_sr09_sig1'),
-        (52, 'xca_3p_grad_sr07', 'pma_2lev_sr08_sig1'),
-        (53, 'xca_3p_grad_sr07', 'pma_2lev_sr09_sig2'),
-        (54, 'xca_3p_grad_sr07', 'pma_2lev_sr08_sig2'),
-        (55, 'xca_3p_grad_sr07', 'pma_2lev_sr09_sig3'),
-        (56, 'xca_3p_grad_sr07', 'pma_2lev_sr08_sig3'),
-        # === xca_3p_grad_sr08 (3 new configs — 4 already done) ===
-        (57, 'xca_3p_grad_sr08', 'pma_2lev_sr09_sig1'),
-        (58, 'xca_3p_grad_sr08', 'pma_2lev_sr08_sig1'),
-        (59, 'xca_3p_grad_sr08', 'pma_2lev_sr08_sig2'),
-        # === xca_4p_grad_sr08 ===
-        (60, 'xca_4p_grad_sr08', 'pma_skip'),
-        (61, 'xca_4p_grad_sr08', 'pma_2lev_sr09_sig1'),
-        (62, 'xca_4p_grad_sr08', 'pma_2lev_sr08_sig1'),
-        (63, 'xca_4p_grad_sr08', 'pma_2lev_sr09_sig2'),
-        (64, 'xca_4p_grad_sr08', 'pma_2lev_sr08_sig2'),
-        (65, 'xca_4p_grad_sr08', 'pma_2lev_sr09_sig3'),
-        (66, 'xca_4p_grad_sr08', 'pma_2lev_sr08_sig3'),
+        # === xca_4p_grad_sr08 × 5 PMA configs ===
+        (100, 'xca_4p_grad_sr08',   'pma_skip'),
+        (101, 'xca_4p_grad_sr08',   'pma_3lev_sr08_sig4'),
+        (102, 'xca_4p_grad_sr08',   'pma_3lev_sr08_sig3'),
+        (103, 'xca_4p_grad_sr08',   'pma_3lev_sr09_sig4'),
+        (104, 'xca_4p_grad_sr08',   'pma_3lev_sr08_sig2'),
+        # === xca_4p_grad_sr075 × 5 PMA configs ===
+        (105, 'xca_4p_grad_sr075',  'pma_skip'),
+        (106, 'xca_4p_grad_sr075',  'pma_3lev_sr08_sig4'),
+        (107, 'xca_4p_grad_sr075',  'pma_3lev_sr08_sig3'),
+        (108, 'xca_4p_grad_sr075',  'pma_3lev_sr09_sig4'),
+        (109, 'xca_4p_grad_sr075',  'pma_3lev_sr08_sig2'),
+        # === xca_4p_grad_sr085 × 5 PMA configs ===
+        (110, 'xca_4p_grad_sr085',  'pma_skip'),
+        (111, 'xca_4p_grad_sr085',  'pma_3lev_sr08_sig4'),
+        (112, 'xca_4p_grad_sr085',  'pma_3lev_sr08_sig3'),
+        (113, 'xca_4p_grad_sr085',  'pma_3lev_sr09_sig4'),
+        (114, 'xca_4p_grad_sr085',  'pma_3lev_sr08_sig2'),
     ]
 
     all_configs = [
@@ -382,9 +462,9 @@ def main():
         print(f"  [{i+1}/{n_total}]  cfg_id={cfg_id}  {xca_name}  +  {pma_name}")
         print("━" * 70)
 
-        t0 = time.time()
         try:
-            rcs, recon = run_pipeline(projections, angles, xca_passes, pma_cfg, recon_alg)
+            rcs, recon, align_time, recon_time = run_pipeline(
+                projections, angles, xca_passes, pma_cfg, recon_alg, downsample)
             if rcs < best_rcs:
                 best_rcs    = rcs
                 best_recon  = recon
@@ -393,16 +473,17 @@ def main():
         except Exception as e:
             traceback.print_exc()
             rcs = float('nan')
+            align_time = recon_time = float('nan')
             status = f'error: {str(e)[:100]}'
 
-        elapsed = time.time() - t0
         append_row(log_path, build_row(cfg_id, xca_name, xca_passes, pma_name, pma_cfg,
-                                       rcs, elapsed, status))
-        print(f"\n  → RCS = {rcs:.6f}  |  time = {elapsed:.0f}s  |  {status}\n")
+                                       rcs, align_time, recon_time, status))
+        total_s = align_time + recon_time
+        print(f"\n  → RCS = {rcs:.6f}  |  align = {align_time:.0f}s  |  recon = {recon_time:.0f}s  |  total = {total_s:.0f}s  |  {status}\n")
 
     # Save best reconstruction
     if best_recon is not None:
-        tiff_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'paramSearchBestRecon.tiff')
+        tiff_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), f'paramSearchBestRecon_{timestamp}.tiff')
         tifffile.imwrite(tiff_path, best_recon.astype(np.float32))
         print(f"Best recon (cfg_id={best_cfg_id}, RCS={best_rcs:.6f}) saved to: {tiff_path}\n")
     else:
@@ -422,7 +503,7 @@ def main():
         print(df_sorted[
             ['config_id', 'xca_name', 'pma_name',
              'pma_levels', 'pma_iters_per_level',
-             'pma_of_sigma', 'pma_step_ratio', 'rcs', 'time_s']
+             'pma_of_sigma', 'pma_step_ratio', 'rcs', 'align_time_s', 'recon_time_s']
         ].to_string())
     except ImportError:
         print("(pandas not available — open the CSV directly for the full table.)")
