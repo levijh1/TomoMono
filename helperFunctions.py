@@ -202,11 +202,13 @@ def subpixel_shift(image, shift_y, shift_x):
     """
     rows, cols = image.shape
 
-    # Only pad the side each shift component exposes
-    pad_top    = int(np.ceil( shift_y)) + 1 if shift_y > 0 else 0
-    pad_bottom = int(np.ceil(-shift_y))*4 + 1 if shift_y < 0 else 0
-    pad_left   = int(np.ceil( shift_x)) + 1 if shift_x > 0 else 0
-    pad_right  = int(np.ceil(-shift_x)) + 1 if shift_x < 0 else 0
+    min_pad = 10  # <-- NEW: enforce minimum padding
+
+    # Only pad the side each shift component exposes, but enforce minimum padding
+    pad_top    = max(min_pad, int(np.ceil( shift_y)) + 1) if shift_y > 0 else min_pad
+    pad_bottom = max(min_pad, int(np.ceil(-shift_y))*4 + 1) if shift_y < 0 else min_pad
+    pad_left   = max(min_pad, int(np.ceil( shift_x)) + 1) if shift_x > 0 else min_pad
+    pad_right  = max(min_pad, int(np.ceil(-shift_x)) + 1) if shift_x < 0 else min_pad
 
     padded = np.pad(image, ((pad_top, pad_bottom), (pad_left, pad_right)), mode='edge')
     ph, pw = padded.shape
@@ -225,19 +227,22 @@ def subpixel_shift(image, shift_y, shift_x):
     # y window: top uses inner-edge ascending taper (outer wall = 0), bottom uses outer-edge taper
     wy = np.ones(ph, dtype=np.float32)
     if pad_top > 0:
-        taper_len_top = max(1, int(np.ceil(shift_y / 6)))
+        taper_len_top = max(1, int(np.ceil(shift_y / 6))) if shift_y > 0 else min_pad
+        taper_len_top = min(taper_len_top, pad_top)
         wy[:pad_top - taper_len_top] = 0.0
         wy[pad_top - taper_len_top:pad_top] = np.sin(
             0.5 * np.pi * np.arange(taper_len_top, dtype=np.float32) / taper_len_top)**2
+
     if pad_bottom > 0:
         wy[ph - pad_bottom:] = (np.sin(
-            0.5 * np.pi * np.arange(pad_bottom, dtype=np.float32) / (pad_bottom))**2)[::-1]
+            0.5 * np.pi * np.arange(pad_bottom, dtype=np.float32) / pad_bottom)**2)[::-1]
 
     window = wy[:, None] * _taper_1d(pw, pad_left, pad_right)[None, :]
+
     padded = np.asarray(padded, dtype=np.float32)
-    padded -= bg_mean   # equivalent in-place form of: padded*window + bg_mean*(1-window)
-    padded *= window    # avoids allocating (padded*window), (1-window), and (bg_mean*(1-window))
-    padded += bg_mean   # as separate temporaries
+    padded -= bg_mean
+    padded *= window
+    padded += bg_mean
 
     arr = xp.asarray(padded)
     shifted_fft = fourier_shift(xp.fft.fft2(arr), (shift_y, shift_x))
@@ -245,7 +250,10 @@ def subpixel_shift(image, shift_y, shift_x):
     if xp is not np:
         shifted_padded = shifted_padded.get()
 
-    return np.asarray(shifted_padded[pad_top:pad_top + rows, pad_left:pad_left + cols])
+    # Crop back to original size (this still works correctly with larger padding)
+    return np.asarray(
+        shifted_padded[pad_top:pad_top + rows, pad_left:pad_left + cols]
+    )
 
 class MoviePlotter:
     """Plots a sequence of images as a movie in a Jupyter Notebook with interactive controls using widgets.Play."""

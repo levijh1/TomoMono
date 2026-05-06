@@ -25,3 +25,5 @@ mkdir -p /home/ljh79/TomoMono/hyperparam_results
     /home/ljh79/TomoMono/hyperparameter_search.py \
     --recon SIRT_CUDA \
     --downsample 2 \
+    --resume \
+    --logfile /home/ljh79/TomoMono/hyperparam_results/xca_pma_search_ds2_20260505_124846.csv

@@ -49,6 +49,7 @@ def cross_correlate_align(
         upsample_factor=20,
         downsample=1,
         use_grad=False,
+        plot=False,
         ):
     """
     Aligns projection images by maximizing cross-correlation between consecutive slices.
@@ -114,6 +115,7 @@ def cross_correlate_align(
     for iteration in range(max_iterations):
         snapshot = tomo.workingProjections.copy()
         rel_shifts = np.zeros((n, 2), dtype=np.float64)
+        _plot_data = None
 
         for i in tqdm(range(1, n), desc=f'Iteration {iteration + 1}/{max_iterations}'):
             if K is None:
@@ -122,6 +124,34 @@ def cross_correlate_align(
                 ref = np.median(snapshot[max(0, i - K):i], axis=0)
             y_shift, x_shift = _compute_shift(ref, snapshot[i])
             rel_shifts[i] = [y_shift, x_shift]
+            if plot and i == n//2:
+                _plot_data = (snapshot[n//2].copy(), ref.copy(), y_shift, x_shift)
+
+        if plot and _plot_data is not None and iteration == 0:
+            mov_img, ref_img, y_sh, x_sh = _plot_data
+            print(f"  Projection {n//2} shift: y={y_sh:.4f} px, x={x_sh:.4f} px")
+            vmin = min(ref_img.min(), mov_img.min())
+            vmax = max(ref_img.max(), mov_img.max())
+            fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+            fig.suptitle(f"Cross-Correlation Alignment — Iteration {iteration + 1}  |  Proj {n//2} shift: y={y_sh:.4f}, x={x_sh:.4f} px")
+            im0 = axes[0].imshow(mov_img, cmap='gray', aspect='auto', vmin=vmin, vmax=vmax)
+            axes[0].set_title(f"Projection {n//2} (being aligned)")
+            axes[0].axis('off')
+            plt.colorbar(im0, ax=axes[0], fraction=0.046, pad=0.04)
+            im1 = axes[1].imshow(ref_img, cmap='gray', aspect='auto', vmin=vmin, vmax=vmax)
+            axes[1].set_title(f"Projection {n//2} (reference)")
+            axes[1].axis('off')
+            plt.colorbar(im1, ax=axes[1], fraction=0.046, pad=0.04)
+            if xROI_Range is not None and yROI_Range is not None:
+                for ax in axes:
+                    ax.add_patch(plt.Rectangle(
+                        (xROI_Range[0], yROI_Range[0]),
+                        xROI_Range[1] - xROI_Range[0],
+                        yROI_Range[1] - yROI_Range[0],
+                        linewidth=2, edgecolor='red', facecolor='none'
+                    ))
+            plt.tight_layout()
+            plt.show()
 
         # Absolute shifts: image[i] needs the cumulative sum of all relative shifts up to i.
         # rel_shifts[0] stays zero (image[0] is the anchor), so cumsum gives:
@@ -241,8 +271,8 @@ def PMA(
         max_iterations=5,
         tolerance=0.1,
         algorithm='art',
-        crop_bottom_center_y=None,
-        crop_bottom_center_x=None,
+        xROI_Range=None,
+        yROI_Range=None,
         isPhaseData=False,
         standardize=False,
         levels=1,
@@ -251,26 +281,24 @@ def PMA(
         upsample_factor=20,
         shift_method='cross_correlation',
         of_sigma=3.0,
-        smooth_sigma=None,  # --- CHANGED: disabled by default ---
+        smooth_sigma=None,
         plot=False,
 
-        # --- NEW: easy toggle ---
         use_matching_preprocess=True,
         matching_sigma=2,
+        use_grad=False,
 
-        # --- NEW: shift clamp ---
         max_step=0.5,
-
         stepRatio=1,
         ):
     """
-    PMA with improved stability tweaks.
+    PMA with ROI-based alignment (non-destructive cropping).
     """
     recon_crop_ratio = 0.95
-    print(f"Projection Matching Alignment (PMA) [{shift_method}]")
+    grad_str = " | gradient mode" if use_grad else ""
+    preprocess_str = " | matching_preprocess" if use_matching_preprocess else ""
+    print(f"Projection Matching Alignment (PMA) [{shift_method}{grad_str}{preprocess_str}]")
 
-    if crop_bottom_center_x is not None and crop_bottom_center_y is not None:
-        tomo.crop_bottom_center(crop_bottom_center_y, crop_bottom_center_x)
     if standardize:
         tomo.standardize(isPhaseData=isPhaseData)
     tomo.center_projections()
@@ -304,6 +332,15 @@ def PMA(
         level_shifts = np.zeros((tomo.num_angles, 2), dtype=np.float64)
         level_snapshot = scaled_projs.copy()
 
+        # ROI bounds check
+        if xROI_Range is not None and yROI_Range is not None:
+            H, W = scaled_projs.shape[1:]
+            print(f"Using ROI: x={xROI_Range}, y={yROI_Range} (downsampled by {downsample_factor}x)")
+            print(f"H and W values are {H} and {W}")
+            print(f"Downsample ROI bounds are x={xROI_Range[0]//downsample_factor} to {xROI_Range[1]//downsample_factor}, y={yROI_Range[0]//downsample_factor} to {yROI_Range[1]//downsample_factor}")
+            assert 0 <= xROI_Range[0]//downsample_factor < xROI_Range[1]//downsample_factor <= W
+            assert 0 <= yROI_Range[0]//downsample_factor < yROI_Range[1]//downsample_factor <= H
+
         for k in tqdm(range(n_iters), desc=f'PMA Level {level} iterations'):
             recon  = _pma_reconstruct(scaled_projs, tomo.ang, scaled_center, algorithm, recon_crop_ratio)
             reproj = tomopy.project(recon, tomo.ang, pad=False)
@@ -322,21 +359,38 @@ def PMA(
                 ref = reproj[i]
                 mov = scaled_projs[i]
 
-                # --- NEW: optional preprocessing ---
+                # ROI extraction
+                if xROI_Range is not None and yROI_Range is not None:
+                    y0 = int(yROI_Range[0]) // downsample_factor
+                    y1 = int(yROI_Range[1]) // downsample_factor
+                    x0 = int(xROI_Range[0]) // downsample_factor
+                    x1 = int(xROI_Range[1]) // downsample_factor
+                    ref_roi = ref[y0:y1, x0:x1]
+                    mov_roi = mov[y0:y1, x0:x1]
+                else:
+                    ref_roi = ref
+                    mov_roi = mov
+
+                # Preprocessing
                 if use_matching_preprocess:
-                    ref = _preprocess_for_matching(ref, matching_sigma)
-                    mov = _preprocess_for_matching(mov, matching_sigma)
+                    ref_roi = _preprocess_for_matching(ref_roi, matching_sigma)
+                    mov_roi = _preprocess_for_matching(mov_roi, matching_sigma)
+
+                if use_grad:
+                    ref_roi = compute_grad_image(ref_roi)
+                    mov_roi = compute_grad_image(mov_roi)
 
                 if plot and k == 0 and i == plot_idx:
-                    plot_ref, plot_mov = ref, mov
+                    plot_ref, plot_mov = ref_roi, mov_roi
 
+                # Shift estimation
                 if shift_method == 'optical_flow':
-                    dy[i], dx[i] = _optical_flow_shift(mov, ref, of_sigma)
+                    dy[i], dx[i] = _optical_flow_shift(mov_roi, ref_roi, of_sigma)
                 else:
-                    dy[i], dx[i] = _cross_correlation_shift(ref, mov, upsample_factor)
+                    dy[i], dx[i] = _cross_correlation_shift(ref_roi, mov_roi, upsample_factor)
 
-            # --- Plot ACTUAL matching inputs ---
-            if plot and k == 0:
+            # Plot matching inputs
+            if plot and k == 0 and plot_ref is not None:
                 vmin = min(plot_mov.min(), plot_ref.min())
                 vmax = max(plot_mov.max(), plot_ref.max())
 
@@ -344,12 +398,12 @@ def PMA(
                 fig.suptitle(f"PMA Level {level} — Matching Inputs (Projection {plot_idx})")
 
                 im0 = axes[0].imshow(plot_mov, cmap='gray', aspect='auto', vmin=vmin, vmax=vmax)
-                axes[0].set_title("mov (projection)")
+                axes[0].set_title("mov (ROI)")
                 axes[0].axis('off')
                 plt.colorbar(im0, ax=axes[0], fraction=0.046, pad=0.04)
 
                 im1 = axes[1].imshow(plot_ref, cmap='gray', aspect='auto', vmin=vmin, vmax=vmax)
-                axes[1].set_title("ref (reprojection)")
+                axes[1].set_title("ref (ROI)")
                 axes[1].axis('off')
                 plt.colorbar(im1, ax=axes[1], fraction=0.046, pad=0.04)
 
@@ -360,12 +414,11 @@ def PMA(
             dy -= np.mean(dy)
             dx -= np.mean(dx)
 
-            # --- REMOVED smoothing unless explicitly set ---
             if smooth_sigma:
                 dy = gaussian_filter1d(dy, sigma=smooth_sigma)
                 dx = gaussian_filter1d(dx, sigma=smooth_sigma)
 
-            # --- NEW: clamp shifts ---
+            # Clamp
             dy = np.clip(dy, -max_step, max_step)
             dx = np.clip(dx, -max_step, max_step)
 
@@ -377,10 +430,21 @@ def PMA(
 
             # Apply shifts
             for i in range(tomo.num_angles):
-                scaled_projs[i] = subpixel_shift(level_snapshot[i], level_shifts[i, 0], level_shifts[i, 1])
+                scaled_projs[i] = subpixel_shift(
+                    level_snapshot[i],
+                    level_shifts[i, 0],
+                    level_shifts[i, 1]
+                )
 
-            avg_shift = np.mean(np.sqrt(dy**2 + dx**2))
-            print(f"  Iter {k+1}: avg={downsample_factor * avg_shift:.4f} px")
+            # --- Updated reporting ---
+            shift_magnitudes = np.sqrt(dy**2 + dx**2)
+            avg_shift = np.mean(shift_magnitudes)
+            max_shift = np.max(shift_magnitudes)
+
+            clamp_flag = " [CLAMPED]" if np.isclose(max_shift, max_step) else ""
+
+            print(f"Iteration {k+1}: avg shift = {downsample_factor * avg_shift:.4f} px, "
+                  f"max shift = {downsample_factor * max_shift:.4f} px{clamp_flag}")
 
             if downsample_factor * avg_shift < tolerance:
                 print(f"  Convergence at level {level} after {k+1} iterations.")
@@ -388,8 +452,13 @@ def PMA(
 
         pma_shifts += level_shifts * downsample_factor
 
+    # Apply final shifts
     for i in range(tomo.num_angles):
-        tomo.workingProjections[i] = subpixel_shift(original[i], pma_shifts[i, 0], pma_shifts[i, 1])
+        tomo.workingProjections[i] = subpixel_shift(
+            original[i],
+            pma_shifts[i, 0],
+            pma_shifts[i, 1]
+        )
 
     tomo.tracked_shifts += pma_shifts
     print("\nPMA complete.")
