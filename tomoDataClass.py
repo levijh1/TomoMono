@@ -513,3 +513,91 @@ class tomoData:
             )
         self.recon = tomopy.circ_mask(self.recon, axis=0, ratio=0.95)
         print("Reconstruction completed.")
+
+    def kovacik_filter(self, tilt_max=60.0,
+                       mwr_length=20, mwr_order=4, mwr_wmin=0.2,
+                       cs_length=15, cs_order=4, cs_cutoff=10):
+        """
+        Apply the Kovacik soft Fourier angular filter to self.recon in-place.
+
+        Suppresses missing-wedge ray artifacts by smoothing the sharp
+        Fourier-space transition between the sampled data region and the
+        missing wedge. The filter Omega_A = max(MWR, CS) consists of:
+
+          MWR (Missing Wedge Ramps): Butterworth ramps adjacent to the
+              boundaries of the highest-tilt projections, transitioning
+              from 1.0 (interior) to mwr_wmin (at the boundary).
+
+          CS (Central Stripe): a Butterworth ramp along the kx-axis that
+              protects low spatial frequencies from attenuation.
+
+        Reference: Kovacik et al. (2014) J. Struct. Biol. 186, 141-152.
+
+        Parameters
+        ----------
+        tilt_max : float
+            Maximum tilt angle in degrees (full range is ±tilt_max).
+        mwr_length : int
+            MWR half-width in pixels. Larger values give a smoother ramp.
+        mwr_order : int
+            Butterworth order for the MWR (2 or 4 recommended).
+        mwr_wmin : float
+            Minimum filter weight applied at the tilt boundary (0–1).
+            Lower values suppress artifacts more aggressively.
+        cs_length : int
+            Unused directly; kept for API symmetry with the paper notation.
+        cs_order : int
+            Butterworth order for the central stripe.
+        cs_cutoff : int
+            Half-power radius (pixels) of the central stripe. The stripe
+            equals 1 at kz=0 and falls to 0.5 at |kz| = cs_cutoff.
+        """
+        if self.recon is None:
+            raise ValueError("No reconstruction found. Run reconstruct() first.")
+
+        nz, ny, nx = self.recon.shape
+        tilt_max_rad = np.deg2rad(tilt_max)
+
+        # --- Build the 2D angular filter in fftfreq coordinate order ---
+        # kx_1d[i] and kz_1d[i] give the spatial frequency (in pixels) at
+        # FFT index i.  This matches np.fft.fft2 output without any fftshift.
+        kx_1d = np.fft.fftfreq(nx) * nx
+        kz_1d = np.fft.fftfreq(nz) * nz
+        kx, kz = np.meshgrid(kx_1d, kz_1d)  # both (nz, nx)
+
+        R = np.sqrt(kx ** 2 + kz ** 2)
+
+        # Fold into the first quadrant — real-space XZ slices have a
+        # Hermitian FFT, so the filter has the same 4-fold symmetry.
+        angle_from_x = np.arctan2(np.abs(kz), np.abs(kx))  # [0, π/2]
+
+        # --- MWR ---
+        # Perpendicular pixel distance from each point to the nearest
+        # tilt-boundary line.  For points inside the data region this is
+        # R * sin(tilt_max_rad - angle_from_x); for missing-wedge points
+        # the max() clamps it to 0, yielding weight = mwr_wmin.
+        dist_to_boundary = R * np.sin(np.maximum(tilt_max_rad - angle_from_x, 0.0))
+
+        safe_length = max(mwr_length, 1e-6)
+        mwr = mwr_wmin + (1.0 - mwr_wmin) / (
+            1.0 + (dist_to_boundary / safe_length) ** (2 * mwr_order)
+        )
+        mwr[angle_from_x > tilt_max_rad] = mwr_wmin
+
+        # --- CS ---
+        safe_cutoff = max(cs_cutoff, 1e-6)
+        cs = 1.0 / (1.0 + (np.abs(kz) / safe_cutoff) ** (2 * cs_order))
+
+        # --- Combined filter ---
+        angular_filter = np.maximum(mwr, cs)
+
+        # --- Apply slice-by-slice along the Y (tilt) axis ---
+        filtered = np.empty_like(self.recon)
+        for y in tqdm(range(ny), desc="Applying Kovacik filter"):
+            slice_xz = self.recon[:, y, :]
+            filtered[:, y, :] = np.real(
+                np.fft.ifft2(np.fft.fft2(slice_xz) * angular_filter)
+            )
+
+        self.recon = filtered
+        print("Kovacik filter applied.")
