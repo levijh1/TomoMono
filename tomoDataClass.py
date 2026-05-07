@@ -31,6 +31,48 @@ except Exception:
     _ndimage_shift = sp.ndimage.shift
     xp = np
 
+
+def simulate_projections(recon, angles, center=None, emission=True, pad=False, ncore=None, use_astra=False):
+    """
+    Simulate projections through a 3D volume at the given angles.
+
+    Parameters
+    ----------
+    recon : ndarray (nz, ny, nx)
+    angles : ndarray, radians
+    center : float or None — rotation center; None uses nx/2 (tomopy default)
+    emission : bool
+    pad : bool
+    ncore : int or None
+    use_astra : bool — try ASTRA GPU forward projector first; fall back to tomopy
+    """
+    if use_astra:
+        try:
+            import astra
+            nz, ny, nx = recon.shape
+            vol_geom = astra.create_vol_geom(ny, nx, nz)
+            proj_geom = astra.create_proj_geom('parallel3d', 1.0, 1.0, nz, nx, angles)
+            vol_id = astra.data3d.create('-vol', vol_geom, data=recon.astype(np.float32))
+            proj_id = astra.data3d.create('-sino', proj_geom)
+            cfg = astra.astra_dict('FP3D_CUDA')
+            cfg['ProjectionDataId'] = proj_id
+            cfg['VolumeDataId'] = vol_id
+            alg_id = astra.algorithm.create(cfg)
+            astra.algorithm.run(alg_id)
+            proj_data = astra.data3d.get(proj_id)
+            astra.algorithm.delete(alg_id)
+            astra.data3d.delete(proj_id)
+            astra.data3d.delete(vol_id)
+            # ASTRA parallel3d output: (nz, n_angles, nx) → tomopy order: (n_angles, nz, nx)
+            return np.transpose(proj_data, (1, 0, 2))
+        except Exception as e:
+            print(f"ASTRA forward projection failed ({e}), falling back to tomopy.project")
+    kwargs = {'emission': emission, 'pad': pad, 'ncore': ncore}
+    if center is not None:
+        kwargs['center'] = center
+    return tomopy.project(recon, angles, **kwargs)
+
+
 class tomoData:
     """
     Class for handling tomographic data, including preprocessing, alignment, and reconstruction.
@@ -436,6 +478,10 @@ class tomoData:
         print("\n")
         return reprojection_consistency_score(self, *args, **kwargs)
 
+    def fourier_shell_correlation(self, *args, **kwargs):
+        print("\n")
+        return fourier_shell_correlation(self, *args, **kwargs)
+
     def center_projections(self):
         """
         Determines and adjusts the center of rotation for 2D projection images by finding the initial center,
@@ -511,5 +557,30 @@ class tomoData:
                 algorithm=algorithm,
                 sinogram_order=False
             )
-        self.recon = tomopy.circ_mask(self.recon, axis=0, ratio=0.95)
+        self.recon = tomopy.circ_mask(self.recon, axis=0, ratio=0.99)
         print("Reconstruction completed.")
+
+    def simulateProjections(self, recon=None, angles=None, center=None, emission=True, pad=False, ncore=None, use_astra=False):
+        """
+        Simulate projections through the reconstruction at the angles stored in this object.
+
+        Parameters
+        ----------
+        recon : ndarray or None — volume to project; defaults to self.recon
+        angles : ndarray or None — projection angles in radians; defaults to self.ang
+        center : float or None — rotation center; defaults to self.rotation_center (None → nx/2)
+        emission : bool
+        pad : bool
+        ncore : int or None
+        use_astra : bool — try ASTRA GPU forward projector first; fall back to tomopy
+        """
+        if recon is None:
+            if not hasattr(self, 'recon') or self.recon is None:
+                raise AttributeError("No reconstruction available. Call reconstruct() first or provide recon argument.")
+            recon = self.recon
+        if angles is None:
+            angles = self.ang
+        if center is None:
+            rc = getattr(self, 'rotation_center', 0)
+            center = rc if rc else None
+        return simulate_projections(recon, angles, center=center, emission=emission, pad=pad, ncore=ncore, use_astra=use_astra)

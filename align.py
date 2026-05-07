@@ -50,6 +50,8 @@ if __name__ == '__main__':
                 projs = hf['data'][...]
                 angles = hf['angles'][...]
         angles = angles * np.pi / 180
+        #Shift angles to be centered around 0
+        angles = angles - np.mean(angles)
         return projs, angles
 
     data, angles = tomo_data(filename, redo_align=True)

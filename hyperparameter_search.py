@@ -495,6 +495,8 @@ def load_data(filename):
     with h5py.File(filename) as hf:
         projs  = hf['data'][...]
         angles = hf['angles'][...] * np.pi / 180
+    #Shift angles to be centered around 0
+    angles = angles - np.mean(angles)
     return projs, angles
 
 
