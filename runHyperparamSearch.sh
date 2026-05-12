@@ -17,6 +17,7 @@
 
 # Set OpenMP threads to match allocated CPUs
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+ulimit -c 0
 
 # Results directory — created here so the path is guaranteed to exist
 mkdir -p /home/ljh79/TomoMono/hyperparam_results

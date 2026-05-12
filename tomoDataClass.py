@@ -1,21 +1,38 @@
+import os
+import multiprocessing as _mp
+# Must run before tomopy/numexpr import. Login nodes expose many cores; tomopy
+# asks numexpr for >NUMEXPR_MAX_THREADS and aborts. Bump the ceiling.
+os.environ["NUMEXPR_MAX_THREADS"] = str(max(_mp.cpu_count(), int(os.environ.get("NUMEXPR_MAX_THREADS", "0") or 0), 64))
+
 import tomopy
 import numpy as np
 import random
 import scipy as sp
 from helperFunctions import MoviePlotter, subpixel_shift, runwidget
-# import torch
 from tqdm import tqdm
 from scipy.ndimage import rotate
-# import svmbir
 from alignment_methods import *
 
+def _gpu_actually_works():
+    try:
+        import torch as _t
+        if _t.cuda.is_available():
+            _t.zeros(1, device='cuda')  # confirm an allocation actually succeeds
+            return _t
+        if _t.backends.mps.is_available():
+            return _t
+    except Exception:
+        pass
+    return None
+
 try:
-    import torch
-    print("PyTorch imported successfully.")
+    torch = _gpu_actually_works()
+    if torch is not None:
+        print("PyTorch GPU detected.")
+    else:
+        print("No usable GPU detected — running CPU-only.")
     import svmbir
-    print("SVMBIR imported successfully.")
-    if not torch.cuda.is_available() and not torch.backends.mps.is_available():
-        torch = None
+    if torch is None:
         svmbir = None
 except ImportError:
     torch = None
@@ -46,6 +63,10 @@ def simulate_projections(recon, angles, center=None, emission=True, pad=False, n
     ncore : int or None
     use_astra : bool or None — if True, require ASTRA; if False, use tomopy only; if None (default), try ASTRA first, fall back to tomopy
     """
+    # Auto-disable ASTRA when there's no working GPU — ASTRA prints alarming
+    # stderr messages before raising, even though the fallback path works.
+    if use_astra is None and torch is None:
+        use_astra = False
     # Try ASTRA if not explicitly disabled
     if use_astra is not False:
         vol_id = proj_id = alg_id = None
@@ -510,7 +531,7 @@ class tomoData:
         """
         Determines and adjusts the center of rotation for 2D projection images by finding the initial center,
         shifting the projections to center them, and calculating any remaining offset (to check if it needs to be done again).
-        
+
         Run a max of 3 times
         """
         print("Centering Projections")
@@ -523,13 +544,14 @@ class tomoData:
             print("Center of frame: {}".format(self.image_size[1] // 2))
             x_shift = (self.image_size[1] / 2 - (self.rotation_center))
             y_shift = 0
-            x_shift_check = 3
-            if abs(x_shift_check) > 2:
+            if abs(x_shift) > 0.01:
                 for m in range(self.num_angles):
                     self.workingProjections[m] = subpixel_shift(self.workingProjections[m], y_shift, x_shift)
                 self.rotation_center = tomopy.find_center_vo(self.workingProjections)
                 print("Aligned projections shifted by {} pixels".format(x_shift))
                 x_shift_check = (self.image_size[1] // 2 - (self.rotation_center))
+            else:
+                x_shift_check = x_shift
             self.center_offset = abs(x_shift_check)
             print(f"Projections are currently centered at pixel {self.rotation_center}. Residual offset: {self.center_offset}")
             self.tracked_shifts[:, 1] += x_shift
@@ -547,7 +569,7 @@ class tomoData:
 
         print("\n")
         if algorithm.endswith("CUDA"):
-            if torch.cuda.is_available():
+            if torch is not None and torch.cuda.is_available():
                 print("Using GPU-accelerated reconstruction, Algorithm: ", algorithm)
                 options = {
                     'proj_type': 'cuda',

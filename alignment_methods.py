@@ -1,3 +1,9 @@
+import os
+import multiprocessing as _mp
+# Must run before tomopy/numexpr import. Login nodes expose many cores; tomopy
+# asks numexpr for >NUMEXPR_MAX_THREADS and aborts. Bump the ceiling.
+os.environ["NUMEXPR_MAX_THREADS"] = str(max(_mp.cpu_count(), int(os.environ.get("NUMEXPR_MAX_THREADS", "0") or 0), 64))
+
 import numpy as np
 from tqdm import tqdm
 from scipy.signal import correlate
@@ -15,7 +21,16 @@ from matplotlib import gridspec
 
 try:
     import torch
-    if not torch.cuda.is_available() and not torch.backends.mps.is_available():
+    _gpu_ok = False
+    if torch.cuda.is_available():
+        try:
+            torch.zeros(1, device='cuda')  # confirm an allocation actually succeeds
+            _gpu_ok = True
+        except Exception:
+            _gpu_ok = False
+    elif torch.backends.mps.is_available():
+        _gpu_ok = True
+    if not _gpu_ok:
         torch = None
 except ImportError:
     torch = None
@@ -75,7 +90,7 @@ def cross_correlate_align(
     - upsample_factor (int): Passed to phase_cross_correlation for sub-pixel accuracy.
       upsample_factor=1 gives pixel-accurate shifts; higher values (e.g. 10, 100) give
       finer sub-pixel precision at increased compute cost.
-    - downsample (int): Downscale factor applied before shift detection via pyramid_gaussian.
+    - downsample (int): Downscale factor applied before shift detection.
       Speeds up correlation on large images; detected shifts are rescaled back automatically.
       Use 1 (default) to skip downsampling.
     - use_grad (bool): If True, replace each reference image with its gradient magnitude before
@@ -102,7 +117,7 @@ def cross_correlate_align(
     def _downsample(img):
         if downsample == 1:
             return img
-        return zoom(img, (1 / downsample, 1 / downsample), order=1)
+        return zoom(img, 1.0 / downsample)
 
     def _compute_shift(ref, mov):
         ref_c = _crop(ref)
@@ -252,16 +267,12 @@ def _fourier_gradients(img):
 #     return float(dy), float(dx)
 
 
-_PMA_CPU_FALLBACK = 'sirt'
-
 def _pma_reconstruct(projs, ang, center, algorithm, ratio=0.99):
     if algorithm.endswith("CUDA"):
         if torch is None:
-            print("Tried to use GPU reconstruction, but no GPU detected — falling back to CPU reconstruction with SIRT")
-            recon = tomopy.recon(projs, ang, center=center, algorithm=_PMA_CPU_FALLBACK, sinogram_order=False)
-        else:
-            options = {'proj_type': 'cuda', 'method': algorithm, 'num_iter': 400, 'extra_options': {}}
-            recon = tomopy.recon(projs, ang, center=center, algorithm=tomopy.astra, options=options, ncore=1)
+            raise ValueError("GPU requested but torch is unavailable.")
+        options = {'proj_type': 'cuda', 'method': algorithm, 'num_iter': 400, 'extra_options': {}}
+        recon = tomopy.recon(projs, ang, center=center, algorithm=tomopy.astra, options=options, ncore=1)
     else:
         recon = tomopy.recon(projs, ang, center=center, algorithm=algorithm, sinogram_order=False)
     return tomopy.circ_mask(recon, axis=0, ratio=ratio)
@@ -306,7 +317,7 @@ def PMA(
         tomo,
         max_iterations=5,
         tolerance=0.1,
-        algorithm='SIRT_CUDA',
+        algorithm='art',
         xROI_Range=None,
         yROI_Range=None,
         isPhaseData=False,
@@ -333,8 +344,6 @@ def PMA(
     recon_crop_ratio = 0.99
     grad_str = " | gradient mode" if use_grad else ""
     preprocess_str = " | matching_preprocess" if use_matching_preprocess else ""
-    if algorithm.endswith('CUDA') and torch is None:
-        print(f"  [PMA] No GPU detected — reconstruction falling back to '{_PMA_CPU_FALLBACK}' (CPU).")
     print(f"Projection Matching Alignment (PMA) [{shift_method}{grad_str}{preprocess_str}]")
 
     if standardize:
@@ -353,10 +362,16 @@ def PMA(
         n_iters = iters_per_level[level_idx]
         print(f"\n--- PMA Level {level} ({downsample_factor}x downsampled, {n_iters} iterations) ---")
 
-        current_projs = subpixel_shift(original, pma_shifts[:, 0], pma_shifts[:, 1]).astype(np.float32)
+        current_projs = np.stack([
+            subpixel_shift(original[i], pma_shifts[i, 0], pma_shifts[i, 1])
+            for i in range(tomo.num_angles)
+        ], dtype=np.float32)
 
         if level > 0:
-            scaled_projs = zoom(current_projs, (1, 1 / downsample_factor, 1 / downsample_factor), order=1).astype(np.float32)
+            scaled_projs = zoom(
+                current_projs,
+                (1, 1.0 / downsample_factor, 1.0 / downsample_factor)
+            ).astype(np.float32)
             del current_projs
         else:
             scaled_projs = current_projs
@@ -411,7 +426,7 @@ def PMA(
                 recon_projs = scaled_projs
 
             recon  = _pma_reconstruct(recon_projs, tomo.ang, roi_center, algorithm, recon_crop_ratio)
-            reproj = tomo.simulateProjections(recon=recon, pad=False, center=None)
+            reproj = tomo.simulateProjections(recon=recon, pad=False, center=roi_center)
             del recon
 
             if standardize:
@@ -494,7 +509,12 @@ def PMA(
             level_shifts[:, 1] += dx
 
             # Apply shifts
-            scaled_projs = subpixel_shift(level_snapshot, level_shifts[:, 0], level_shifts[:, 1])
+            for i in range(tomo.num_angles):
+                scaled_projs[i] = subpixel_shift(
+                    level_snapshot[i],
+                    level_shifts[i, 0],
+                    level_shifts[i, 1]
+                )
 
             # --- Updated reporting ---
             shift_magnitudes = np.sqrt(dy**2 + dx**2)
@@ -513,7 +533,12 @@ def PMA(
         pma_shifts += level_shifts * downsample_factor
 
     # Apply final shifts
-    tomo.workingProjections = subpixel_shift(original, pma_shifts[:, 0], pma_shifts[:, 1])
+    for i in range(tomo.num_angles):
+        tomo.workingProjections[i] = subpixel_shift(
+            original[i],
+            pma_shifts[i, 0],
+            pma_shifts[i, 1]
+        )
 
     tomo.tracked_shifts += pma_shifts
     print("\nPMA complete.")

@@ -191,77 +191,15 @@ def add_noise(m):
 #     return imgFaded.astype(np.float32), transitionMask.astype(np.float32)
 
 
-def _subpixel_shift_batch(images, shift_y, shift_x):
-    """
-    Vectorized batch version of subpixel_shift for a (N, H, W) array.
-
-    shift_y and shift_x must be 1-D arrays of length N. A single symmetric
-    pad is computed from the maximum absolute shift across all images, then
-    all N phase ramps are applied in one batched FFT. GPU-accelerated via
-    CuPy when available.
-    """
-    shift_y = np.asarray(shift_y, dtype=np.float64)
-    shift_x = np.asarray(shift_x, dtype=np.float64)
-    n, rows, cols = images.shape
-
-    min_pad = 10
-    max_abs_y = float(np.max(np.abs(shift_y))) if n > 0 else 0.0
-    max_abs_x = float(np.max(np.abs(shift_x))) if n > 0 else 0.0
-    pad_y = max(min_pad, int(np.ceil(max_abs_y)) * 4 + 1)
-    pad_x = max(min_pad, int(np.ceil(max_abs_x)) * 4 + 1)
-
-    padded = np.pad(images, ((0, 0), (pad_y, pad_y), (pad_x, pad_x)), mode='edge')
-    ph, pw = padded.shape[1], padded.shape[2]
-
-    # Symmetric cosine taper on all four edges — uniform across the batch
-    wy = np.ones(ph, dtype=np.float32)
-    wy[:pad_y] = np.sin(0.5 * np.pi * np.arange(pad_y, dtype=np.float32) / pad_y) ** 2
-    wy[ph - pad_y:] = wy[:pad_y][::-1]
-    wx = np.ones(pw, dtype=np.float32)
-    wx[:pad_x] = np.sin(0.5 * np.pi * np.arange(pad_x, dtype=np.float32) / pad_x) ** 2
-    wx[pw - pad_x:] = wx[:pad_x][::-1]
-    window = wy[:, None] * wx[None, :]  # (ph, pw)
-
-    padded = padded.astype(np.float32)
-    cs = max(4, min(32, rows // 6, cols // 6))
-    bg_means = (0.5 * (
-        images[:, :cs, :cs].mean(axis=(1, 2)) +
-        images[:, :cs, -cs:].mean(axis=(1, 2))
-    )).astype(np.float32)  # (N,)
-
-    padded -= bg_means[:, None, None]
-    padded *= window[None, :, :]
-    padded += bg_means[:, None, None]
-
-    arr = xp.asarray(padded)
-    F = xp.fft.fft2(arr)  # (N, ph, pw)
-    fy = xp.fft.fftfreq(ph).reshape(1, -1, 1)
-    fx = xp.fft.fftfreq(pw).reshape(1, 1, -1)
-    sy = xp.asarray(shift_y).reshape(-1, 1, 1)
-    sx = xp.asarray(shift_x).reshape(-1, 1, 1)
-    phase = xp.exp(-2j * np.pi * (sy * fy + sx * fx))
-    shifted = xp.fft.ifft2(F * phase).real
-    if xp is not np:
-        shifted = shifted.get()
-    return np.asarray(shifted[:, pad_y:pad_y + rows, pad_x:pad_x + cols], dtype=images.dtype)
-
-
 def subpixel_shift(image, shift_y, shift_x):
     """
     Shift a 2D image by (shift_y, shift_x) pixels using a Fourier phase ramp.
-
-    When image is a 3D array (N, H, W), shift_y and shift_x must be 1-D
-    arrays of length N. All shifts are applied in a single batched FFT via
-    _subpixel_shift_batch.
 
     Pads by replicating edge values outward, then applies a cosine taper over the
     padded strip toward the estimated background value (mean of the two upper corner patches).
     The top taper spans 1/4 of the pad distance; the bottom taper is 4x the pad distance.
     GPU-accelerated via CuPy when available.
     """
-    if image.ndim == 3:
-        return _subpixel_shift_batch(image, shift_y, shift_x)
-
     rows, cols = image.shape
 
     min_pad = 10  # <-- NEW: enforce minimum padding
