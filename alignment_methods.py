@@ -5,10 +5,10 @@ from skimage.transform import rotate
 from helperFunctions import subpixel_shift
 import tomopy
 from skimage.registration import optical_flow_tvl1, phase_cross_correlation
-from skimage.transform import warp, pyramid_gaussian
+from skimage.transform import warp
 import cv2
 import scipy as sp
-from scipy.ndimage import gaussian_filter, gaussian_filter1d
+from scipy.ndimage import gaussian_filter, gaussian_filter1d, zoom
 import matplotlib.pyplot as plt
 from math import ceil
 from matplotlib import gridspec
@@ -67,8 +67,8 @@ def cross_correlate_align(
     - tolerance (float): Convergence threshold for average pixel shift per iteration.
     - max_iterations (int): Maximum number of alignment iterations.
     - stepRatio (float): Scaling factor for the computed shifts.
-    - yROI_Range (list): [start, end] y-crop for correlation region.
-    - xROI_Range (list): [start, end] x-crop for correlation region.
+    - yROI_Range (list): [start, end] y-crop for correlation region. If None, defaults to full height.
+    - xROI_Range (list): [start, end] x-crop for correlation region. If None, defaults to full width.
     - isFull360 (bool): If True, also correlates last image against first to close the loop.
     - num_images_for_median (int): If set, use a rolling median of the last K images as
       the reference instead of just the previous image. More robust to noisy projections.
@@ -82,7 +82,13 @@ def cross_correlate_align(
       computing the cross-correlation. Gradient images are edge-enhanced, which can give
       more accurate shifts when features have strong edges but low overall contrast.
     """
-    roi_str = f"ROI y={yROI_Range} x={xROI_Range}" if (yROI_Range is not None and xROI_Range is not None) else "full frame"
+    # Default ROI to full frame if None
+    if xROI_Range is None:
+        xROI_Range = [0, tomo.workingProjections.shape[2]]
+    if yROI_Range is None:
+        yROI_Range = [0, tomo.workingProjections.shape[1]]
+
+    roi_str = f"ROI y={yROI_Range} x={xROI_Range}"
     ds_str = f"{downsample}x downsample" if downsample > 1 else "full resolution"
     grad_str = "gradient mode" if use_grad else "intensity mode"
     print(f"Cross-Correlation Alignment  [{ds_str} | {roi_str} | {grad_str}]")
@@ -91,14 +97,12 @@ def cross_correlate_align(
     K = num_images_for_median if (num_images_for_median is not None and num_images_for_median > 1) else None
 
     def _crop(img):
-        if yROI_Range is not None and xROI_Range is not None:
-            return img[yROI_Range[0]:yROI_Range[1], xROI_Range[0]:xROI_Range[1]]
-        return img
+        return img[yROI_Range[0]:yROI_Range[1], xROI_Range[0]:xROI_Range[1]]
 
     def _downsample(img):
         if downsample == 1:
             return img
-        return tuple(pyramid_gaussian(img, max_layer=1, downscale=downsample, sigma=None, preserve_range=False))[1]
+        return zoom(img, (1 / downsample, 1 / downsample), order=1)
 
     def _compute_shift(ref, mov):
         ref_c = _crop(ref)
@@ -132,24 +136,52 @@ def cross_correlate_align(
             print(f"  Projection {n//2} shift: y={y_sh:.4f} px, x={x_sh:.4f} px")
             vmin = min(ref_img.min(), mov_img.min())
             vmax = max(ref_img.max(), mov_img.max())
-            fig, axes = plt.subplots(1, 2, figsize=(10, 4))
-            fig.suptitle(f"Cross-Correlation Alignment — Iteration {iteration + 1}  |  Proj {n//2} shift: y={y_sh:.4f}, x={x_sh:.4f} px")
-            im0 = axes[0].imshow(mov_img, cmap='gray', aspect='auto', vmin=vmin, vmax=vmax)
-            axes[0].set_title(f"Projection {n//2} (being aligned)")
-            axes[0].axis('off')
+
+            # Normalize each image to [0, 1] for the color overlay
+            def _norm01(img):
+                lo, hi = img.min(), img.max()
+                return (img - lo) / (hi - lo + 1e-9)
+            # Red = reference, Cyan (G+B) = moving; misaligned edges show as red/cyan fringing
+            overlay = np.stack([_norm01(ref_img), _norm01(mov_img), _norm01(mov_img)], axis=-1)
+
+            fig, axes = plt.subplots(1, 3, figsize=(16, 5))
+            fig.suptitle(
+                f"Cross-Correlation Alignment — Iteration {iteration + 1}  |  "
+                f"Proj {n//2} shift: y={y_sh:.4f}, x={x_sh:.4f} px"
+            )
+
+            im0 = axes[0].imshow(ref_img, cmap='gray', aspect='auto', vmin=vmin, vmax=vmax)
+            axes[0].set_title(f"Projection {n//2 - 1} (reference)")
+            axes[0].set_xlabel("X (pixels)")
+            axes[0].set_ylabel("Y (pixels)")
             plt.colorbar(im0, ax=axes[0], fraction=0.046, pad=0.04)
-            im1 = axes[1].imshow(ref_img, cmap='gray', aspect='auto', vmin=vmin, vmax=vmax)
-            axes[1].set_title(f"Projection {n//2} (reference)")
-            axes[1].axis('off')
+
+            im1 = axes[1].imshow(mov_img, cmap='gray', aspect='auto', vmin=vmin, vmax=vmax)
+            axes[1].set_title(f"Projection {n//2} (being aligned)")
+            axes[1].set_xlabel("X (pixels)")
+            axes[1].set_ylabel("Y (pixels)")
             plt.colorbar(im1, ax=axes[1], fraction=0.046, pad=0.04)
-            if xROI_Range is not None and yROI_Range is not None:
-                for ax in axes:
-                    ax.add_patch(plt.Rectangle(
-                        (xROI_Range[0], yROI_Range[0]),
-                        xROI_Range[1] - xROI_Range[0],
-                        yROI_Range[1] - yROI_Range[0],
-                        linewidth=2, edgecolor='red', facecolor='none'
-                    ))
+
+            axes[2].imshow(overlay, aspect='auto')
+            axes[2].set_title("Overlay (red = ref, cyan = moving)")
+            axes[2].set_xlabel("X (pixels)")
+            axes[2].set_ylabel("Y (pixels)")
+
+            # Draw ROI rectangle on the grayscale panels (red border)
+            for ax in axes[:2]:
+                ax.add_patch(plt.Rectangle(
+                    (xROI_Range[0], yROI_Range[0]),
+                    xROI_Range[1] - xROI_Range[0],
+                    yROI_Range[1] - yROI_Range[0],
+                    linewidth=2, edgecolor='red', facecolor='none'
+                ))
+            # White border on the color overlay so it's visible
+            axes[2].add_patch(plt.Rectangle(
+                (xROI_Range[0], yROI_Range[0]),
+                xROI_Range[1] - xROI_Range[0],
+                yROI_Range[1] - yROI_Range[0],
+                linewidth=2, edgecolor='white', facecolor='none'
+            ))
             plt.tight_layout()
             plt.show()
 
@@ -220,12 +252,16 @@ def _fourier_gradients(img):
 #     return float(dy), float(dx)
 
 
+_PMA_CPU_FALLBACK = 'sirt'
+
 def _pma_reconstruct(projs, ang, center, algorithm, ratio=0.99):
     if algorithm.endswith("CUDA"):
         if torch is None:
-            raise ValueError("GPU requested but torch is unavailable.")
-        options = {'proj_type': 'cuda', 'method': algorithm, 'num_iter': 400, 'extra_options': {}}
-        recon = tomopy.recon(projs, ang, center=center, algorithm=tomopy.astra, options=options, ncore=1)
+            print("Tried to use GPU reconstruction, but no GPU detected — falling back to CPU reconstruction with SIRT")
+            recon = tomopy.recon(projs, ang, center=center, algorithm=_PMA_CPU_FALLBACK, sinogram_order=False)
+        else:
+            options = {'proj_type': 'cuda', 'method': algorithm, 'num_iter': 400, 'extra_options': {}}
+            recon = tomopy.recon(projs, ang, center=center, algorithm=tomopy.astra, options=options, ncore=1)
     else:
         recon = tomopy.recon(projs, ang, center=center, algorithm=algorithm, sinogram_order=False)
     return tomopy.circ_mask(recon, axis=0, ratio=ratio)
@@ -270,7 +306,7 @@ def PMA(
         tomo,
         max_iterations=5,
         tolerance=0.1,
-        algorithm='art',
+        algorithm='SIRT_CUDA',
         xROI_Range=None,
         yROI_Range=None,
         isPhaseData=False,
@@ -297,6 +333,8 @@ def PMA(
     recon_crop_ratio = 0.99
     grad_str = " | gradient mode" if use_grad else ""
     preprocess_str = " | matching_preprocess" if use_matching_preprocess else ""
+    if algorithm.endswith('CUDA') and torch is None:
+        print(f"  [PMA] No GPU detected — reconstruction falling back to '{_PMA_CPU_FALLBACK}' (CPU).")
     print(f"Projection Matching Alignment (PMA) [{shift_method}{grad_str}{preprocess_str}]")
 
     if standardize:
@@ -315,16 +353,11 @@ def PMA(
         n_iters = iters_per_level[level_idx]
         print(f"\n--- PMA Level {level} ({downsample_factor}x downsampled, {n_iters} iterations) ---")
 
-        current_projs = np.stack([
-            subpixel_shift(original[i], pma_shifts[i, 0], pma_shifts[i, 1])
-            for i in range(tomo.num_angles)
-        ], dtype=np.float32)
+        current_projs = subpixel_shift(original, pma_shifts[:, 0], pma_shifts[:, 1]).astype(np.float32)
 
         if level > 0:
-            *_, scaled_projs = pyramid_gaussian(
-                current_projs, downscale=scale, max_layer=level, channel_axis=0
-            )
-            scaled_projs = scaled_projs.astype(np.float32)
+            scaled_projs = zoom(current_projs, (1, 1 / downsample_factor, 1 / downsample_factor), order=1).astype(np.float32)
+            del current_projs
         else:
             scaled_projs = current_projs
 
@@ -332,18 +365,54 @@ def PMA(
         level_shifts = np.zeros((tomo.num_angles, 2), dtype=np.float64)
         level_snapshot = scaled_projs.copy()
 
-        # ROI bounds check
-        if xROI_Range is not None and yROI_Range is not None:
+        # ROI setup: validate bounds and compute downsampled indices
+        _xr = xROI_Range
+        _yr = yROI_Range
+        if _xr is not None or _yr is not None:
+            if _xr is None:
+                _xr = [0, scaled_projs.shape[2] * downsample_factor]
+            if _yr is None:
+                _yr = [0, scaled_projs.shape[1] * downsample_factor]
             H, W = scaled_projs.shape[1:]
-            print(f"Using ROI: x={xROI_Range}, y={yROI_Range} (downsampled by {downsample_factor}x)")
+            x0_ds = int(_xr[0]) // downsample_factor
+            x1_ds = int(_xr[1]) // downsample_factor
+            y0_ds = int(_yr[0]) // downsample_factor
+            y1_ds = int(_yr[1]) // downsample_factor
+            print(f"Using ROI: x={_xr}, y={_yr} (downsampled by {downsample_factor}x)")
             print(f"H and W values are {H} and {W}")
-            print(f"Downsample ROI bounds are x={xROI_Range[0]//downsample_factor} to {xROI_Range[1]//downsample_factor}, y={yROI_Range[0]//downsample_factor} to {yROI_Range[1]//downsample_factor}")
-            assert 0 <= xROI_Range[0]//downsample_factor < xROI_Range[1]//downsample_factor <= W
-            assert 0 <= yROI_Range[0]//downsample_factor < yROI_Range[1]//downsample_factor <= H
+            print(f"Downsample ROI bounds are x={x0_ds} to {x1_ds}, y={y0_ds} to {y1_ds}")
+            assert 0 <= x0_ds < x1_ds <= W
+            assert 0 <= y0_ds < y1_ds <= H
+
+            # The xROI must be centered at the rotation center so the rotation axis
+            # stays at the ROI midpoint. This guarantees roi_center = (x1-x0)/2 and
+            # avoids a lateral offset in the smaller reconstruction.
+            roi_x_center = (x0_ds + x1_ds) / 2.0
+            assert abs(roi_x_center - scaled_center) <= 1.0, (
+                f"xROI must be centered at the rotation center (scaled_center={scaled_center:.1f}), "
+                f"but xROI midpoint is at {roi_x_center:.1f} (diff={abs(roi_x_center - scaled_center):.2f} px). "
+                f"Adjust xROI_Range to [{int(scaled_center * downsample_factor) - (_xr[1] - _xr[0]) // 2}, "
+                f"{int(scaled_center * downsample_factor) + (_xr[1] - _xr[0]) // 2}]."
+            )
+            roi_active = True
+            # Because xROI is centered on the rotation axis, roi_center is simply the ROI midpoint.
+            roi_center = (x1_ds - x0_ds) / 2.0
+        else:
+            roi_active = False
+            roi_center = scaled_center
 
         for k in tqdm(range(n_iters), desc=f'PMA Level {level} iterations'):
-            recon  = _pma_reconstruct(scaled_projs, tomo.ang, scaled_center, algorithm, recon_crop_ratio)
+            # Crop projections to ROI before reconstruction so the volume and
+            # forward-projection both operate on the smaller ROI domain, which
+            # is faster than reconstructing the full volume and cropping after.
+            if roi_active:
+                recon_projs = scaled_projs[:, y0_ds:y1_ds, x0_ds:x1_ds]
+            else:
+                recon_projs = scaled_projs
+
+            recon  = _pma_reconstruct(recon_projs, tomo.ang, roi_center, algorithm, recon_crop_ratio)
             reproj = tomo.simulateProjections(recon=recon, pad=False, center=None)
+            del recon
 
             if standardize:
                 reproj = (reproj - np.mean(reproj)) / np.std(reproj)
@@ -352,24 +421,15 @@ def PMA(
             dx = np.zeros(tomo.num_angles)
 
             plot_idx = tomo.num_angles // 2
-            plot_ref = plot_mov = None
+            plot_ref_raw = plot_mov_raw = None
 
             for i in range(tomo.num_angles):
+                # reproj and recon_projs are already ROI-sized; no further crop needed
+                ref_roi = reproj[i]
+                mov_roi = recon_projs[i]
 
-                ref = reproj[i]
-                mov = scaled_projs[i]
-
-                # ROI extraction
-                if xROI_Range is not None and yROI_Range is not None:
-                    y0 = int(yROI_Range[0]) // downsample_factor
-                    y1 = int(yROI_Range[1]) // downsample_factor
-                    x0 = int(xROI_Range[0]) // downsample_factor
-                    x1 = int(xROI_Range[1]) // downsample_factor
-                    ref_roi = ref[y0:y1, x0:x1]
-                    mov_roi = mov[y0:y1, x0:x1]
-                else:
-                    ref_roi = ref
-                    mov_roi = mov
+                if plot and k == 0 and i == plot_idx:
+                    plot_ref_raw, plot_mov_raw = ref_roi.copy(), mov_roi.copy()
 
                 # Preprocessing
                 if use_matching_preprocess:
@@ -380,32 +440,37 @@ def PMA(
                     ref_roi = compute_grad_image(ref_roi)
                     mov_roi = compute_grad_image(mov_roi)
 
-                if plot and k == 0 and i == plot_idx:
-                    plot_ref, plot_mov = ref_roi, mov_roi
-
                 # Shift estimation
                 if shift_method == 'optical_flow':
                     dy[i], dx[i] = _optical_flow_shift(mov_roi, ref_roi, of_sigma)
                 else:
                     dy[i], dx[i] = _cross_correlation_shift(ref_roi, mov_roi, upsample_factor)
 
-            # Plot matching inputs
-            if plot and k == 0 and plot_ref is not None:
-                vmin = min(plot_mov.min(), plot_ref.min())
-                vmax = max(plot_mov.max(), plot_ref.max())
+            # Plot: measured projection, reprojection, and their difference
+            if plot and k == 0 and plot_ref_raw is not None:
+                vmin = min(plot_mov_raw.min(), plot_ref_raw.min())
+                vmax = max(plot_mov_raw.max(), plot_ref_raw.max())
+                diff = plot_mov_raw - plot_ref_raw
+                abs_max = float(np.abs(diff).max()) or 1.0
 
-                fig, axes = plt.subplots(1, 2, figsize=(10, 4))
-                fig.suptitle(f"PMA Level {level} — Matching Inputs (Projection {plot_idx})")
+                roi_label = " (ROI)" if roi_active else ""
+                fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+                fig.suptitle(f"PMA Level {level} — Iteration {k+1} | Projection {plot_idx}{roi_label}")
 
-                im0 = axes[0].imshow(plot_mov, cmap='gray', aspect='auto', vmin=vmin, vmax=vmax)
-                axes[0].set_title("mov (ROI)")
+                im0 = axes[0].imshow(plot_mov_raw, cmap='gray', aspect='auto', vmin=vmin, vmax=vmax)
+                axes[0].set_title("Measured projection")
                 axes[0].axis('off')
                 plt.colorbar(im0, ax=axes[0], fraction=0.046, pad=0.04)
 
-                im1 = axes[1].imshow(plot_ref, cmap='gray', aspect='auto', vmin=vmin, vmax=vmax)
-                axes[1].set_title("ref (ROI)")
+                im1 = axes[1].imshow(plot_ref_raw, cmap='gray', aspect='auto', vmin=vmin, vmax=vmax)
+                axes[1].set_title("Reprojection")
                 axes[1].axis('off')
                 plt.colorbar(im1, ax=axes[1], fraction=0.046, pad=0.04)
+
+                im2 = axes[2].imshow(diff, cmap='bwr', aspect='auto', vmin=-abs_max, vmax=abs_max)
+                axes[2].set_title("Difference (Measured − Reprojection)")
+                axes[2].axis('off')
+                plt.colorbar(im2, ax=axes[2], fraction=0.046, pad=0.04)
 
                 plt.tight_layout()
                 plt.show()
@@ -429,12 +494,7 @@ def PMA(
             level_shifts[:, 1] += dx
 
             # Apply shifts
-            for i in range(tomo.num_angles):
-                scaled_projs[i] = subpixel_shift(
-                    level_snapshot[i],
-                    level_shifts[i, 0],
-                    level_shifts[i, 1]
-                )
+            scaled_projs = subpixel_shift(level_snapshot, level_shifts[:, 0], level_shifts[:, 1])
 
             # --- Updated reporting ---
             shift_magnitudes = np.sqrt(dy**2 + dx**2)
@@ -453,12 +513,7 @@ def PMA(
         pma_shifts += level_shifts * downsample_factor
 
     # Apply final shifts
-    for i in range(tomo.num_angles):
-        tomo.workingProjections[i] = subpixel_shift(
-            original[i],
-            pma_shifts[i, 0],
-            pma_shifts[i, 1]
-        )
+    tomo.workingProjections = subpixel_shift(original, pma_shifts[:, 0], pma_shifts[:, 1])
 
     tomo.tracked_shifts += pma_shifts
     print("\nPMA complete.")

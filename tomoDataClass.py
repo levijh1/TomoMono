@@ -32,7 +32,7 @@ except Exception:
     xp = np
 
 
-def simulate_projections(recon, angles, center=None, emission=True, pad=False, ncore=None, use_astra=False):
+def simulate_projections(recon, angles, center=None, emission=True, pad=False, ncore=None, use_astra=None):
     """
     Simulate projections through a 3D volume at the given angles.
 
@@ -44,9 +44,11 @@ def simulate_projections(recon, angles, center=None, emission=True, pad=False, n
     emission : bool
     pad : bool
     ncore : int or None
-    use_astra : bool — try ASTRA GPU forward projector first; fall back to tomopy
+    use_astra : bool or None — if True, require ASTRA; if False, use tomopy only; if None (default), try ASTRA first, fall back to tomopy
     """
-    if use_astra:
+    # Try ASTRA if not explicitly disabled
+    if use_astra is not False:
+        vol_id = proj_id = alg_id = None
         try:
             import astra
             nz, ny, nx = recon.shape
@@ -64,8 +66,21 @@ def simulate_projections(recon, angles, center=None, emission=True, pad=False, n
             astra.data3d.delete(proj_id)
             astra.data3d.delete(vol_id)
             # ASTRA parallel3d output: (nz, n_angles, nx) → tomopy order: (n_angles, nz, nx)
-            return np.transpose(proj_data, (1, 0, 2))
+            result = np.transpose(proj_data, (1, 0, 2))
+            return result[:, :, ::-1]  # flip x-axis to match tomopy.project convention
         except Exception as e:
+            # Free any ASTRA GPU objects that were created before the failure
+            try:
+                if alg_id is not None:
+                    astra.algorithm.delete(alg_id)
+                if proj_id is not None:
+                    astra.data3d.delete(proj_id)
+                if vol_id is not None:
+                    astra.data3d.delete(vol_id)
+            except Exception:
+                pass
+            if use_astra is True:
+                raise
             print(f"ASTRA forward projection failed ({e}), falling back to tomopy.project")
     kwargs = {'emission': emission, 'pad': pad, 'ncore': ncore}
     if center is not None:
@@ -438,6 +453,14 @@ class tomoData:
         plt.suptitle('Orthogonal slices through reconstruction')
         plt.tight_layout()
         plt.show()
+    
+    def displayWorkingSinogram(self, row_index=None):
+        if row_index is None:
+            row_index = self.workingProjections.shape[0] // 2
+        plt.imshow(self.workingProjections[:,row_index,:], cmap='gray')
+        plt.title(f'Sinogram (Row {row_index})')
+        plt.ylabel('Angle')
+        plt.show()
 
     def bilateralFilter(self, *args, **kwargs):
         print("\n")
@@ -562,7 +585,7 @@ class tomoData:
         self._recon_pre_kovacik = None  # reset so kovacik_filter uses the new recon
         print("Reconstruction completed.")
 
-    def simulateProjections(self, recon=None, angles=None, center=None, emission=True, pad=False, ncore=None, use_astra=False):
+    def simulateProjections(self, recon=None, angles=None, center=None, emission=True, pad=False, ncore=None, use_astra=None):
         """
         Simulate projections through the reconstruction at the angles stored in this object.
 
@@ -574,7 +597,7 @@ class tomoData:
         emission : bool
         pad : bool
         ncore : int or None
-        use_astra : bool — try ASTRA GPU forward projector first; fall back to tomopy
+        use_astra : bool or None — if True, require ASTRA; if False, use tomopy only; if None (default), try ASTRA first, fall back to tomopy
         """
         if recon is None:
             if not hasattr(self, 'recon') or self.recon is None:
