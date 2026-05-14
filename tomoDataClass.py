@@ -87,8 +87,7 @@ def simulate_projections(recon, angles, center=None, emission=True, pad=False, n
             astra.data3d.delete(proj_id)
             astra.data3d.delete(vol_id)
             # ASTRA parallel3d output: (nz, n_angles, nx) → tomopy order: (n_angles, nz, nx)
-            result = np.transpose(proj_data, (1, 0, 2))
-            return result[:, :, ::-1]  # flip x-axis to match tomopy.project convention
+            return np.transpose(proj_data, (1, 0, 2))
         except Exception as e:
             # Free any ASTRA GPU objects that were created before the failure
             try:
@@ -141,7 +140,7 @@ class tomoData:
         else:
             self.ang = angles
 
-    def reset_workingProjections(self, x_size=900, y_size=650, cropBottomCenter=False):
+    def reset_workingProjections(self, x_size=None, y_size=None, cropBottomCenter=False):
         """
         Resets working and final projections to the original data and crops to the specified center size.
         This is useful for starting fresh with the original projections after modifications back to back.
@@ -327,11 +326,11 @@ class tomoData:
 
     def make_updates_rotate(self):
         """
-        Applies tracked rotations to the final projections and resets tracked shifts.
+        Applies tracked rotations to the final projections and resets tracked rotations.
         """
         for m in tqdm(range(self.num_angles), desc='Apply rotations to final projections'):
             self.finalProjections[m] = rotate(self.finalProjections[m], self.tracked_rotations[m], reshape=False, mode='constant')
-        self.tracked_shifts = np.zeros((self.num_angles, 2))
+        self.tracked_rotations = np.zeros(self.num_angles)
 
     def normalize(self, isPhaseData):
         """
@@ -477,7 +476,7 @@ class tomoData:
     
     def displayWorkingSinogram(self, row_index=None):
         if row_index is None:
-            row_index = self.workingProjections.shape[0] // 2
+            row_index = self.workingProjections.shape[1] // 2
         plt.imshow(self.workingProjections[:,row_index,:], cmap='gray')
         plt.title(f'Sinogram (Row {row_index})')
         plt.ylabel('Angle')
@@ -721,13 +720,24 @@ class tomoData:
         # --- Combined filter ---
         angular_filter = np.maximum(mwr, cs)
 
-        # --- Apply slice-by-slice along Z (tilt-axis direction, axis 0) ---
-        filtered = np.empty_like(source)
-        for z in tqdm(range(nz), desc="Applying Kovacik filter"):
-            slice_xy = source[z, :, :]
-            filtered[z, :, :] = np.real(
-                np.fft.ifft2(np.fft.fft2(slice_xy) * angular_filter)
-            )
+        # --- Apply vectorized over Z using rfft2 (real input → half-spectrum) ---
+        # rfft2 output has shape (nz, ny, nx//2+1) — ~half the complex memory of fft2.
+        # The filter is real and even-symmetric in Fourier space (built from |kx|, |ky|),
+        # so irfft2 is equivalent to real(ifft2) for this multiplication.
+        print("Applying Kovacik filter...")
+        filt_r = angular_filter[:, :nx // 2 + 1]  # trim to rfft2 half-spectrum
+        if cp is not None:
+            src_gpu = cp.asarray(source)
+            filt_gpu = cp.asarray(filt_r)
+            rfft_gpu = cp.fft.rfft2(src_gpu, axes=(1, 2))
+            filtered = cp.asnumpy(
+                cp.fft.irfft2(rfft_gpu * filt_gpu[cp.newaxis], s=(ny, nx), axes=(1, 2))
+            ).astype(source.dtype, copy=False)
+        else:
+            rfft = np.fft.rfft2(source, axes=(1, 2))
+            filtered = np.fft.irfft2(
+                rfft * filt_r[np.newaxis], s=(ny, nx), axes=(1, 2)
+            ).astype(source.dtype, copy=False)
 
         self.recon = filtered
 

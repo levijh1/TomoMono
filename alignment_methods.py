@@ -36,6 +36,11 @@ except ImportError:
     torch = None
 
 try:
+    import svmbir
+except ImportError:
+    svmbir = None
+
+try:
     import cupy as cp
     cp.array([1])  # real allocation — raises if GPU is unavailable or busy
     from cupyx.scipy.ndimage import gaussian_filter as _gaussian_filter
@@ -148,16 +153,19 @@ def cross_correlate_align(
 
         if plot and _plot_data is not None and iteration == 0:
             mov_img, ref_img, y_sh, x_sh = _plot_data
+            # Downsample full images for display
+            mov_ds = _downsample(mov_img)
+            ref_ds = _downsample(ref_img)
             print(f"  Projection {n//2} shift: y={y_sh:.4f} px, x={x_sh:.4f} px")
-            vmin = min(ref_img.min(), mov_img.min())
-            vmax = max(ref_img.max(), mov_img.max())
+            vmin = min(ref_ds.min(), mov_ds.min())
+            vmax = max(ref_ds.max(), mov_ds.max())
 
             # Normalize each image to [0, 1] for the color overlay
             def _norm01(img):
                 lo, hi = img.min(), img.max()
                 return (img - lo) / (hi - lo + 1e-9)
             # Red = reference, Cyan (G+B) = moving; misaligned edges show as red/cyan fringing
-            overlay = np.stack([_norm01(ref_img), _norm01(mov_img), _norm01(mov_img)], axis=-1)
+            overlay = np.stack([_norm01(ref_ds), _norm01(mov_ds), _norm01(mov_ds)], axis=-1)
 
             fig, axes = plt.subplots(1, 3, figsize=(16, 5))
             fig.suptitle(
@@ -165,36 +173,35 @@ def cross_correlate_align(
                 f"Proj {n//2} shift: y={y_sh:.4f}, x={x_sh:.4f} px"
             )
 
-            im0 = axes[0].imshow(ref_img, cmap='gray', aspect='auto', vmin=vmin, vmax=vmax)
+            im0 = axes[0].imshow(ref_ds, cmap='gray', aspect='auto', vmin=vmin, vmax=vmax)
             axes[0].set_title(f"Projection {n//2 - 1} (reference)")
-            axes[0].set_xlabel("X (pixels)")
-            axes[0].set_ylabel("Y (pixels)")
+            axes[0].set_xlabel(f"X (pixels, {downsample}x downsampled)" if downsample > 1 else "X (pixels)")
+            axes[0].set_ylabel(f"Y (pixels, {downsample}x downsampled)" if downsample > 1 else "Y (pixels)")
             plt.colorbar(im0, ax=axes[0], fraction=0.046, pad=0.04)
 
-            im1 = axes[1].imshow(mov_img, cmap='gray', aspect='auto', vmin=vmin, vmax=vmax)
+            im1 = axes[1].imshow(mov_ds, cmap='gray', aspect='auto', vmin=vmin, vmax=vmax)
             axes[1].set_title(f"Projection {n//2} (being aligned)")
-            axes[1].set_xlabel("X (pixels)")
-            axes[1].set_ylabel("Y (pixels)")
+            axes[1].set_xlabel(f"X (pixels, {downsample}x downsampled)" if downsample > 1 else "X (pixels)")
+            axes[1].set_ylabel(f"Y (pixels, {downsample}x downsampled)" if downsample > 1 else "Y (pixels)")
             plt.colorbar(im1, ax=axes[1], fraction=0.046, pad=0.04)
 
             axes[2].imshow(overlay, aspect='auto')
             axes[2].set_title("Overlay (red = ref, cyan = moving)")
-            axes[2].set_xlabel("X (pixels)")
-            axes[2].set_ylabel("Y (pixels)")
+            axes[2].set_xlabel(f"X (pixels, {downsample}x downsampled)" if downsample > 1 else "X (pixels)")
+            axes[2].set_ylabel(f"Y (pixels, {downsample}x downsampled)" if downsample > 1 else "Y (pixels)")
 
-            # Draw ROI rectangle on the grayscale panels (red border)
+            # ROI rectangle in downsampled-image coordinates
+            roi_x0 = xROI_Range[0] / downsample
+            roi_y0 = yROI_Range[0] / downsample
+            roi_w  = (xROI_Range[1] - xROI_Range[0]) / downsample
+            roi_h  = (yROI_Range[1] - yROI_Range[0]) / downsample
             for ax in axes[:2]:
                 ax.add_patch(plt.Rectangle(
-                    (xROI_Range[0], yROI_Range[0]),
-                    xROI_Range[1] - xROI_Range[0],
-                    yROI_Range[1] - yROI_Range[0],
+                    (roi_x0, roi_y0), roi_w, roi_h,
                     linewidth=2, edgecolor='red', facecolor='none'
                 ))
-            # White border on the color overlay so it's visible
             axes[2].add_patch(plt.Rectangle(
-                (xROI_Range[0], yROI_Range[0]),
-                xROI_Range[1] - xROI_Range[0],
-                yROI_Range[1] - yROI_Range[0],
+                (roi_x0, roi_y0), roi_w, roi_h,
                 linewidth=2, edgecolor='white', facecolor='none'
             ))
             plt.tight_layout()
@@ -521,7 +528,7 @@ def PMA(
             avg_shift = np.mean(shift_magnitudes)
             max_shift = np.max(shift_magnitudes)
 
-            clamp_flag = " [CLAMPED]" if np.isclose(max_shift, max_step) else ""
+            clamp_flag = " [CLAMPED]" if np.isclose(max_shift/stepRatio, max_step) else ""
 
             print(f"Iteration {k+1}: avg shift = {downsample_factor * avg_shift:.4f} px, "
                   f"max shift = {downsample_factor * max_shift:.4f} px{clamp_flag}")
@@ -1174,28 +1181,11 @@ def reprojection_consistency_score(tomo, plot=True, use_circ_mask=True):
         )
 
     measured = tomo.finalProjections           # (n_angles, ny, nx)
-    recon    = tomo.recon.copy()               # (nz, ny, nx)
     angles   = tomo.ang                        # (n_angles,) in radians
     center   = tomo.rotation_center
     n_angles = tomo.num_angles
 
-    # Apply the same circular mask used during reconstruction so the
-    # reprojections are computed on the same effective volume.
-    if use_circ_mask:
-        recon = tomopy.circ_mask(recon, axis=0, ratio=0.99)
-
     nx_m = measured.shape[2]
-
-    def _compute_reprojections():
-        print("Computing reprojections of reconstruction...")
-        raw = tomo.simulateProjections(recon=recon, emission=True, pad=False, ncore=None)
-        # tomopy pads the reconstruction volume, so reprojections may be wider
-        # than the measured projections. Crop the center columns to match.
-        nx_r = raw.shape[2]
-        if nx_r != nx_m:
-            start = (nx_r - nx_m) // 2
-            raw = raw[:, :, start:start + nx_m]
-        return raw
 
     # Reuse cached reprojections only if they match the current projection width.
     if (hasattr(tomo, 'finalReprojections')
@@ -1204,7 +1194,24 @@ def reprojection_consistency_score(tomo, plot=True, use_circ_mask=True):
         print("Reusing cached reprojections from tomo.finalReprojections.")
         reprojections = tomo.finalReprojections
     else:
-        reprojections = _compute_reprojections()
+        # Build a masked reconstruction view only when we actually need to reproject.
+        # Avoid copying tomo.recon when no mask is needed.
+        if use_circ_mask:
+            recon = tomopy.circ_mask(tomo.recon.copy(), axis=0, ratio=0.99)
+        else:
+            recon = tomo.recon
+
+        print("Computing reprojections of reconstruction...")
+        raw = tomo.simulateProjections(recon=recon, emission=True, pad=False, ncore=None)
+        del recon  # free the (possibly masked) copy as soon as forward projection is done
+
+        # tomopy pads the reconstruction volume, so reprojections may be wider
+        # than the measured projections. Crop the center columns to match.
+        nx_r = raw.shape[2]
+        if nx_r != nx_m:
+            start = (nx_r - nx_m) // 2
+            raw = raw[:, :, start:start + nx_m]
+        reprojections = raw
         tomo.finalReprojections = reprojections
 
     # --- Compute per-angle NRMSE ---
@@ -1349,24 +1356,32 @@ def _fsc_compute_shells(vol1, vol2):
     """
     nz, ny, nx = vol1.shape
 
-    F1 = np.fft.fftshift(np.fft.fftn(vol1.astype(np.float64)))
-    F2 = np.fft.fftshift(np.fft.fftn(vol2.astype(np.float64)))
+    # float32 yields complex64 FFTs (8 bytes/voxel vs 16 for float64/complex128).
+    F1 = np.fft.fftshift(np.fft.fftn(vol1.astype(np.float32)))
+    F2 = np.fft.fftshift(np.fft.fftn(vol2.astype(np.float32)))
 
-    # Radial distance from centre in pixel units (integer shells)
+    # Radial distance from centre using broadcasting — avoids three full-size meshgrids.
     def _centred_freq(n):
         return np.fft.fftshift(np.fft.fftfreq(n)) * n
 
-    KZ, KY, KX = np.meshgrid(_centred_freq(nz), _centred_freq(ny), _centred_freq(nx), indexing='ij')
-    r_flat = np.sqrt(KZ**2 + KY**2 + KX**2).ravel()
+    kz = _centred_freq(nz)
+    ky = _centred_freq(ny)
+    kx = _centred_freq(nx)
+    r_flat = np.sqrt(
+        kz[:, None, None]**2 + ky[None, :, None]**2 + kx[None, None, :]**2
+    ).ravel()
 
     max_r = min(nz, ny, nx) // 2
     shells = np.round(r_flat).astype(np.int32)
+    del r_flat
     valid = shells <= max_r
     shells = shells[valid]
 
     cross = (F1 * np.conj(F2)).real.ravel()[valid]
     p1    = (np.abs(F1)**2).ravel()[valid]
+    del F1
     p2    = (np.abs(F2)**2).ravel()[valid]
+    del F2
 
     n_vox  = np.bincount(shells, minlength=max_r + 1)
     num    = np.bincount(shells, weights=cross, minlength=max_r + 1)
@@ -1419,6 +1434,28 @@ def _fsc_crossing(fsc, threshold, freqs):
     return 1.0 / crossing_freq if crossing_freq > 1e-9 else None
 
 
+def _fsc_recon_half(projs, angles, center, center_offset, algorithm):
+    """Reconstruct one FSC half-dataset using the same dispatch as tomoData.reconstruct."""
+    if algorithm.endswith('CUDA'):
+        if torch is None:
+            raise ValueError("GPU algorithm requested but CUDA is not available.")
+        options = {
+            'proj_type': 'cuda',
+            'method': algorithm,
+            'num_iter': 400,
+            'extra_options': {}
+        }
+        return tomopy.recon(projs, angles, center=center,
+                            algorithm=tomopy.astra, options=options, ncore=1)
+    elif algorithm == 'svmbir':
+        if svmbir is None:
+            raise ImportError("svmbir is not installed.")
+        return svmbir.recon(projs, angles, center_offset=center_offset, verbose=1)
+    else:
+        return tomopy.recon(projs, angles, center=center,
+                            algorithm=algorithm, sinogram_order=False)
+
+
 def fourier_shell_correlation(tomo, algorithm='gridrec', plot=True,
                                smooth_sigma=0.0, apply_circ_mask=True):
     """
@@ -1446,8 +1483,9 @@ def fourier_shell_correlation(tomo, algorithm='gridrec', plot=True,
     ----------
     tomo : tomoData
     algorithm : str
-        Reconstruction algorithm passed to tomopy.recon for the two
-        half-datasets.  'gridrec' is fast; 'art' gives better quality.
+        Reconstruction algorithm.  Supports the same values as
+        tomoData.reconstruct(): CPU algorithms ('gridrec', 'sirt', 'art', …),
+        GPU ASTRA algorithms ('SIRT_CUDA', 'FBP_CUDA', …), and 'svmbir'.
     plot : bool
     smooth_sigma : float
         Standard deviation (in shells) of a Gaussian used to smooth the FSC
@@ -1464,10 +1502,11 @@ def fourier_shell_correlation(tomo, algorithm='gridrec', plot=True,
     freqs : ndarray (n_shells,)
         Spatial frequency in cycles/pixel for each shell.
     """
-    projs  = tomo.finalProjections
-    angles = tomo.ang
-    center = tomo.rotation_center
-    n      = tomo.num_angles
+    projs         = tomo.finalProjections
+    angles        = tomo.ang
+    center        = tomo.rotation_center
+    center_offset = getattr(tomo, 'center_offset', 0.0)
+    n             = tomo.num_angles
 
     even_idx = np.arange(0, n, 2)
     odd_idx  = np.arange(1, n, 2)
@@ -1477,11 +1516,9 @@ def fourier_shell_correlation(tomo, algorithm='gridrec', plot=True,
     print(f"  Half 2 (odd  angles): {len(odd_idx)}  projections")
 
     print("  Reconstructing half 1 …")
-    r1 = tomopy.recon(projs[even_idx], angles[even_idx],
-                      center=center, algorithm=algorithm, sinogram_order=False)
+    r1 = _fsc_recon_half(projs[even_idx], angles[even_idx], center, center_offset, algorithm)
     print("  Reconstructing half 2 …")
-    r2 = tomopy.recon(projs[odd_idx],  angles[odd_idx],
-                      center=center, algorithm=algorithm, sinogram_order=False)
+    r2 = _fsc_recon_half(projs[odd_idx],  angles[odd_idx],  center, center_offset, algorithm)
 
     if apply_circ_mask:
         r1 = tomopy.circ_mask(r1, axis=0, ratio=0.99)
@@ -1507,10 +1544,10 @@ def fourier_shell_correlation(tomo, algorithm='gridrec', plot=True,
     }
 
     # ── Console report ────────────────────────────────────────────────────────
-    nz, ny, nx = r1.shape
+    half_shape = r1.shape  # capture before r1/r2 may be freed
     nyquist_px = 2.0  # Nyquist = 2 pixels by definition
     print("\n─── Fourier Shell Correlation ────────────────────────────────")
-    print(f"  Volume shape (half-map): {r1.shape}  |  Nyquist limit: {nyquist_px:.1f} px")
+    print(f"  Volume shape (half-map): {half_shape}  |  Nyquist limit: {nyquist_px:.1f} px")
     print(f"  {'Threshold':<20} {'Freq (cyc/px)':>15} {'Resolution (px)':>16}")
     print(f"  {'─'*53}")
     for name, res in resolutions.items():
@@ -1523,6 +1560,8 @@ def fourier_shell_correlation(tomo, algorithm='gridrec', plot=True,
 
     if plot:
         _fsc_plot(fsc, fsc_smooth, freqs, three_sigma, half_bit, resolutions, r1, r2)
+
+    del r1, r2  # free the two half-reconstruction volumes
 
     return fsc, resolutions, freqs
 

@@ -1,779 +1,0 @@
-Apply shifts to final projections:   0%|          | 0/279 [00:00<?, ?it/s]Apply shifts to final projections:   0%|          | 0/279 [00:00<?, ?it/s]
-Traceback (most recent call last):
-  File "cupy_backends/cuda/_softlink.pyx", line 25, in cupy_backends.cuda._softlink.SoftLink.__init__
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/ctypes/__init__.py", line 379, in __init__
-    self._handle = _dlopen(self._name, mode)
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^
-OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 333, in main
-    tb.make_updates_shift()
-  File "/home/ljh79/TomoMono/tomoDataClass.py", line 214, in make_updates_shift
-    self.finalProjections[m] = subpixel_shift(self.finalProjections[m], self.tracked_shifts[m, 0], self.tracked_shifts[m, 1])
-                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/helperFunctions.py", line 73, in subpixel_shift
-    fft_image = xp.fft.fft2(arr)
-                ^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 736, in fft2
-    return func(a, s, axes, norm, cufft.CUFFT_FORWARD)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 591, in _fftn
-    a = _convert_dtype(a, value_type)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 35, in _convert_dtype
-    a = a.astype(out_dtype)
-        ^^^^^^^^^^^^^^^^^^^
-  File "cupy/_core/core.pyx", line 618, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/core.pyx", line 686, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/_kernel.pyx", line 1374, in cupy._core._kernel.ufunc.__call__
-  File "cupy/_core/_kernel.pyx", line 1401, in cupy._core._kernel.ufunc._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 1082, in cupy._core._kernel._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 94, in cupy._core._kernel._get_simple_elementwise_kernel
-  File "cupy/_core/_kernel.pyx", line 82, in cupy._core._kernel._get_simple_elementwise_kernel_from_code
-  File "cupy/_core/core.pyx", line 2375, in cupy._core.core.compile_with_cache
-  File "cupy/_core/core.pyx", line 2320, in cupy._core.core.assemble_cupy_compiler_options
-  File "cupy_backends/cuda/libs/nvrtc.pyx", line 57, in cupy_backends.cuda.libs.nvrtc.getVersion
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 72, in cupy_backends.cuda.libs.nvrtc.initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 75, in cupy_backends.cuda.libs.nvrtc._initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 153, in cupy_backends.cuda.libs.nvrtc._get_softlink
-  File "cupy_backends/cuda/_softlink.pyx", line 32, in cupy_backends.cuda._softlink.SoftLink.__init__
-RuntimeError: CuPy failed to load libnvrtc.so.11.2: OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-Iteration 1/10:   0%|          | 0/278 [00:00<?, ?it/s]Iteration 1/10:   0%|          | 1/278 [00:00<00:32,  8.43it/s]Iteration 1/10:   5%|▌         | 15/278 [00:00<00:03, 78.23it/s]Iteration 1/10:  12%|█▏        | 32/278 [00:00<00:02, 117.61it/s]Iteration 1/10:  18%|█▊        | 49/278 [00:00<00:01, 137.15it/s]Iteration 1/10:  24%|██▎       | 66/278 [00:00<00:01, 148.21it/s]Iteration 1/10:  30%|██▉       | 83/278 [00:00<00:01, 155.23it/s]Iteration 1/10:  36%|███▌      | 100/278 [00:00<00:01, 159.59it/s]Iteration 1/10:  42%|████▏     | 117/278 [00:00<00:00, 161.96it/s]Iteration 1/10:  48%|████▊     | 134/278 [00:00<00:00, 160.70it/s]Iteration 1/10:  54%|█████▍    | 151/278 [00:01<00:00, 163.05it/s]Iteration 1/10:  60%|██████    | 168/278 [00:01<00:00, 163.63it/s]Iteration 1/10:  67%|██████▋   | 185/278 [00:01<00:00, 165.22it/s]Iteration 1/10:  73%|███████▎  | 202/278 [00:01<00:00, 166.39it/s]Iteration 1/10:  79%|███████▉  | 219/278 [00:01<00:00, 167.00it/s]Iteration 1/10:  85%|████████▍ | 236/278 [00:01<00:00, 167.67it/s]Iteration 1/10:  91%|█████████ | 253/278 [00:01<00:00, 167.28it/s]Iteration 1/10:  97%|█████████▋| 270/278 [00:01<00:00, 167.28it/s]Iteration 1/10: 100%|██████████| 278/278 [00:01<00:00, 154.87it/s]
-Traceback (most recent call last):
-  File "cupy_backends/cuda/_softlink.pyx", line 25, in cupy_backends.cuda._softlink.SoftLink.__init__
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/ctypes/__init__.py", line 379, in __init__
-    self._handle = _dlopen(self._name, mode)
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^
-OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 366, in main
-    rcs = run_pipeline(
-          ^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 214, in run_pipeline
-    t.cross_correlate_align(
-  File "/home/ljh79/TomoMono/tomoDataClass.py", line 287, in cross_correlate_align
-    return cross_correlate_align(self, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/alignment_methods.py", line 145, in cross_correlate_align
-    tomo.workingProjections[i] = subpixel_shift(snapshot[i], abs_shifts[i, 0], abs_shifts[i, 1])
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/helperFunctions.py", line 73, in subpixel_shift
-    fft_image = xp.fft.fft2(arr)
-                ^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 736, in fft2
-    return func(a, s, axes, norm, cufft.CUFFT_FORWARD)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 591, in _fftn
-    a = _convert_dtype(a, value_type)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 35, in _convert_dtype
-    a = a.astype(out_dtype)
-        ^^^^^^^^^^^^^^^^^^^
-  File "cupy/_core/core.pyx", line 618, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/core.pyx", line 686, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/_kernel.pyx", line 1374, in cupy._core._kernel.ufunc.__call__
-  File "cupy/_core/_kernel.pyx", line 1401, in cupy._core._kernel.ufunc._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 1082, in cupy._core._kernel._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 94, in cupy._core._kernel._get_simple_elementwise_kernel
-  File "cupy/_core/_kernel.pyx", line 82, in cupy._core._kernel._get_simple_elementwise_kernel_from_code
-  File "cupy/_core/core.pyx", line 2375, in cupy._core.core.compile_with_cache
-  File "cupy/_core/core.pyx", line 2320, in cupy._core.core.assemble_cupy_compiler_options
-  File "cupy_backends/cuda/libs/nvrtc.pyx", line 57, in cupy_backends.cuda.libs.nvrtc.getVersion
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 72, in cupy_backends.cuda.libs.nvrtc.initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 75, in cupy_backends.cuda.libs.nvrtc._initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 153, in cupy_backends.cuda.libs.nvrtc._get_softlink
-  File "cupy_backends/cuda/_softlink.pyx", line 32, in cupy_backends.cuda._softlink.SoftLink.__init__
-RuntimeError: CuPy failed to load libnvrtc.so.11.2: OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-Iteration 1/10:   0%|          | 0/278 [00:00<?, ?it/s]Iteration 1/10:   1%|▏         | 4/278 [00:00<00:07, 35.32it/s]Iteration 1/10:   3%|▎         | 8/278 [00:00<00:07, 35.99it/s]Iteration 1/10:   4%|▍         | 12/278 [00:00<00:07, 35.49it/s]Iteration 1/10:   6%|▌         | 16/278 [00:00<00:07, 36.12it/s]Iteration 1/10:   8%|▊         | 21/278 [00:00<00:06, 38.44it/s]Iteration 1/10:   9%|▉         | 25/278 [00:00<00:06, 37.52it/s]Iteration 1/10:  10%|█         | 29/278 [00:00<00:06, 37.50it/s]Iteration 1/10:  12%|█▏        | 33/278 [00:00<00:06, 36.28it/s]Iteration 1/10:  17%|█▋        | 48/278 [00:01<00:03, 68.05it/s]Iteration 1/10:  23%|██▎       | 65/278 [00:01<00:02, 96.06it/s]Iteration 1/10:  29%|██▉       | 82/278 [00:01<00:01, 116.77it/s]Iteration 1/10:  36%|███▌      | 99/278 [00:01<00:01, 132.15it/s]Iteration 1/10:  41%|████▏     | 115/278 [00:01<00:01, 139.32it/s]Iteration 1/10:  47%|████▋     | 132/278 [00:01<00:00, 147.45it/s]Iteration 1/10:  54%|█████▎    | 149/278 [00:01<00:00, 153.60it/s]Iteration 1/10:  60%|█████▉    | 166/278 [00:01<00:00, 157.78it/s]Iteration 1/10:  66%|██████▌   | 183/278 [00:01<00:00, 161.24it/s]Iteration 1/10:  72%|███████▏  | 200/278 [00:01<00:00, 162.95it/s]Iteration 1/10:  78%|███████▊  | 217/278 [00:02<00:00, 163.86it/s]Iteration 1/10:  84%|████████▍ | 234/278 [00:02<00:00, 165.09it/s]Iteration 1/10:  90%|█████████ | 251/278 [00:02<00:00, 165.59it/s]Iteration 1/10:  96%|█████████▋| 268/278 [00:02<00:00, 166.76it/s]Iteration 1/10: 100%|██████████| 278/278 [00:02<00:00, 116.52it/s]
-Traceback (most recent call last):
-  File "cupy_backends/cuda/_softlink.pyx", line 25, in cupy_backends.cuda._softlink.SoftLink.__init__
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/ctypes/__init__.py", line 379, in __init__
-    self._handle = _dlopen(self._name, mode)
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^
-OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 366, in main
-    rcs = run_pipeline(
-          ^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 214, in run_pipeline
-    t.cross_correlate_align(
-  File "/home/ljh79/TomoMono/tomoDataClass.py", line 287, in cross_correlate_align
-    return cross_correlate_align(self, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/alignment_methods.py", line 145, in cross_correlate_align
-    tomo.workingProjections[i] = subpixel_shift(snapshot[i], abs_shifts[i, 0], abs_shifts[i, 1])
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/helperFunctions.py", line 73, in subpixel_shift
-    fft_image = xp.fft.fft2(arr)
-                ^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 736, in fft2
-    return func(a, s, axes, norm, cufft.CUFFT_FORWARD)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 591, in _fftn
-    a = _convert_dtype(a, value_type)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 35, in _convert_dtype
-    a = a.astype(out_dtype)
-        ^^^^^^^^^^^^^^^^^^^
-  File "cupy/_core/core.pyx", line 618, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/core.pyx", line 686, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/_kernel.pyx", line 1374, in cupy._core._kernel.ufunc.__call__
-  File "cupy/_core/_kernel.pyx", line 1401, in cupy._core._kernel.ufunc._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 1082, in cupy._core._kernel._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 94, in cupy._core._kernel._get_simple_elementwise_kernel
-  File "cupy/_core/_kernel.pyx", line 82, in cupy._core._kernel._get_simple_elementwise_kernel_from_code
-  File "cupy/_core/core.pyx", line 2375, in cupy._core.core.compile_with_cache
-  File "cupy/_core/core.pyx", line 2320, in cupy._core.core.assemble_cupy_compiler_options
-  File "cupy_backends/cuda/libs/nvrtc.pyx", line 57, in cupy_backends.cuda.libs.nvrtc.getVersion
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 72, in cupy_backends.cuda.libs.nvrtc.initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 75, in cupy_backends.cuda.libs.nvrtc._initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 153, in cupy_backends.cuda.libs.nvrtc._get_softlink
-  File "cupy_backends/cuda/_softlink.pyx", line 32, in cupy_backends.cuda._softlink.SoftLink.__init__
-RuntimeError: CuPy failed to load libnvrtc.so.11.2: OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-Iteration 1/10:   0%|          | 0/278 [00:00<?, ?it/s]Iteration 1/10:   4%|▍         | 12/278 [00:00<00:02, 113.92it/s]Iteration 1/10:  10%|█         | 29/278 [00:00<00:01, 145.97it/s]Iteration 1/10:  17%|█▋        | 46/278 [00:00<00:01, 156.25it/s]Iteration 1/10:  23%|██▎       | 63/278 [00:00<00:01, 161.23it/s]Iteration 1/10:  29%|██▉       | 80/278 [00:00<00:01, 164.17it/s]Iteration 1/10:  35%|███▍      | 97/278 [00:00<00:01, 165.88it/s]Iteration 1/10:  41%|████      | 114/278 [00:00<00:00, 166.92it/s]Iteration 1/10:  47%|████▋     | 131/278 [00:00<00:00, 167.67it/s]Iteration 1/10:  53%|█████▎    | 148/278 [00:00<00:00, 167.88it/s]Iteration 1/10:  59%|█████▉    | 165/278 [00:01<00:00, 166.54it/s]Iteration 1/10:  65%|██████▌   | 182/278 [00:01<00:00, 167.33it/s]Iteration 1/10:  72%|███████▏  | 199/278 [00:01<00:00, 166.23it/s]Iteration 1/10:  78%|███████▊  | 216/278 [00:01<00:00, 165.29it/s]Iteration 1/10:  84%|████████▍ | 233/278 [00:01<00:00, 166.45it/s]Iteration 1/10:  90%|████████▉ | 250/278 [00:01<00:00, 167.19it/s]Iteration 1/10:  96%|█████████▌| 267/278 [00:01<00:00, 167.86it/s]Iteration 1/10: 100%|██████████| 278/278 [00:01<00:00, 164.63it/s]
-Traceback (most recent call last):
-  File "cupy_backends/cuda/_softlink.pyx", line 25, in cupy_backends.cuda._softlink.SoftLink.__init__
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/ctypes/__init__.py", line 379, in __init__
-    self._handle = _dlopen(self._name, mode)
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^
-OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 366, in main
-    rcs = run_pipeline(
-          ^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 214, in run_pipeline
-    t.cross_correlate_align(
-  File "/home/ljh79/TomoMono/tomoDataClass.py", line 287, in cross_correlate_align
-    return cross_correlate_align(self, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/alignment_methods.py", line 145, in cross_correlate_align
-    tomo.workingProjections[i] = subpixel_shift(snapshot[i], abs_shifts[i, 0], abs_shifts[i, 1])
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/helperFunctions.py", line 73, in subpixel_shift
-    fft_image = xp.fft.fft2(arr)
-                ^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 736, in fft2
-    return func(a, s, axes, norm, cufft.CUFFT_FORWARD)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 591, in _fftn
-    a = _convert_dtype(a, value_type)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 35, in _convert_dtype
-    a = a.astype(out_dtype)
-        ^^^^^^^^^^^^^^^^^^^
-  File "cupy/_core/core.pyx", line 618, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/core.pyx", line 686, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/_kernel.pyx", line 1374, in cupy._core._kernel.ufunc.__call__
-  File "cupy/_core/_kernel.pyx", line 1401, in cupy._core._kernel.ufunc._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 1082, in cupy._core._kernel._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 94, in cupy._core._kernel._get_simple_elementwise_kernel
-  File "cupy/_core/_kernel.pyx", line 82, in cupy._core._kernel._get_simple_elementwise_kernel_from_code
-  File "cupy/_core/core.pyx", line 2375, in cupy._core.core.compile_with_cache
-  File "cupy/_core/core.pyx", line 2320, in cupy._core.core.assemble_cupy_compiler_options
-  File "cupy_backends/cuda/libs/nvrtc.pyx", line 57, in cupy_backends.cuda.libs.nvrtc.getVersion
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 72, in cupy_backends.cuda.libs.nvrtc.initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 75, in cupy_backends.cuda.libs.nvrtc._initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 153, in cupy_backends.cuda.libs.nvrtc._get_softlink
-  File "cupy_backends/cuda/_softlink.pyx", line 32, in cupy_backends.cuda._softlink.SoftLink.__init__
-RuntimeError: CuPy failed to load libnvrtc.so.11.2: OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-Iteration 1/10:   0%|          | 0/278 [00:00<?, ?it/s]Iteration 1/10:   1%|▏         | 4/278 [00:00<00:07, 35.21it/s]Iteration 1/10:   8%|▊         | 21/278 [00:00<00:02, 109.73it/s]Iteration 1/10:  14%|█▎        | 38/278 [00:00<00:01, 135.89it/s]Iteration 1/10:  20%|█▉        | 55/278 [00:00<00:01, 148.76it/s]Iteration 1/10:  26%|██▌       | 72/278 [00:00<00:01, 156.12it/s]Iteration 1/10:  32%|███▏      | 89/278 [00:00<00:01, 160.58it/s]Iteration 1/10:  38%|███▊      | 106/278 [00:00<00:01, 163.34it/s]Iteration 1/10:  44%|████▍     | 123/278 [00:00<00:00, 164.90it/s]Iteration 1/10:  50%|█████     | 140/278 [00:00<00:00, 166.19it/s]Iteration 1/10:  56%|█████▋    | 157/278 [00:01<00:00, 164.96it/s]Iteration 1/10:  63%|██████▎   | 174/278 [00:01<00:00, 166.21it/s]Iteration 1/10:  69%|██████▊   | 191/278 [00:01<00:00, 167.07it/s]Iteration 1/10:  75%|███████▍  | 208/278 [00:01<00:00, 167.74it/s]Iteration 1/10:  81%|████████  | 225/278 [00:01<00:00, 168.15it/s]Iteration 1/10:  87%|████████▋ | 242/278 [00:01<00:00, 168.45it/s]Iteration 1/10:  93%|█████████▎| 259/278 [00:01<00:00, 168.73it/s]Iteration 1/10:  99%|█████████▉| 276/278 [00:01<00:00, 169.01it/s]Iteration 1/10: 100%|██████████| 278/278 [00:01<00:00, 159.90it/s]
-Traceback (most recent call last):
-  File "cupy_backends/cuda/_softlink.pyx", line 25, in cupy_backends.cuda._softlink.SoftLink.__init__
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/ctypes/__init__.py", line 379, in __init__
-    self._handle = _dlopen(self._name, mode)
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^
-OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 366, in main
-    rcs = run_pipeline(
-          ^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 214, in run_pipeline
-    t.cross_correlate_align(
-  File "/home/ljh79/TomoMono/tomoDataClass.py", line 287, in cross_correlate_align
-    return cross_correlate_align(self, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/alignment_methods.py", line 145, in cross_correlate_align
-    tomo.workingProjections[i] = subpixel_shift(snapshot[i], abs_shifts[i, 0], abs_shifts[i, 1])
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/helperFunctions.py", line 73, in subpixel_shift
-    fft_image = xp.fft.fft2(arr)
-                ^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 736, in fft2
-    return func(a, s, axes, norm, cufft.CUFFT_FORWARD)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 591, in _fftn
-    a = _convert_dtype(a, value_type)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 35, in _convert_dtype
-    a = a.astype(out_dtype)
-        ^^^^^^^^^^^^^^^^^^^
-  File "cupy/_core/core.pyx", line 618, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/core.pyx", line 686, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/_kernel.pyx", line 1374, in cupy._core._kernel.ufunc.__call__
-  File "cupy/_core/_kernel.pyx", line 1401, in cupy._core._kernel.ufunc._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 1082, in cupy._core._kernel._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 94, in cupy._core._kernel._get_simple_elementwise_kernel
-  File "cupy/_core/_kernel.pyx", line 82, in cupy._core._kernel._get_simple_elementwise_kernel_from_code
-  File "cupy/_core/core.pyx", line 2375, in cupy._core.core.compile_with_cache
-  File "cupy/_core/core.pyx", line 2320, in cupy._core.core.assemble_cupy_compiler_options
-  File "cupy_backends/cuda/libs/nvrtc.pyx", line 57, in cupy_backends.cuda.libs.nvrtc.getVersion
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 72, in cupy_backends.cuda.libs.nvrtc.initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 75, in cupy_backends.cuda.libs.nvrtc._initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 153, in cupy_backends.cuda.libs.nvrtc._get_softlink
-  File "cupy_backends/cuda/_softlink.pyx", line 32, in cupy_backends.cuda._softlink.SoftLink.__init__
-RuntimeError: CuPy failed to load libnvrtc.so.11.2: OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-Iteration 1/10:   0%|          | 0/278 [00:00<?, ?it/s]Iteration 1/10:   1%|          | 3/278 [00:00<00:09, 29.06it/s]Iteration 1/10:   7%|▋         | 20/278 [00:00<00:02, 110.25it/s]Iteration 1/10:  13%|█▎        | 37/278 [00:00<00:01, 135.50it/s]Iteration 1/10:  19%|█▉        | 54/278 [00:00<00:01, 146.43it/s]Iteration 1/10:  26%|██▌       | 71/278 [00:00<00:01, 153.64it/s]Iteration 1/10:  32%|███▏      | 88/278 [00:00<00:01, 158.89it/s]Iteration 1/10:  38%|███▊      | 105/278 [00:00<00:01, 161.74it/s]Iteration 1/10:  44%|████▍     | 122/278 [00:00<00:00, 164.18it/s]Iteration 1/10:  50%|█████     | 139/278 [00:00<00:00, 164.86it/s]Iteration 1/10:  56%|█████▌    | 156/278 [00:01<00:00, 162.99it/s]Iteration 1/10:  62%|██████▏   | 173/278 [00:01<00:00, 163.98it/s]Iteration 1/10:  68%|██████▊   | 190/278 [00:01<00:00, 165.49it/s]Iteration 1/10:  74%|███████▍  | 207/278 [00:01<00:00, 166.57it/s]Iteration 1/10:  81%|████████  | 224/278 [00:01<00:00, 167.41it/s]Iteration 1/10:  87%|████████▋ | 241/278 [00:01<00:00, 168.00it/s]Iteration 1/10:  93%|█████████▎| 258/278 [00:01<00:00, 168.42it/s]Iteration 1/10:  99%|█████████▉| 275/278 [00:01<00:00, 168.74it/s]Iteration 1/10: 100%|██████████| 278/278 [00:01<00:00, 159.09it/s]
-Traceback (most recent call last):
-  File "cupy_backends/cuda/_softlink.pyx", line 25, in cupy_backends.cuda._softlink.SoftLink.__init__
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/ctypes/__init__.py", line 379, in __init__
-    self._handle = _dlopen(self._name, mode)
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^
-OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 366, in main
-    rcs = run_pipeline(
-          ^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 214, in run_pipeline
-    t.cross_correlate_align(
-  File "/home/ljh79/TomoMono/tomoDataClass.py", line 287, in cross_correlate_align
-    return cross_correlate_align(self, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/alignment_methods.py", line 145, in cross_correlate_align
-    tomo.workingProjections[i] = subpixel_shift(snapshot[i], abs_shifts[i, 0], abs_shifts[i, 1])
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/helperFunctions.py", line 73, in subpixel_shift
-    fft_image = xp.fft.fft2(arr)
-                ^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 736, in fft2
-    return func(a, s, axes, norm, cufft.CUFFT_FORWARD)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 591, in _fftn
-    a = _convert_dtype(a, value_type)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 35, in _convert_dtype
-    a = a.astype(out_dtype)
-        ^^^^^^^^^^^^^^^^^^^
-  File "cupy/_core/core.pyx", line 618, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/core.pyx", line 686, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/_kernel.pyx", line 1374, in cupy._core._kernel.ufunc.__call__
-  File "cupy/_core/_kernel.pyx", line 1401, in cupy._core._kernel.ufunc._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 1082, in cupy._core._kernel._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 94, in cupy._core._kernel._get_simple_elementwise_kernel
-  File "cupy/_core/_kernel.pyx", line 82, in cupy._core._kernel._get_simple_elementwise_kernel_from_code
-  File "cupy/_core/core.pyx", line 2375, in cupy._core.core.compile_with_cache
-  File "cupy/_core/core.pyx", line 2320, in cupy._core.core.assemble_cupy_compiler_options
-  File "cupy_backends/cuda/libs/nvrtc.pyx", line 57, in cupy_backends.cuda.libs.nvrtc.getVersion
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 72, in cupy_backends.cuda.libs.nvrtc.initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 75, in cupy_backends.cuda.libs.nvrtc._initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 153, in cupy_backends.cuda.libs.nvrtc._get_softlink
-  File "cupy_backends/cuda/_softlink.pyx", line 32, in cupy_backends.cuda._softlink.SoftLink.__init__
-RuntimeError: CuPy failed to load libnvrtc.so.11.2: OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-Iteration 1/10:   0%|          | 0/278 [00:00<?, ?it/s]Iteration 1/10:   1%|▏         | 4/278 [00:00<00:08, 34.03it/s]Iteration 1/10:   3%|▎         | 8/278 [00:00<00:07, 35.00it/s]Iteration 1/10:   4%|▍         | 12/278 [00:00<00:07, 35.32it/s]Iteration 1/10:   6%|▌         | 16/278 [00:00<00:07, 35.84it/s]Iteration 1/10:  12%|█▏        | 33/278 [00:00<00:03, 80.58it/s]Iteration 1/10:  18%|█▊        | 50/278 [00:00<00:02, 109.12it/s]Iteration 1/10:  24%|██▍       | 68/278 [00:00<00:01, 129.12it/s]Iteration 1/10:  31%|███       | 86/278 [00:00<00:01, 142.22it/s]Iteration 1/10:  37%|███▋      | 103/278 [00:00<00:01, 149.90it/s]Iteration 1/10:  43%|████▎     | 120/278 [00:01<00:01, 154.38it/s]Iteration 1/10:  49%|████▉     | 137/278 [00:01<00:00, 159.01it/s]Iteration 1/10:  55%|█████▌    | 154/278 [00:01<00:00, 162.05it/s]Iteration 1/10:  62%|██████▏   | 171/278 [00:01<00:00, 164.42it/s]Iteration 1/10:  68%|██████▊   | 189/278 [00:01<00:00, 166.16it/s]Iteration 1/10:  74%|███████▍  | 206/278 [00:01<00:00, 166.81it/s]Iteration 1/10:  80%|████████  | 223/278 [00:01<00:00, 167.72it/s]Iteration 1/10:  87%|████████▋ | 241/278 [00:01<00:00, 168.46it/s]Iteration 1/10:  93%|█████████▎| 258/278 [00:01<00:00, 168.88it/s]Iteration 1/10:  99%|█████████▉| 276/278 [00:01<00:00, 169.26it/s]Iteration 1/10: 100%|██████████| 278/278 [00:02<00:00, 138.98it/s]
-Traceback (most recent call last):
-  File "cupy_backends/cuda/_softlink.pyx", line 25, in cupy_backends.cuda._softlink.SoftLink.__init__
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/ctypes/__init__.py", line 379, in __init__
-    self._handle = _dlopen(self._name, mode)
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^
-OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 366, in main
-    rcs = run_pipeline(
-          ^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 214, in run_pipeline
-    t.cross_correlate_align(
-  File "/home/ljh79/TomoMono/tomoDataClass.py", line 287, in cross_correlate_align
-    return cross_correlate_align(self, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/alignment_methods.py", line 145, in cross_correlate_align
-    tomo.workingProjections[i] = subpixel_shift(snapshot[i], abs_shifts[i, 0], abs_shifts[i, 1])
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/helperFunctions.py", line 73, in subpixel_shift
-    fft_image = xp.fft.fft2(arr)
-                ^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 736, in fft2
-    return func(a, s, axes, norm, cufft.CUFFT_FORWARD)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 591, in _fftn
-    a = _convert_dtype(a, value_type)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 35, in _convert_dtype
-    a = a.astype(out_dtype)
-        ^^^^^^^^^^^^^^^^^^^
-  File "cupy/_core/core.pyx", line 618, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/core.pyx", line 686, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/_kernel.pyx", line 1374, in cupy._core._kernel.ufunc.__call__
-  File "cupy/_core/_kernel.pyx", line 1401, in cupy._core._kernel.ufunc._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 1082, in cupy._core._kernel._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 94, in cupy._core._kernel._get_simple_elementwise_kernel
-  File "cupy/_core/_kernel.pyx", line 82, in cupy._core._kernel._get_simple_elementwise_kernel_from_code
-  File "cupy/_core/core.pyx", line 2375, in cupy._core.core.compile_with_cache
-  File "cupy/_core/core.pyx", line 2320, in cupy._core.core.assemble_cupy_compiler_options
-  File "cupy_backends/cuda/libs/nvrtc.pyx", line 57, in cupy_backends.cuda.libs.nvrtc.getVersion
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 72, in cupy_backends.cuda.libs.nvrtc.initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 75, in cupy_backends.cuda.libs.nvrtc._initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 153, in cupy_backends.cuda.libs.nvrtc._get_softlink
-  File "cupy_backends/cuda/_softlink.pyx", line 32, in cupy_backends.cuda._softlink.SoftLink.__init__
-RuntimeError: CuPy failed to load libnvrtc.so.11.2: OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-Iteration 1/10:   0%|          | 0/278 [00:00<?, ?it/s]Iteration 1/10:   6%|▌         | 17/278 [00:00<00:01, 160.28it/s]Iteration 1/10:  13%|█▎        | 35/278 [00:00<00:01, 166.02it/s]Iteration 1/10:  19%|█▊        | 52/278 [00:00<00:01, 167.65it/s]Iteration 1/10:  25%|██▍       | 69/278 [00:00<00:01, 167.70it/s]Iteration 1/10:  31%|███▏      | 87/278 [00:00<00:01, 168.50it/s]Iteration 1/10:  37%|███▋      | 104/278 [00:00<00:01, 168.45it/s]Iteration 1/10:  44%|████▎     | 121/278 [00:00<00:00, 168.93it/s]Iteration 1/10:  50%|████▉     | 138/278 [00:00<00:00, 169.24it/s]Iteration 1/10:  56%|█████▌    | 155/278 [00:00<00:00, 169.02it/s]Iteration 1/10:  62%|██████▏   | 172/278 [00:01<00:00, 167.08it/s]Iteration 1/10:  68%|██████▊   | 189/278 [00:01<00:00, 167.86it/s]Iteration 1/10:  74%|███████▍  | 206/278 [00:01<00:00, 167.43it/s]Iteration 1/10:  80%|████████  | 223/278 [00:01<00:00, 167.17it/s]Iteration 1/10:  86%|████████▋ | 240/278 [00:01<00:00, 167.38it/s]Iteration 1/10:  92%|█████████▏| 257/278 [00:01<00:00, 167.92it/s]Iteration 1/10:  99%|█████████▊| 274/278 [00:01<00:00, 168.18it/s]Iteration 1/10: 100%|██████████| 278/278 [00:01<00:00, 167.81it/s]
-Traceback (most recent call last):
-  File "cupy_backends/cuda/_softlink.pyx", line 25, in cupy_backends.cuda._softlink.SoftLink.__init__
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/ctypes/__init__.py", line 379, in __init__
-    self._handle = _dlopen(self._name, mode)
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^
-OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 366, in main
-    rcs = run_pipeline(
-          ^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 214, in run_pipeline
-    t.cross_correlate_align(
-  File "/home/ljh79/TomoMono/tomoDataClass.py", line 287, in cross_correlate_align
-    return cross_correlate_align(self, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/alignment_methods.py", line 145, in cross_correlate_align
-    tomo.workingProjections[i] = subpixel_shift(snapshot[i], abs_shifts[i, 0], abs_shifts[i, 1])
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/helperFunctions.py", line 73, in subpixel_shift
-    fft_image = xp.fft.fft2(arr)
-                ^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 736, in fft2
-    return func(a, s, axes, norm, cufft.CUFFT_FORWARD)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 591, in _fftn
-    a = _convert_dtype(a, value_type)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 35, in _convert_dtype
-    a = a.astype(out_dtype)
-        ^^^^^^^^^^^^^^^^^^^
-  File "cupy/_core/core.pyx", line 618, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/core.pyx", line 686, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/_kernel.pyx", line 1374, in cupy._core._kernel.ufunc.__call__
-  File "cupy/_core/_kernel.pyx", line 1401, in cupy._core._kernel.ufunc._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 1082, in cupy._core._kernel._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 94, in cupy._core._kernel._get_simple_elementwise_kernel
-  File "cupy/_core/_kernel.pyx", line 82, in cupy._core._kernel._get_simple_elementwise_kernel_from_code
-  File "cupy/_core/core.pyx", line 2375, in cupy._core.core.compile_with_cache
-  File "cupy/_core/core.pyx", line 2320, in cupy._core.core.assemble_cupy_compiler_options
-  File "cupy_backends/cuda/libs/nvrtc.pyx", line 57, in cupy_backends.cuda.libs.nvrtc.getVersion
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 72, in cupy_backends.cuda.libs.nvrtc.initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 75, in cupy_backends.cuda.libs.nvrtc._initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 153, in cupy_backends.cuda.libs.nvrtc._get_softlink
-  File "cupy_backends/cuda/_softlink.pyx", line 32, in cupy_backends.cuda._softlink.SoftLink.__init__
-RuntimeError: CuPy failed to load libnvrtc.so.11.2: OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-Iteration 1/10:   0%|          | 0/278 [00:00<?, ?it/s]Iteration 1/10:   6%|▌         | 17/278 [00:00<00:01, 161.92it/s]Iteration 1/10:  12%|█▏        | 34/278 [00:00<00:01, 166.01it/s]Iteration 1/10:  18%|█▊        | 51/278 [00:00<00:01, 167.52it/s]Iteration 1/10:  24%|██▍       | 68/278 [00:00<00:01, 168.41it/s]Iteration 1/10:  31%|███       | 86/278 [00:00<00:01, 169.06it/s]Iteration 1/10:  37%|███▋      | 103/278 [00:00<00:01, 169.32it/s]Iteration 1/10:  44%|████▎     | 121/278 [00:00<00:00, 169.61it/s]Iteration 1/10:  50%|████▉     | 138/278 [00:00<00:00, 169.68it/s]Iteration 1/10:  56%|█████▌    | 155/278 [00:00<00:00, 169.51it/s]Iteration 1/10:  62%|██████▏   | 172/278 [00:01<00:00, 167.44it/s]Iteration 1/10:  68%|██████▊   | 189/278 [00:01<00:00, 167.92it/s]Iteration 1/10:  74%|███████▍  | 206/278 [00:01<00:00, 168.52it/s]Iteration 1/10:  80%|████████  | 223/278 [00:01<00:00, 168.90it/s]Iteration 1/10:  87%|████████▋ | 241/278 [00:01<00:00, 169.29it/s]Iteration 1/10:  93%|█████████▎| 258/278 [00:01<00:00, 169.49it/s]Iteration 1/10:  99%|█████████▉| 276/278 [00:01<00:00, 169.68it/s]Iteration 1/10: 100%|██████████| 278/278 [00:01<00:00, 168.79it/s]
-Traceback (most recent call last):
-  File "cupy_backends/cuda/_softlink.pyx", line 25, in cupy_backends.cuda._softlink.SoftLink.__init__
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/ctypes/__init__.py", line 379, in __init__
-    self._handle = _dlopen(self._name, mode)
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^
-OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 366, in main
-    rcs = run_pipeline(
-          ^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 214, in run_pipeline
-    t.cross_correlate_align(
-  File "/home/ljh79/TomoMono/tomoDataClass.py", line 287, in cross_correlate_align
-    return cross_correlate_align(self, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/alignment_methods.py", line 145, in cross_correlate_align
-    tomo.workingProjections[i] = subpixel_shift(snapshot[i], abs_shifts[i, 0], abs_shifts[i, 1])
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/helperFunctions.py", line 73, in subpixel_shift
-    fft_image = xp.fft.fft2(arr)
-                ^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 736, in fft2
-    return func(a, s, axes, norm, cufft.CUFFT_FORWARD)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 591, in _fftn
-    a = _convert_dtype(a, value_type)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 35, in _convert_dtype
-    a = a.astype(out_dtype)
-        ^^^^^^^^^^^^^^^^^^^
-  File "cupy/_core/core.pyx", line 618, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/core.pyx", line 686, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/_kernel.pyx", line 1374, in cupy._core._kernel.ufunc.__call__
-  File "cupy/_core/_kernel.pyx", line 1401, in cupy._core._kernel.ufunc._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 1082, in cupy._core._kernel._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 94, in cupy._core._kernel._get_simple_elementwise_kernel
-  File "cupy/_core/_kernel.pyx", line 82, in cupy._core._kernel._get_simple_elementwise_kernel_from_code
-  File "cupy/_core/core.pyx", line 2375, in cupy._core.core.compile_with_cache
-  File "cupy/_core/core.pyx", line 2320, in cupy._core.core.assemble_cupy_compiler_options
-  File "cupy_backends/cuda/libs/nvrtc.pyx", line 57, in cupy_backends.cuda.libs.nvrtc.getVersion
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 72, in cupy_backends.cuda.libs.nvrtc.initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 75, in cupy_backends.cuda.libs.nvrtc._initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 153, in cupy_backends.cuda.libs.nvrtc._get_softlink
-  File "cupy_backends/cuda/_softlink.pyx", line 32, in cupy_backends.cuda._softlink.SoftLink.__init__
-RuntimeError: CuPy failed to load libnvrtc.so.11.2: OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-Iteration 1/10:   0%|          | 0/278 [00:00<?, ?it/s]Iteration 1/10:   6%|▌         | 17/278 [00:00<00:01, 161.76it/s]Iteration 1/10:  12%|█▏        | 34/278 [00:00<00:01, 166.14it/s]Iteration 1/10:  19%|█▊        | 52/278 [00:00<00:01, 167.97it/s]Iteration 1/10:  25%|██▍       | 69/278 [00:00<00:01, 168.03it/s]Iteration 1/10:  31%|███       | 86/278 [00:00<00:01, 167.64it/s]Iteration 1/10:  37%|███▋      | 103/278 [00:00<00:01, 167.78it/s]Iteration 1/10:  43%|████▎     | 120/278 [00:00<00:00, 167.93it/s]Iteration 1/10:  50%|████▉     | 138/278 [00:00<00:00, 168.61it/s]Iteration 1/10:  56%|█████▌    | 155/278 [00:00<00:00, 168.98it/s]Iteration 1/10:  62%|██████▏   | 172/278 [00:01<00:00, 167.15it/s]Iteration 1/10:  68%|██████▊   | 189/278 [00:01<00:00, 167.97it/s]Iteration 1/10:  74%|███████▍  | 206/278 [00:01<00:00, 168.54it/s]Iteration 1/10:  80%|████████  | 223/278 [00:01<00:00, 168.89it/s]Iteration 1/10:  87%|████████▋ | 241/278 [00:01<00:00, 169.27it/s]Iteration 1/10:  93%|█████████▎| 258/278 [00:01<00:00, 169.48it/s]Iteration 1/10:  99%|█████████▉| 276/278 [00:01<00:00, 169.70it/s]Iteration 1/10: 100%|██████████| 278/278 [00:01<00:00, 168.43it/s]
-Traceback (most recent call last):
-  File "cupy_backends/cuda/_softlink.pyx", line 25, in cupy_backends.cuda._softlink.SoftLink.__init__
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/ctypes/__init__.py", line 379, in __init__
-    self._handle = _dlopen(self._name, mode)
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^
-OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 366, in main
-    rcs = run_pipeline(
-          ^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 214, in run_pipeline
-    t.cross_correlate_align(
-  File "/home/ljh79/TomoMono/tomoDataClass.py", line 287, in cross_correlate_align
-    return cross_correlate_align(self, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/alignment_methods.py", line 145, in cross_correlate_align
-    tomo.workingProjections[i] = subpixel_shift(snapshot[i], abs_shifts[i, 0], abs_shifts[i, 1])
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/helperFunctions.py", line 73, in subpixel_shift
-    fft_image = xp.fft.fft2(arr)
-                ^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 736, in fft2
-    return func(a, s, axes, norm, cufft.CUFFT_FORWARD)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 591, in _fftn
-    a = _convert_dtype(a, value_type)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 35, in _convert_dtype
-    a = a.astype(out_dtype)
-        ^^^^^^^^^^^^^^^^^^^
-  File "cupy/_core/core.pyx", line 618, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/core.pyx", line 686, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/_kernel.pyx", line 1374, in cupy._core._kernel.ufunc.__call__
-  File "cupy/_core/_kernel.pyx", line 1401, in cupy._core._kernel.ufunc._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 1082, in cupy._core._kernel._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 94, in cupy._core._kernel._get_simple_elementwise_kernel
-  File "cupy/_core/_kernel.pyx", line 82, in cupy._core._kernel._get_simple_elementwise_kernel_from_code
-  File "cupy/_core/core.pyx", line 2375, in cupy._core.core.compile_with_cache
-  File "cupy/_core/core.pyx", line 2320, in cupy._core.core.assemble_cupy_compiler_options
-  File "cupy_backends/cuda/libs/nvrtc.pyx", line 57, in cupy_backends.cuda.libs.nvrtc.getVersion
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 72, in cupy_backends.cuda.libs.nvrtc.initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 75, in cupy_backends.cuda.libs.nvrtc._initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 153, in cupy_backends.cuda.libs.nvrtc._get_softlink
-  File "cupy_backends/cuda/_softlink.pyx", line 32, in cupy_backends.cuda._softlink.SoftLink.__init__
-RuntimeError: CuPy failed to load libnvrtc.so.11.2: OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-Iteration 1/10:   0%|          | 0/278 [00:00<?, ?it/s]Iteration 1/10:   6%|▌         | 17/278 [00:00<00:01, 165.28it/s]Iteration 1/10:  13%|█▎        | 35/278 [00:00<00:01, 168.32it/s]Iteration 1/10:  19%|█▊        | 52/278 [00:00<00:01, 168.43it/s]Iteration 1/10:  25%|██▍       | 69/278 [00:00<00:01, 168.85it/s]Iteration 1/10:  31%|███▏      | 87/278 [00:00<00:01, 169.36it/s]Iteration 1/10:  37%|███▋      | 104/278 [00:00<00:01, 169.38it/s]Iteration 1/10:  44%|████▎     | 121/278 [00:00<00:00, 169.15it/s]Iteration 1/10:  50%|████▉     | 138/278 [00:00<00:00, 169.38it/s]Iteration 1/10:  56%|█████▌    | 155/278 [00:00<00:00, 168.90it/s]Iteration 1/10:  62%|██████▏   | 172/278 [00:01<00:00, 167.64it/s]Iteration 1/10:  68%|██████▊   | 189/278 [00:01<00:00, 167.74it/s]Iteration 1/10:  74%|███████▍  | 206/278 [00:01<00:00, 167.98it/s]Iteration 1/10:  80%|████████  | 223/278 [00:01<00:00, 167.93it/s]Iteration 1/10:  86%|████████▋ | 240/278 [00:01<00:00, 168.54it/s]Iteration 1/10:  93%|█████████▎| 258/278 [00:01<00:00, 169.04it/s]Iteration 1/10:  99%|█████████▉| 276/278 [00:01<00:00, 169.41it/s]Iteration 1/10: 100%|██████████| 278/278 [00:01<00:00, 168.71it/s]
-Traceback (most recent call last):
-  File "cupy_backends/cuda/_softlink.pyx", line 25, in cupy_backends.cuda._softlink.SoftLink.__init__
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/ctypes/__init__.py", line 379, in __init__
-    self._handle = _dlopen(self._name, mode)
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^
-OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 366, in main
-    rcs = run_pipeline(
-          ^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 214, in run_pipeline
-    t.cross_correlate_align(
-  File "/home/ljh79/TomoMono/tomoDataClass.py", line 287, in cross_correlate_align
-    return cross_correlate_align(self, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/alignment_methods.py", line 145, in cross_correlate_align
-    tomo.workingProjections[i] = subpixel_shift(snapshot[i], abs_shifts[i, 0], abs_shifts[i, 1])
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/helperFunctions.py", line 73, in subpixel_shift
-    fft_image = xp.fft.fft2(arr)
-                ^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 736, in fft2
-    return func(a, s, axes, norm, cufft.CUFFT_FORWARD)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 591, in _fftn
-    a = _convert_dtype(a, value_type)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 35, in _convert_dtype
-    a = a.astype(out_dtype)
-        ^^^^^^^^^^^^^^^^^^^
-  File "cupy/_core/core.pyx", line 618, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/core.pyx", line 686, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/_kernel.pyx", line 1374, in cupy._core._kernel.ufunc.__call__
-  File "cupy/_core/_kernel.pyx", line 1401, in cupy._core._kernel.ufunc._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 1082, in cupy._core._kernel._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 94, in cupy._core._kernel._get_simple_elementwise_kernel
-  File "cupy/_core/_kernel.pyx", line 82, in cupy._core._kernel._get_simple_elementwise_kernel_from_code
-  File "cupy/_core/core.pyx", line 2375, in cupy._core.core.compile_with_cache
-  File "cupy/_core/core.pyx", line 2320, in cupy._core.core.assemble_cupy_compiler_options
-  File "cupy_backends/cuda/libs/nvrtc.pyx", line 57, in cupy_backends.cuda.libs.nvrtc.getVersion
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 72, in cupy_backends.cuda.libs.nvrtc.initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 75, in cupy_backends.cuda.libs.nvrtc._initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 153, in cupy_backends.cuda.libs.nvrtc._get_softlink
-  File "cupy_backends/cuda/_softlink.pyx", line 32, in cupy_backends.cuda._softlink.SoftLink.__init__
-RuntimeError: CuPy failed to load libnvrtc.so.11.2: OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-Iteration 1/10:   0%|          | 0/278 [00:00<?, ?it/s]Iteration 1/10:   6%|▌         | 16/278 [00:00<00:01, 158.31it/s]Iteration 1/10:  12%|█▏        | 34/278 [00:00<00:01, 165.34it/s]Iteration 1/10:  18%|█▊        | 51/278 [00:00<00:01, 166.88it/s]Iteration 1/10:  24%|██▍       | 68/278 [00:00<00:01, 168.09it/s]Iteration 1/10:  31%|███       | 85/278 [00:00<00:01, 166.01it/s]Iteration 1/10:  37%|███▋      | 102/278 [00:00<00:01, 167.29it/s]Iteration 1/10:  43%|████▎     | 119/278 [00:00<00:00, 167.41it/s]Iteration 1/10:  49%|████▉     | 136/278 [00:00<00:00, 166.84it/s]Iteration 1/10:  55%|█████▌    | 153/278 [00:00<00:00, 167.51it/s]Iteration 1/10:  61%|██████    | 170/278 [00:01<00:00, 166.40it/s]Iteration 1/10:  67%|██████▋   | 187/278 [00:01<00:00, 167.38it/s]Iteration 1/10:  73%|███████▎  | 204/278 [00:01<00:00, 168.09it/s]Iteration 1/10:  79%|███████▉  | 221/278 [00:01<00:00, 168.59it/s]Iteration 1/10:  86%|████████▌ | 238/278 [00:01<00:00, 168.98it/s]Iteration 1/10:  92%|█████████▏| 255/278 [00:01<00:00, 169.24it/s]Iteration 1/10:  98%|█████████▊| 272/278 [00:01<00:00, 169.46it/s]Iteration 1/10: 100%|██████████| 278/278 [00:01<00:00, 167.79it/s]
-Traceback (most recent call last):
-  File "cupy_backends/cuda/_softlink.pyx", line 25, in cupy_backends.cuda._softlink.SoftLink.__init__
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/ctypes/__init__.py", line 379, in __init__
-    self._handle = _dlopen(self._name, mode)
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^
-OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 366, in main
-    rcs = run_pipeline(
-          ^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 214, in run_pipeline
-    t.cross_correlate_align(
-  File "/home/ljh79/TomoMono/tomoDataClass.py", line 287, in cross_correlate_align
-    return cross_correlate_align(self, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/alignment_methods.py", line 145, in cross_correlate_align
-    tomo.workingProjections[i] = subpixel_shift(snapshot[i], abs_shifts[i, 0], abs_shifts[i, 1])
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/helperFunctions.py", line 73, in subpixel_shift
-    fft_image = xp.fft.fft2(arr)
-                ^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 736, in fft2
-    return func(a, s, axes, norm, cufft.CUFFT_FORWARD)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 591, in _fftn
-    a = _convert_dtype(a, value_type)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 35, in _convert_dtype
-    a = a.astype(out_dtype)
-        ^^^^^^^^^^^^^^^^^^^
-  File "cupy/_core/core.pyx", line 618, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/core.pyx", line 686, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/_kernel.pyx", line 1374, in cupy._core._kernel.ufunc.__call__
-  File "cupy/_core/_kernel.pyx", line 1401, in cupy._core._kernel.ufunc._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 1082, in cupy._core._kernel._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 94, in cupy._core._kernel._get_simple_elementwise_kernel
-  File "cupy/_core/_kernel.pyx", line 82, in cupy._core._kernel._get_simple_elementwise_kernel_from_code
-  File "cupy/_core/core.pyx", line 2375, in cupy._core.core.compile_with_cache
-  File "cupy/_core/core.pyx", line 2320, in cupy._core.core.assemble_cupy_compiler_options
-  File "cupy_backends/cuda/libs/nvrtc.pyx", line 57, in cupy_backends.cuda.libs.nvrtc.getVersion
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 72, in cupy_backends.cuda.libs.nvrtc.initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 75, in cupy_backends.cuda.libs.nvrtc._initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 153, in cupy_backends.cuda.libs.nvrtc._get_softlink
-  File "cupy_backends/cuda/_softlink.pyx", line 32, in cupy_backends.cuda._softlink.SoftLink.__init__
-RuntimeError: CuPy failed to load libnvrtc.so.11.2: OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-Iteration 1/10:   0%|          | 0/278 [00:00<?, ?it/s]Iteration 1/10:   6%|▌         | 17/278 [00:00<00:01, 162.61it/s]Iteration 1/10:  12%|█▏        | 34/278 [00:00<00:01, 166.13it/s]Iteration 1/10:  18%|█▊        | 51/278 [00:00<00:01, 167.36it/s]Iteration 1/10:  24%|██▍       | 68/278 [00:00<00:01, 167.60it/s]Iteration 1/10:  31%|███       | 86/278 [00:00<00:01, 168.60it/s]Iteration 1/10:  37%|███▋      | 104/278 [00:00<00:01, 169.14it/s]Iteration 1/10:  44%|████▍     | 122/278 [00:00<00:00, 169.57it/s]Iteration 1/10:  50%|█████     | 139/278 [00:00<00:00, 169.38it/s]Iteration 1/10:  56%|█████▌    | 156/278 [00:00<00:00, 168.88it/s]Iteration 1/10:  62%|██████▏   | 173/278 [00:01<00:00, 167.60it/s]Iteration 1/10:  68%|██████▊   | 190/278 [00:01<00:00, 168.30it/s]Iteration 1/10:  74%|███████▍  | 207/278 [00:01<00:00, 168.22it/s]Iteration 1/10:  81%|████████  | 225/278 [00:01<00:00, 168.80it/s]Iteration 1/10:  87%|████████▋ | 242/278 [00:01<00:00, 168.96it/s]Iteration 1/10:  94%|█████████▎| 260/278 [00:01<00:00, 169.32it/s]Iteration 1/10: 100%|██████████| 278/278 [00:01<00:00, 169.58it/s]Iteration 1/10: 100%|██████████| 278/278 [00:01<00:00, 168.63it/s]
-Traceback (most recent call last):
-  File "cupy_backends/cuda/_softlink.pyx", line 25, in cupy_backends.cuda._softlink.SoftLink.__init__
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/ctypes/__init__.py", line 379, in __init__
-    self._handle = _dlopen(self._name, mode)
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^
-OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 366, in main
-    rcs = run_pipeline(
-          ^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 214, in run_pipeline
-    t.cross_correlate_align(
-  File "/home/ljh79/TomoMono/tomoDataClass.py", line 287, in cross_correlate_align
-    return cross_correlate_align(self, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/alignment_methods.py", line 145, in cross_correlate_align
-    tomo.workingProjections[i] = subpixel_shift(snapshot[i], abs_shifts[i, 0], abs_shifts[i, 1])
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/helperFunctions.py", line 73, in subpixel_shift
-    fft_image = xp.fft.fft2(arr)
-                ^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 736, in fft2
-    return func(a, s, axes, norm, cufft.CUFFT_FORWARD)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 591, in _fftn
-    a = _convert_dtype(a, value_type)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 35, in _convert_dtype
-    a = a.astype(out_dtype)
-        ^^^^^^^^^^^^^^^^^^^
-  File "cupy/_core/core.pyx", line 618, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/core.pyx", line 686, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/_kernel.pyx", line 1374, in cupy._core._kernel.ufunc.__call__
-  File "cupy/_core/_kernel.pyx", line 1401, in cupy._core._kernel.ufunc._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 1082, in cupy._core._kernel._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 94, in cupy._core._kernel._get_simple_elementwise_kernel
-  File "cupy/_core/_kernel.pyx", line 82, in cupy._core._kernel._get_simple_elementwise_kernel_from_code
-  File "cupy/_core/core.pyx", line 2375, in cupy._core.core.compile_with_cache
-  File "cupy/_core/core.pyx", line 2320, in cupy._core.core.assemble_cupy_compiler_options
-  File "cupy_backends/cuda/libs/nvrtc.pyx", line 57, in cupy_backends.cuda.libs.nvrtc.getVersion
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 72, in cupy_backends.cuda.libs.nvrtc.initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 75, in cupy_backends.cuda.libs.nvrtc._initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 153, in cupy_backends.cuda.libs.nvrtc._get_softlink
-  File "cupy_backends/cuda/_softlink.pyx", line 32, in cupy_backends.cuda._softlink.SoftLink.__init__
-RuntimeError: CuPy failed to load libnvrtc.so.11.2: OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-Iteration 1/10:   0%|          | 0/278 [00:00<?, ?it/s]Iteration 1/10:   6%|▌         | 17/278 [00:00<00:01, 164.44it/s]Iteration 1/10:  13%|█▎        | 35/278 [00:00<00:01, 167.93it/s]Iteration 1/10:  19%|█▉        | 53/278 [00:00<00:01, 168.98it/s]Iteration 1/10:  26%|██▌       | 71/278 [00:00<00:01, 169.50it/s]Iteration 1/10:  32%|███▏      | 89/278 [00:00<00:01, 169.72it/s]Iteration 1/10:  38%|███▊      | 107/278 [00:00<00:01, 169.88it/s]Iteration 1/10:  45%|████▍     | 125/278 [00:00<00:00, 169.99it/s]Iteration 1/10:  51%|█████     | 142/278 [00:00<00:00, 169.96it/s]Iteration 1/10:  57%|█████▋    | 159/278 [00:00<00:00, 169.96it/s]Iteration 1/10:  63%|██████▎   | 176/278 [00:01<00:00, 168.32it/s]Iteration 1/10:  69%|██████▉   | 193/278 [00:01<00:00, 168.80it/s]Iteration 1/10:  76%|███████▌  | 210/278 [00:01<00:00, 169.05it/s]Iteration 1/10:  82%|████████▏ | 227/278 [00:01<00:00, 168.36it/s]Iteration 1/10:  88%|████████▊ | 244/278 [00:01<00:00, 168.59it/s]Iteration 1/10:  94%|█████████▍| 262/278 [00:01<00:00, 169.07it/s]Iteration 1/10: 100%|██████████| 278/278 [00:01<00:00, 169.10it/s]
-Traceback (most recent call last):
-  File "cupy_backends/cuda/_softlink.pyx", line 25, in cupy_backends.cuda._softlink.SoftLink.__init__
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/ctypes/__init__.py", line 379, in __init__
-    self._handle = _dlopen(self._name, mode)
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^
-OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 366, in main
-    rcs = run_pipeline(
-          ^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 214, in run_pipeline
-    t.cross_correlate_align(
-  File "/home/ljh79/TomoMono/tomoDataClass.py", line 287, in cross_correlate_align
-    return cross_correlate_align(self, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/alignment_methods.py", line 145, in cross_correlate_align
-    tomo.workingProjections[i] = subpixel_shift(snapshot[i], abs_shifts[i, 0], abs_shifts[i, 1])
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/helperFunctions.py", line 73, in subpixel_shift
-    fft_image = xp.fft.fft2(arr)
-                ^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 736, in fft2
-    return func(a, s, axes, norm, cufft.CUFFT_FORWARD)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 591, in _fftn
-    a = _convert_dtype(a, value_type)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 35, in _convert_dtype
-    a = a.astype(out_dtype)
-        ^^^^^^^^^^^^^^^^^^^
-  File "cupy/_core/core.pyx", line 618, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/core.pyx", line 686, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/_kernel.pyx", line 1374, in cupy._core._kernel.ufunc.__call__
-  File "cupy/_core/_kernel.pyx", line 1401, in cupy._core._kernel.ufunc._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 1082, in cupy._core._kernel._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 94, in cupy._core._kernel._get_simple_elementwise_kernel
-  File "cupy/_core/_kernel.pyx", line 82, in cupy._core._kernel._get_simple_elementwise_kernel_from_code
-  File "cupy/_core/core.pyx", line 2375, in cupy._core.core.compile_with_cache
-  File "cupy/_core/core.pyx", line 2320, in cupy._core.core.assemble_cupy_compiler_options
-  File "cupy_backends/cuda/libs/nvrtc.pyx", line 57, in cupy_backends.cuda.libs.nvrtc.getVersion
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 72, in cupy_backends.cuda.libs.nvrtc.initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 75, in cupy_backends.cuda.libs.nvrtc._initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 153, in cupy_backends.cuda.libs.nvrtc._get_softlink
-  File "cupy_backends/cuda/_softlink.pyx", line 32, in cupy_backends.cuda._softlink.SoftLink.__init__
-RuntimeError: CuPy failed to load libnvrtc.so.11.2: OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-Iteration 1/10:   0%|          | 0/278 [00:00<?, ?it/s]Iteration 1/10:   6%|▌         | 17/278 [00:00<00:01, 161.94it/s]Iteration 1/10:  13%|█▎        | 35/278 [00:00<00:01, 166.97it/s]Iteration 1/10:  19%|█▊        | 52/278 [00:00<00:01, 168.02it/s]Iteration 1/10:  25%|██▌       | 70/278 [00:00<00:01, 168.95it/s]Iteration 1/10:  32%|███▏      | 88/278 [00:00<00:01, 169.38it/s]Iteration 1/10:  38%|███▊      | 105/278 [00:00<00:01, 169.49it/s]Iteration 1/10:  44%|████▍     | 123/278 [00:00<00:00, 169.78it/s]Iteration 1/10:  50%|█████     | 140/278 [00:00<00:00, 168.46it/s]Iteration 1/10:  56%|█████▋    | 157/278 [00:00<00:00, 168.65it/s]Iteration 1/10:  63%|██████▎   | 174/278 [00:01<00:00, 166.74it/s]Iteration 1/10:  69%|██████▊   | 191/278 [00:01<00:00, 167.66it/s]Iteration 1/10:  75%|███████▍  | 208/278 [00:01<00:00, 168.36it/s]Iteration 1/10:  81%|████████  | 225/278 [00:01<00:00, 168.40it/s]Iteration 1/10:  87%|████████▋ | 242/278 [00:01<00:00, 168.86it/s]Iteration 1/10:  94%|█████████▎| 260/278 [00:01<00:00, 169.22it/s]Iteration 1/10: 100%|██████████| 278/278 [00:01<00:00, 169.52it/s]Iteration 1/10: 100%|██████████| 278/278 [00:01<00:00, 168.60it/s]
-Traceback (most recent call last):
-  File "cupy_backends/cuda/_softlink.pyx", line 25, in cupy_backends.cuda._softlink.SoftLink.__init__
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/ctypes/__init__.py", line 379, in __init__
-    self._handle = _dlopen(self._name, mode)
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^
-OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 366, in main
-    rcs = run_pipeline(
-          ^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 214, in run_pipeline
-    t.cross_correlate_align(
-  File "/home/ljh79/TomoMono/tomoDataClass.py", line 287, in cross_correlate_align
-    return cross_correlate_align(self, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/alignment_methods.py", line 145, in cross_correlate_align
-    tomo.workingProjections[i] = subpixel_shift(snapshot[i], abs_shifts[i, 0], abs_shifts[i, 1])
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/helperFunctions.py", line 73, in subpixel_shift
-    fft_image = xp.fft.fft2(arr)
-                ^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 736, in fft2
-    return func(a, s, axes, norm, cufft.CUFFT_FORWARD)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 591, in _fftn
-    a = _convert_dtype(a, value_type)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 35, in _convert_dtype
-    a = a.astype(out_dtype)
-        ^^^^^^^^^^^^^^^^^^^
-  File "cupy/_core/core.pyx", line 618, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/core.pyx", line 686, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/_kernel.pyx", line 1374, in cupy._core._kernel.ufunc.__call__
-  File "cupy/_core/_kernel.pyx", line 1401, in cupy._core._kernel.ufunc._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 1082, in cupy._core._kernel._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 94, in cupy._core._kernel._get_simple_elementwise_kernel
-  File "cupy/_core/_kernel.pyx", line 82, in cupy._core._kernel._get_simple_elementwise_kernel_from_code
-  File "cupy/_core/core.pyx", line 2375, in cupy._core.core.compile_with_cache
-  File "cupy/_core/core.pyx", line 2320, in cupy._core.core.assemble_cupy_compiler_options
-  File "cupy_backends/cuda/libs/nvrtc.pyx", line 57, in cupy_backends.cuda.libs.nvrtc.getVersion
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 72, in cupy_backends.cuda.libs.nvrtc.initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 75, in cupy_backends.cuda.libs.nvrtc._initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 153, in cupy_backends.cuda.libs.nvrtc._get_softlink
-  File "cupy_backends/cuda/_softlink.pyx", line 32, in cupy_backends.cuda._softlink.SoftLink.__init__
-RuntimeError: CuPy failed to load libnvrtc.so.11.2: OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-Iteration 1/10:   0%|          | 0/278 [00:00<?, ?it/s]Iteration 1/10:   6%|▌         | 17/278 [00:00<00:01, 162.57it/s]Iteration 1/10:  12%|█▏        | 34/278 [00:00<00:01, 166.82it/s]Iteration 1/10:  18%|█▊        | 51/278 [00:00<00:01, 168.24it/s]Iteration 1/10:  24%|██▍       | 68/278 [00:00<00:01, 168.83it/s]Iteration 1/10:  31%|███       | 85/278 [00:00<00:01, 168.78it/s]Iteration 1/10:  37%|███▋      | 102/278 [00:00<00:01, 169.09it/s]Iteration 1/10:  43%|████▎     | 119/278 [00:00<00:00, 169.24it/s]Iteration 1/10:  49%|████▉     | 136/278 [00:00<00:00, 168.96it/s]Iteration 1/10:  55%|█████▌    | 153/278 [00:00<00:00, 169.19it/s]Iteration 1/10:  61%|██████    | 170/278 [00:01<00:00, 167.70it/s]Iteration 1/10:  67%|██████▋   | 187/278 [00:01<00:00, 168.31it/s]Iteration 1/10:  73%|███████▎  | 204/278 [00:01<00:00, 168.39it/s]Iteration 1/10:  79%|███████▉  | 221/278 [00:01<00:00, 168.77it/s]Iteration 1/10:  86%|████████▌ | 238/278 [00:01<00:00, 169.08it/s]Iteration 1/10:  92%|█████████▏| 255/278 [00:01<00:00, 169.31it/s]Iteration 1/10:  98%|█████████▊| 272/278 [00:01<00:00, 169.48it/s]Iteration 1/10: 100%|██████████| 278/278 [00:01<00:00, 168.75it/s]
-Traceback (most recent call last):
-  File "cupy_backends/cuda/_softlink.pyx", line 25, in cupy_backends.cuda._softlink.SoftLink.__init__
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/ctypes/__init__.py", line 379, in __init__
-    self._handle = _dlopen(self._name, mode)
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^
-OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 366, in main
-    rcs = run_pipeline(
-          ^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/hyperparameter_search.py", line 214, in run_pipeline
-    t.cross_correlate_align(
-  File "/home/ljh79/TomoMono/tomoDataClass.py", line 287, in cross_correlate_align
-    return cross_correlate_align(self, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/alignment_methods.py", line 145, in cross_correlate_align
-    tomo.workingProjections[i] = subpixel_shift(snapshot[i], abs_shifts[i, 0], abs_shifts[i, 1])
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/TomoMono/helperFunctions.py", line 73, in subpixel_shift
-    fft_image = xp.fft.fft2(arr)
-                ^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 736, in fft2
-    return func(a, s, axes, norm, cufft.CUFFT_FORWARD)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 591, in _fftn
-    a = _convert_dtype(a, value_type)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ljh79/.conda/envs/tomoMono/lib/python3.12/site-packages/cupy/fft/_fft.py", line 35, in _convert_dtype
-    a = a.astype(out_dtype)
-        ^^^^^^^^^^^^^^^^^^^
-  File "cupy/_core/core.pyx", line 618, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/core.pyx", line 686, in cupy._core.core._ndarray_base.astype
-  File "cupy/_core/_kernel.pyx", line 1374, in cupy._core._kernel.ufunc.__call__
-  File "cupy/_core/_kernel.pyx", line 1401, in cupy._core._kernel.ufunc._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 1082, in cupy._core._kernel._get_ufunc_kernel
-  File "cupy/_core/_kernel.pyx", line 94, in cupy._core._kernel._get_simple_elementwise_kernel
-  File "cupy/_core/_kernel.pyx", line 82, in cupy._core._kernel._get_simple_elementwise_kernel_from_code
-  File "cupy/_core/core.pyx", line 2375, in cupy._core.core.compile_with_cache
-  File "cupy/_core/core.pyx", line 2320, in cupy._core.core.assemble_cupy_compiler_options
-  File "cupy_backends/cuda/libs/nvrtc.pyx", line 57, in cupy_backends.cuda.libs.nvrtc.getVersion
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 72, in cupy_backends.cuda.libs.nvrtc.initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 75, in cupy_backends.cuda.libs.nvrtc._initialize
-  File "cupy_backends/cuda/libs/_cnvrtc.pxi", line 153, in cupy_backends.cuda.libs.nvrtc._get_softlink
-  File "cupy_backends/cuda/_softlink.pyx", line 32, in cupy_backends.cuda._softlink.SoftLink.__init__
-RuntimeError: CuPy failed to load libnvrtc.so.11.2: OSError: libnvrtc.so.11.2: cannot open shared object file: No such file or directory
-slurmstepd: error: *** JOB 11671142 ON m9g-2-9 CANCELLED AT 2026-04-29T19:13:37 ***

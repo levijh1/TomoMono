@@ -1,8 +1,8 @@
 #!/bin/bash
 
 #SBATCH --time=36:00:00   # walltime — 2x data ~16h est; 36h gives buffer for convergence variance
-#SBATCH --output=/home/ljh79/TomoMono/sbatch_output/hyperparam-%j.txt
-#SBATCH --error=/home/ljh79/TomoMono/sbatch_output/hyperparam-error-%j.txt
+#SBATCH --output=/home/ljh79/TomoMono/sbatch_output/hyperparam/hyperparam-%j.txt
+#SBATCH --error=/home/ljh79/TomoMono/sbatch_output/hyperparam/hyperparam-error-%j.txt
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
 #SBATCH --gpus=1
