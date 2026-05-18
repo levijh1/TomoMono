@@ -20,7 +20,7 @@ Run modes:
 ALIGNED_TIFF    = None
 
 RAW_HDF5        = '/home/ljh79/groups/grp_ptychi/nobackup/autodelete/Oct2025APSdata/tomo_data_run_final_2.hdf5'
-OUTPUT_DIR      = 'reconstructions/ganrec'
+OUTPUT_DIR      = 'reconstructions/APSbeamtime_Oct25/ganrec'
 OUTPUT_NAME     = 'ganrec_recon_4xds'
 
 # Angle handling
@@ -39,11 +39,12 @@ Y_END           = None      # e.g. 300
 # At full resolution: 1200 pixels
 PROJ_WIDTH_CROP = None
 
-# GANrec hyperparameters (match values used in ganrec_realData_walkthrough.ipynb)
+# GANrec hyperparameters
 ITER_NUM        = 1000
 L1_RATIO        = 300
 G_LEARNING_RATE = 5e-4
-RADIUS_RATIO    = 0.9
+D_LEARNING_RATE = 1e-3
+DROPOUT         = 0.25
 # ─────────────────────────────────────────────────────────────────────────────
 
 import sys
@@ -52,7 +53,7 @@ import argparse
 import glob
 import time
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import numpy as np
 import h5py
@@ -65,6 +66,9 @@ OUTPUT_DIR  = os.path.join(_SCRIPT_DIR, OUTPUT_DIR)   # make absolute
 sys.path.insert(0, _SCRIPT_DIR)
 from helperFunctions import convert_to_numpy, convert_to_tiff
 from ganrectorch.ganrec import GANtomo
+import tomopy
+import tomoDataClass
+from alignment_methods import reprojection_consistency_score
 
 # Generate or use provided session ID (ensures unique output dirs for parallel runs)
 _timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
@@ -213,6 +217,7 @@ def reconstruct(args):
         'aligned_tiff': ALIGNED_TIFF,
         'y_start': y_start,
         'y_end': y_end,
+        'proj_width_crop': PROJ_WIDTH_CROP,
         'n_slices': n_slices,
         'output_name': OUTPUT_NAME,
         'merge_complete': False,
@@ -246,7 +251,8 @@ def reconstruct(args):
             iter_num        = ITER_NUM,
             l1_ratio        = L1_RATIO,
             g_learning_rate = G_LEARNING_RATE,
-            radius_ratio    = RADIUS_RATIO,
+            d_learning_rate = D_LEARNING_RATE,
+            dropout         = DROPOUT,
             recon_monitor   = False,
         ).recon()
 
@@ -258,13 +264,16 @@ def reconstruct(args):
 
         elapsed_slice = time.time() - t_slice
         elapsed_total = time.time() - task_start
-        remaining     = (len(my_local_indices) - idx - 1) * elapsed_slice
+        slices_done   = idx + 1
+        avg_per_slice = elapsed_total / slices_done
+        remaining     = (len(my_local_indices) - slices_done) * avg_per_slice
+        eta           = datetime.now() + timedelta(seconds=remaining)
         print(
-            f'[task {task_id} | {idx+1}/{len(my_local_indices)}] '
+            f'[task {task_id} | {slices_done}/{len(my_local_indices)}] '
             f'slice {global_y:4d} DONE  '
             f'slice={elapsed_slice:.1f}s  '
             f'total={elapsed_total:.0f}s  '
-            f'ETA≈{remaining/60:.1f}min',
+            f'ETA {eta.strftime("%Y-%m-%d %H:%M:%S")}',
             flush=True,
         )
 
@@ -327,6 +336,41 @@ def merge(args):
     out_path = os.path.join(OUTPUT_DIR, f'{output_name}.tiff')
     convert_to_tiff(volume, out_path, scale_info)
     print(f'Saved: {out_path}', flush=True)
+
+    # ── Quality metrics ───────────────────────────────────────────────────────
+    print('\nComputing reconstruction quality metrics...', flush=True)
+    try:
+        projs_raw, _ = convert_to_numpy(aligned_tiff)
+        projs_raw = projs_raw.astype(np.float32)
+
+        y_start     = state['y_start']
+        y_end       = state['y_end']
+        width_crop  = state.get('proj_width_crop')
+        h_raw, w_raw = projs_raw.shape[1], projs_raw.shape[2]
+
+        if width_crop is not None and width_crop < w_raw:
+            cx, half = w_raw // 2, width_crop // 2
+            projs_crop = projs_raw[:, y_start:y_end, cx - half : cx + half]
+        else:
+            projs_crop = projs_raw[:, y_start:y_end, :]
+        del projs_raw
+
+        angles = load_angles(RAW_HDF5, DROP_ANGLES).astype(np.float32)
+        tomo_m = tomoDataClass.tomoData(projs_crop, angles)
+        tomo_m.recon = volume
+        tomo_m.rotation_center = float(tomopy.find_center_vo(tomo_m.finalProjections))
+
+        # normalize_method='affine': GANrec reconstructs from -sino so
+        # reprojections and measured data have opposite sign conventions.
+        rcs, _, _ = reprojection_consistency_score(tomo_m, plot=False, normalize_method='affine')
+        # FSC uses gridrec half-sets — running GANrec twice is impractical.
+        _, fsc_resolutions, _ = tomo_m.fourier_shell_correlation(algorithm='gridrec', plot=False)
+        fsc_res = fsc_resolutions.get('FSC=0.143')
+        fsc_str = f"{fsc_res:.4f}" if fsc_res is not None else "N/A"
+        print(f'RCS = {rcs:.4f}  |  FSC(0.143) = {fsc_str} px  [FSC via gridrec half-sets]',
+              flush=True)
+    except Exception as e:
+        print(f'Warning: metrics computation failed: {e}', flush=True)
 
     # Update state to mark merge as complete
     state['merge_complete'] = True

@@ -582,7 +582,7 @@ def run_pipeline(projections, angles, xca_name, xca_passes, xca_roi_params,
             print(f"  PMA ROI (lb={pma_cfg['lb']}): "
                   f"y={pma_yROI.tolist()}  x={pma_xROI.tolist()}")
 
-        t.PMA(
+        t.projection_matching_alignment(
             tolerance=0, algorithm=recon_alg, plot=False,
             levels=pma_cfg['levels'],
             scale=pma_cfg['scale'],

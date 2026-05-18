@@ -17,7 +17,7 @@ Create/update the environment from scratch:
 conda env create -f environment.yml
 ```
 
-Key dependencies: Python 3.12, TomoPy, SVMBIR, ASTRA Toolbox, CuPy (CUDA 11.8), PyTorch (cu118), OpenCV, scikit-image, scipy, numpy 1.26, tifffile, h5py.
+Key dependencies: Python 3.12, TomoPy, SVMBIR, ASTRA Toolbox 2.1 (CUDA 11.0), CuPy (cuda12x via pip), PyTorch 2.4.1, GANrec, OpenCV, scikit-image, scipy, numpy 1.26, tifffile, h5py.
 
 ## Running Scripts
 
@@ -37,6 +37,24 @@ python main.py
 python hyperparameter_search.py
 python hyperparameter_search.py --resume --logfile hyperparam_results/<name>.csv
 sbatch runHyperparamSearch.sh            # cluster submission
+```
+
+**SVMBIR reconstruction from pre-aligned projections (CPU-only, high quality):**
+```bash
+python runSVMBIRrec.py --tiff-file <path> --y-start N --y-end N --width N
+sbatch runSVMBIRrec_fullres.sh           # full-res (32 CPUs, 208 GB, 72h)
+```
+
+**SVMBIR hyperparameter search (scans qGGMRF/solver settings):**
+```bash
+python runSVMBIRparamSearch.py --tiff-file <path> [--fsc] [--num-workers N]
+sbatch runSVMBIRparamSearch.sh           # cluster submission (32 CPUs, 4 workers)
+```
+
+**GANrec reconstruction:**
+```bash
+python runGANrec.py
+sbatch runGPUGANrec.sh                   # GPU job
 ```
 
 Logs go to `logs/`, SLURM stdout/err goes to `sbatch_output/`, hyperparam results go to `hyperparam_results/`.
@@ -107,10 +125,17 @@ Load HDF5 → tomoData(projs, angles)
 
 ### Notebooks
 
+Root-level (main workflows):
 - [tomoMono_demo.ipynb](tomoMono_demo.ipynb) — end-to-end walkthrough with simulated phantom
-- [test_taylor_alignment_methods_phanton.ipynb](test_taylor_alignment_methods_phanton.ipynb) — alignment method comparison on phantom data
-- [test_taylor_alignment_methods_realData.ipynb](test_taylor_alignment_methods_realData.ipynb) — same comparison on real APS beamtime data
-- [recon_algorithm_comparison.ipynb](recon_algorithm_comparison.ipynb) — reconstruction algorithm benchmark
+- [test_notebook_realData.ipynb](test_notebook_realData.ipynb) — alignment method comparison on real APS beamtime data
+- [ganrec_realData_walkthrough.ipynb](ganrec_realData_walkthrough.ipynb) — GANrec reconstruction walkthrough on real data
+- [lookAtRecons.ipynb](lookAtRecons.ipynb) — reconstruction viewing/comparison
+
+Archived to [notebooks/](notebooks/) (reference/experimental):
+- `notebooks/test_notebook_phanton.ipynb` — alignment method comparison on phantom data
+- `notebooks/ganrec_phantom_walkthrough.ipynb` — GANrec on phantom data
+- `notebooks/recon_algorithm_comparison.ipynb` — reconstruction algorithm benchmark
+- `notebooks/FourierRingCorrelation.ipynb` — FRC resolution analysis
 
 ## Data Locations
 

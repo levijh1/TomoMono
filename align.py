@@ -73,7 +73,7 @@ if __name__ == '__main__':
     run_results = []
 
     def save_outputs(tomo, label):
-        final = tomo.get_finalProjections()
+        final = tomo.get_final_projections()
         if cp is not None and isinstance(final, cp.ndarray):
             final_np = cp.asnumpy(final)
         elif hasattr(final, 'get') and not isinstance(final, np.ndarray):
@@ -105,7 +105,7 @@ if __name__ == '__main__':
 
         rcs, _, _ = reprojection_consistency_score(tomo, plot=False)
         _, fsc_resolutions, _ = tomo.fourier_shell_correlation(algorithm=recon_alg, plot=False)
-        fsc_res = fsc_resolutions.get('FSC=0.143')
+        fsc_res = fsc_resolutions.get('half-bit')
         fsc_str = f"{fsc_res:.4f}" if fsc_res is not None else "N/A"
         print(f"[{label}]  RCS = {rcs:.4f}  |  FSC = {fsc_str} px")
         return rcs, fsc_res, recon_elapsed
@@ -155,7 +155,7 @@ if __name__ == '__main__':
     ]
     yROI_4x = [0, tomo4x.workingProjections.shape[1] - 75]
     print(f"PMA: xROI={xROI_4x}, yROI={yROI_4x}")
-    tomo4x.PMA(
+    tomo4x.projection_matching_alignment(
         levels=1, scale=1, iterations_per_level=[10],
         tolerance=0.0, algorithm=recon_alg, standardize=False, use_grad=True,
         shift_method='optical_flow', of_sigma=2.0, stepRatio=0.8, plot=False,
@@ -204,7 +204,7 @@ if __name__ == '__main__':
     ]
     yROI_2x = [0, tomo2x.workingProjections.shape[1] - 150]
     print(f"PMA: xROI={xROI_2x}, yROI={yROI_2x}")
-    tomo2x.PMA(
+    tomo2x.projection_matching_alignment(
         levels=1, scale=1, iterations_per_level=[5],
         tolerance=0.0, algorithm=recon_alg, standardize=False,
         shift_method='optical_flow', of_sigma=2.0, stepRatio=0.8, plot=False,
@@ -253,7 +253,7 @@ if __name__ == '__main__':
     ]
     yROI_1x = [0, tomo1x.workingProjections.shape[1] - 300]
     print(f"PMA: xROI={xROI_1x}, yROI={yROI_1x}")
-    tomo1x.PMA(
+    tomo1x.projection_matching_alignment(
         levels=1, scale=1, iterations_per_level=[5],
         tolerance=0.0, algorithm=recon_alg, standardize=False,
         shift_method='optical_flow', of_sigma=2.0, stepRatio=0.8, plot=False,

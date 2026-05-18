@@ -18,9 +18,9 @@
 # Y_START=40
 # Y_END=440
 # WIDTH_CROP=1200
-# NUM_TASKS=8
-# WALLTIME="20:00:00"
-# MEM="120G"
+# NUM_TASKS=16
+# WALLTIME="36:00:00"
+# MEM="56G"
 
 # ═════════════════════════════════════════════════════════════════════════════
 # 2x DOWNSAMPLED
@@ -30,8 +30,8 @@
 #Y_END=220
 #WIDTH_CROP=600
 #NUM_TASKS=4
-#WALLTIME="05:00:00"
-#MEM="60G"
+#WALLTIME="18:00:00"
+#MEM="20G"
 
 # ═════════════════════════════════════════════════════════════════════════════
 # 4x DOWNSAMPLED
@@ -40,9 +40,9 @@ ALIGNED_TIFF=$(ls -t /home/ljh79/TomoMono/alignedProjections/APSbeamtime_Oct25/c
 Y_START=10
 Y_END=110
 WIDTH_CROP=300
-NUM_TASKS=2
-WALLTIME="02:00:00"
-MEM="32G"
+NUM_TASKS=4
+WALLTIME="06:00:00"
+MEM="6G"
 
 # ═════════════════════════════════════════════════════════════════════════════
 # OPTIONS
@@ -57,7 +57,7 @@ if [ -z "$ALIGNED_TIFF" ]; then
   exit 1
 fi
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 PYTHON="/home/ljh79/.conda/envs/tomoMono/bin/python"
 SBATCH_OUT="${SCRIPT_DIR}/sbatch_output/ganrec"
 mkdir -p "${SBATCH_OUT}"
@@ -83,7 +83,7 @@ if [ -z "$RESUME_SESSION" ]; then
   if [ "$INCOMPLETE_COUNT" -gt 0 ]; then
     echo ""
     echo "⚠️  Found incomplete session(s). To resume, use:"
-    echo "     RESUME_SESSION='reconstructions/ganrec/session_<id>' bash runGPUGANrec.sh"
+    echo "     RESUME_SESSION='reconstructions/APSbeamtime_Oct25/ganrec/session_<id>' bash runGPUGANrec.sh"
     echo ""
     "${PYTHON}" "${SCRIPT_DIR}/runGANrec.py" --list-incomplete
     echo ""
@@ -114,7 +114,7 @@ if [ -n "$RESUME_SESSION" ]; then
   echo "Resuming session: ${SESSION_ID}"
 else
   SESSION_ID=$(date '+%Y%m%d_%H%M%S_%N' | cut -c1-21)
-  SESSION_DIR="${SCRIPT_DIR}/reconstructions/ganrec/session_${SESSION_ID}"
+  SESSION_DIR="${SCRIPT_DIR}/reconstructions/APSbeamtime_Oct25/ganrec/session_${SESSION_ID}"
 fi
 
 echo "Session ID: ${SESSION_ID}"

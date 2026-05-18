@@ -1,52 +1,12 @@
-import os
-import multiprocessing as _mp
-# Must run before tomopy/numexpr import. Login nodes expose many cores; tomopy
-# asks numexpr for >NUMEXPR_MAX_THREADS and aborts. Bump the ceiling.
-os.environ["NUMEXPR_MAX_THREADS"] = str(max(_mp.cpu_count(), int(os.environ.get("NUMEXPR_MAX_THREADS", "0") or 0), 64))
-
 import tomopy
 import numpy as np
-import random
 import scipy as sp
 from helperFunctions import MoviePlotter, subpixel_shift, runwidget
 from tqdm import tqdm
 from scipy.ndimage import rotate
 from alignment_methods import *
 
-def _gpu_actually_works():
-    try:
-        import torch as _t
-        if _t.cuda.is_available():
-            _t.zeros(1, device='cuda')  # confirm an allocation actually succeeds
-            return _t
-        if _t.backends.mps.is_available():
-            return _t
-    except Exception:
-        pass
-    return None
-
-try:
-    torch = _gpu_actually_works()
-    if torch is not None:
-        print("PyTorch GPU detected.")
-    else:
-        print("No usable GPU detected — running CPU-only.")
-    import svmbir
-    if torch is None:
-        svmbir = None
-except ImportError:
-    torch = None
-    svmbir = None
-
-try:
-    import cupy as cp
-    cp.array([1])  # real allocation — raises if GPU is unavailable or busy
-    from cupyx.scipy.ndimage import shift as _ndimage_shift
-    xp = cp
-except Exception:
-    cp = None
-    _ndimage_shift = sp.ndimage.shift
-    xp = np
+from gpu import xp, cp, torch, svmbir, ndimage_shift as _ndimage_shift
 
 
 def simulate_projections(recon, angles, center=None, emission=True, pad=False, ncore=None, use_astra=None):
@@ -151,38 +111,30 @@ class tomoData:
         """
         self.workingProjections = np.copy(self.data)
         self.finalProjections = np.copy(self.data)
-        if x_size != None and y_size != None:
-            if cropBottomCenter:
-                self.crop_bottom_center(x_size, y_size)
-            else:
-                self.crop_center(x_size, y_size)
+        if x_size is not None and y_size is not None:
+            anchor = 'bottom' if cropBottomCenter else 'center'
+            self.crop(y_size, x_size, anchor=anchor)
 
     def get_recon(self):
-        """
-        Returns the reconstructed 3D model.
-
-        Returns:
-        - np.array: The reconstructed volume.
-        """
+        """Returns the reconstructed 3D volume (``self.recon``)."""
         return self.recon
 
-    def get_workingprojections(self):
-        """
-        Returns the current state of working projections (The projections that are being modified).
-
-        Returns:
-        - np.array: The working projections.
-        """
+    def get_working_projections(self):
+        """Returns the current working projections (the ones being modified in place)."""
         return self.workingProjections
 
-    def get_finalProjections(self):
-        """
-        Returns the final projections (the projections that are modified last and saved for reconstruction).
-
-        Returns:
-        - np.array: The final projections.
-        """
+    def get_final_projections(self):
+        """Returns the final projections (the ones used for reconstruction)."""
         return self.finalProjections
+
+    # Backwards-compatibility shims for the old camelCase / inconsistent names.
+    def get_workingprojections(self):
+        """Deprecated alias — use ``get_working_projections()``."""
+        return self.get_working_projections()
+
+    def get_finalProjections(self):
+        """Deprecated alias — use ``get_final_projections()``."""
+        return self.get_final_projections()
 
     def jitter(self, maxShift=5):
         """
@@ -192,10 +144,9 @@ class tomoData:
         Parameters:
         - maxShift (float): Maximum shift in pixels for both x and y directions.
         """
-        multiplier = maxShift * 2
         for i in range(1, self.num_angles-1):
-            x_shift = multiplier * (random.random() - 0.5)
-            y_shift = multiplier * (random.random() - 0.5)
+            x_shift = np.random.uniform(-maxShift, maxShift)
+            y_shift = np.random.uniform(-maxShift, maxShift)
             arr = xp.asarray(self.data[i])
             shifted = _ndimage_shift(arr, (y_shift, x_shift), mode='reflect')
             self.data[i] = shifted.get() if xp is not np else shifted
@@ -210,10 +161,9 @@ class tomoData:
         Parameters:
         - maxShift (float): Maximum shift in pixels for both x and y directions.
         """
-        multiplier = maxShift * 2
         for i in range(1, self.num_angles-1):
             x_shift = 0
-            y_shift = multiplier * (random.random() - 0.5)
+            y_shift = np.random.uniform(-maxShift, maxShift)
             arr = xp.asarray(self.data[i])
             shifted = _ndimage_shift(arr, (y_shift, x_shift), mode='reflect')
             self.data[i] = shifted.get() if xp is not np else shifted
@@ -225,67 +175,62 @@ class tomoData:
         self.workingProjections = self.data.copy()
         self.finalProjections = self.data.copy()   
 
-    def crop_center(self, new_x, new_y):
+    def crop(self, new_y, new_x, anchor='center'):
         """
-        Crops each 2D array in the 3D array to a specified size centered in the middle.
+        Crop each projection to the requested (new_y, new_x) size.
+
+        The horizontal crop is always centered on the rotation axis (so the
+        center of rotation stays at the midpoint of the cropped frame).
+        The vertical crop is controlled by ``anchor``:
+
+          anchor='center' (default): centered vertically
+          anchor='bottom':           bottom-aligned
 
         Parameters:
-        - new_x (int or None): Target width of the crop. If None, width is unchanged.
-        - new_y (int or None): Target height of the crop. If None, height is unchanged.
+        - new_y (int or None): target height; None leaves height unchanged.
+        - new_x (int or None): target width;  None leaves width unchanged.
+        - anchor ({'center','bottom'}): vertical alignment of the crop.
         """
+        if anchor not in ('center', 'bottom'):
+            raise ValueError(f"anchor must be 'center' or 'bottom', got {anchor!r}")
+
         y, x = self.workingProjections[0].shape
+
+        # Horizontal crop is always centered
         if new_x is None:
             startx, endx = 0, x
         else:
-            startx = x // 2 - new_x // 2
-            endx = startx + new_x
-            startx, endx = max(0, startx), min(x, endx)
+            startx = max(0, x // 2 - new_x // 2)
+            endx = min(x, startx + new_x)
+
+        # Vertical crop depends on anchor
         if new_y is None:
             starty, endy = 0, y
-        else:
-            starty = y // 2 - new_y // 2
-            endy = starty + new_y
-            starty, endy = max(0, starty), min(y, endy)
-        self.workingProjections = self.workingProjections[:,starty:endy, startx:endx]
-        self.finalProjections = self.finalProjections[:,starty:endy, startx:endx]
-        self.image_size = self.workingProjections.shape[1:]
-        removed_top, removed_bottom = starty, y - endy
-        removed_left, removed_right = startx, x - endx
-        self._shift_envelope[0] = max(0.0, self._shift_envelope[0] - removed_top)
-        self._shift_envelope[1] = max(0.0, self._shift_envelope[1] - removed_bottom)
-        self._shift_envelope[2] = max(0.0, self._shift_envelope[2] - removed_left)
-        self._shift_envelope[3] = max(0.0, self._shift_envelope[3] - removed_right)
-
-    def crop_bottom_center(self, new_y, new_x):
-        """
-        Crops each 2D array in the 3D array to a specified size, aligned to the bottom and centered horizontally.
-
-        Parameters:
-        - new_y (int or None): Target height of the crop. If None, height is unchanged.
-        - new_x (int or None): Target width of the crop. If None, width is unchanged.
-        """
-        y, x = self.workingProjections[0].shape
-        if new_x is None:
-            startx, endx = 0, x
-        else:
-            startx = x // 2 - new_x // 2
-            endx = startx + new_x
-            startx, endx = max(0, startx), min(x, endx)
-        if new_y is None:
-            starty, endy = 0, y
-        else:
-            starty = y - new_y
+        elif anchor == 'bottom':
+            starty = max(0, y - new_y)
             endy = y
-            starty, endy = max(0, starty), min(y, endy)
+        else:  # 'center'
+            starty = max(0, y // 2 - new_y // 2)
+            endy = min(y, starty + new_y)
+
         self.workingProjections = self.workingProjections[:, starty:endy, startx:endx]
         self.finalProjections = self.finalProjections[:, starty:endy, startx:endx]
         self.image_size = self.workingProjections.shape[1:]
+
         removed_top, removed_bottom = starty, y - endy
         removed_left, removed_right = startx, x - endx
         self._shift_envelope[0] = max(0.0, self._shift_envelope[0] - removed_top)
         self._shift_envelope[1] = max(0.0, self._shift_envelope[1] - removed_bottom)
         self._shift_envelope[2] = max(0.0, self._shift_envelope[2] - removed_left)
         self._shift_envelope[3] = max(0.0, self._shift_envelope[3] - removed_right)
+
+    def crop_center(self, new_x, new_y):
+        """Deprecated shim — use ``tomo.crop(new_y, new_x, anchor='center')``."""
+        return self.crop(new_y, new_x, anchor='center')
+
+    def crop_bottom_center(self, new_y, new_x):
+        """Deprecated shim — use ``tomo.crop(new_y, new_x, anchor='bottom')``."""
+        return self.crop(new_y, new_x, anchor='bottom')
 
 
     def track_shifts(self):
@@ -482,50 +427,6 @@ class tomoData:
         plt.ylabel('Angle')
         plt.show()
 
-    def bilateralFilter(self, *args, **kwargs):
-        print("\n")
-        return bilateralFilter(self, *args, **kwargs)
-
-    def cross_correlate_align(self, *args, **kwargs):
-        print("\n")
-        return cross_correlate_align(self, *args, **kwargs)
-
-    def rotate_correlate_align(self, *args, **kwargs):
-        print("\n")
-        return rotate_correlate_align(self, *args, **kwargs)
-
-    def PMA(self, *args, **kwargs):
-        print("\n")
-        return PMA(self, *args, **kwargs)
-
-    def vertical_mass_fluctuation_align(tomo, *args, **kwargs):
-        print("\n")
-        return vertical_mass_fluctuation_align(tomo, *args, **kwargs)
-
-    def tomopy_align(self, *args, **kwargs):
-        print("\n")
-        return tomopy_align(self, *args, **kwargs)
-
-    def optical_flow_align(self, *args, **kwargs):
-        print("\n")
-        return optical_flow_align(self, *args, **kwargs)
-
-    def shift_min_to_middle(self, *args, **kwargs):
-        print("\n")
-        return shift_min_to_middle(self, *args, **kwargs)
-    
-    def sinogram_consistency_score(self, *args, **kwargs):
-        print("\n")
-        return sinogram_consistency_score(self, *args, **kwargs)
-    
-    def reprojection_consistency_score(self, *args, **kwargs):
-        print("\n")
-        return reprojection_consistency_score(self, *args, **kwargs)
-
-    def fourier_shell_correlation(self, *args, **kwargs):
-        print("\n")
-        return fourier_shell_correlation(self, *args, **kwargs)
-
     def center_projections(self):
         """
         Determines and adjusts the center of rotation for 2D projection images by finding the initial center,
@@ -555,13 +456,15 @@ class tomoData:
             print(f"Projections are currently centered at pixel {self.rotation_center}. Residual offset: {self.center_offset}")
             self.tracked_shifts[:, 1] += x_shift
 
-    def reconstruct(self, algorithm, snr_db=None):
+    def reconstruct(self, algorithm, snr_db=None, num_iter=400, extra_options=None):
         """
         Reconstructs the 3D volume from projections using the specified algorithm.
 
         Parameters:
         - algorithm (str): The reconstruction algorithm to use.
         - snr_db (float or None): Signal-to-noise ratio for SVMBIR, if applicable.
+        - num_iter (int): Number of iterations for iterative CUDA algorithms (default 400).
+        - extra_options (dict or None): Extra ASTRA options (e.g. {'MinConstraint': 0}).
         """
         #Center projections before reconstruction. So reconstruction knows where center is.
         self.rotation_center = tomopy.find_center_vo(self.finalProjections)
@@ -573,8 +476,8 @@ class tomoData:
                 options = {
                     'proj_type': 'cuda',
                     'method': algorithm,
-                    'num_iter': 400,
-                    'extra_options': {}
+                    'num_iter': num_iter,
+                    'extra_options': extra_options or {}
                 }
                 self.recon = tomopy.recon(
                     self.finalProjections,
@@ -630,164 +533,47 @@ class tomoData:
             rc = getattr(self, 'rotation_center', 0)
             center = rc if rc else None
         return simulate_projections(recon, angles, center=center, emission=emission, pad=pad, ncore=ncore, use_astra=use_astra)
-    
-    def kovacik_filter(self, tilt_max=None,
-                       mwr_length=20, mwr_order=4, mwr_wmin=0.2,
-                       cs_length=15, cs_order=4, cs_cutoff=10, plot=False, plotSlice=None):
-        """
-        Apply the Kovacik soft Fourier angular filter to self.recon in-place.
 
-        Suppresses missing-wedge ray artifacts by smoothing the sharp
-        Fourier-space transition between the sampled data region and the
-        missing wedge. The filter Omega_A = max(MWR, CS) consists of:
 
-          MWR (Missing Wedge Ramps): Butterworth ramps adjacent to the
-              boundaries of the highest-tilt projections, transitioning
-              from 1.0 (interior) to mwr_wmin (at the boundary).
+# ─────────────────────────────────────────────────────────────────────────────
+# Auto-attach delegates: each free function below is exposed as a method on
+# ``tomoData`` that takes the instance as its first argument. The generated
+# method prints a leading newline (preserves prior visual spacing in logs),
+# then forwards to the free function and returns its result. The wrapped
+# function's docstring is preserved so ``help(tomo.PMA)`` still works.
+# ─────────────────────────────────────────────────────────────────────────────
 
-          CS (Central Stripe): a Butterworth ramp along the kx-axis that
-              protects low spatial frequencies from attenuation.
+def _attach_delegate(cls, fn):
+    """Attach a method on ``cls`` named ``fn.__name__`` that calls ``fn(self, ...)``."""
+    name = fn.__name__
 
-        Reference: Kovacik et al. (2014) J. Struct. Biol. 186, 141-152.
+    def delegate(self, *args, **kwargs):
+        print("\n")
+        return fn(self, *args, **kwargs)
 
-        Parameters
-        ----------
-        tilt_max : float
-            Maximum tilt angle in radians (full range is ±tilt_max).
-        mwr_length : int
-            MWR half-width in pixels. Larger values give a smoother ramp.
-        mwr_order : int
-            Butterworth order for the MWR (2 or 4 recommended).
-        mwr_wmin : float
-            Minimum filter weight applied at the tilt boundary (0–1).
-            Lower values suppress artifacts more aggressively.
-        cs_length : int
-            Unused directly; kept for API symmetry with the paper notation.
-        cs_order : int
-            Butterworth order for the central stripe.
-        cs_cutoff : int
-            Half-power radius (pixels) of the central stripe. The stripe
-            equals 1 at kz=0 and falls to 0.5 at |kz| = cs_cutoff.
-        plot : bool
-            If True, display the central slice before/after filtering,
-            the FFT magnitude before/after, the filter itself, and the
-            difference image.
-        """
-        if plot==True and plotSlice is None:
-            plotSlice = self.recon.shape[0] // 2
-        if tilt_max is None:
-            tilt_max = np.max(self.ang)
-        if self.recon is None:
-            raise ValueError("No reconstruction found. Run reconstruct() first.")
+    delegate.__name__ = name
+    delegate.__qualname__ = f"{cls.__name__}.{name}"
+    delegate.__doc__ = fn.__doc__
+    delegate.__wrapped__ = fn
+    setattr(cls, name, delegate)
 
-        # Always filter from the original recon so repeated calls don't stack.
-        if not hasattr(self, '_recon_pre_kovacik') or self._recon_pre_kovacik is None:
-            self._recon_pre_kovacik = self.recon.copy()
-        source = self._recon_pre_kovacik
 
-        nz, ny, nx = source.shape
-        tilt_max_rad = tilt_max
+for _fn in (
+    bilateralFilter,
+    cross_correlate_align,
+    rotate_correlate_align,
+    projection_matching_alignment,
+    vertical_mass_fluctuation_align,
+    tomopy_align,
+    optical_flow_align,
+    shift_min_to_middle,
+    sinogram_consistency_score,
+    reprojection_consistency_score,
+    fourier_shell_correlation,
+    kovacik_filter,
+):
+    _attach_delegate(tomoData, _fn)
+del _fn
 
-        # --- Build the 2D angular filter in fftfreq coordinate order ---
-        # Each XY slice recon[z, :, :] is the reconstruction plane; the
-        # missing wedge shows up in the KX-KY Fourier plane of these slices.
-        kx_1d = np.fft.fftfreq(nx) * nx
-        ky_1d = np.fft.fftfreq(ny) * ny
-        kx, ky = np.meshgrid(kx_1d, ky_1d)  # both (ny, nx)
-
-        R = np.sqrt(kx ** 2 + ky ** 2)
-
-        # Fold into the first quadrant — real-space XY slices have a
-        # Hermitian FFT, so the filter has the same 4-fold symmetry.
-        angle_from_x = np.arctan2(np.abs(ky), np.abs(kx))  # [0, π/2]
-
-        # --- MWR ---
-        # Perpendicular pixel distance from each point to the nearest
-        # tilt-boundary line.  For points inside the data region this is
-        # R * sin(tilt_max_rad - angle_from_x); for missing-wedge points
-        # the max() clamps it to 0, yielding weight = mwr_wmin.
-        dist_to_boundary = R * np.sin(np.maximum(tilt_max_rad - angle_from_x, 0.0))
-
-        safe_length = max(mwr_length, 1e-6)
-        t = (dist_to_boundary / safe_length) ** (2 * mwr_order)
-        mwr = mwr_wmin + (1.0 - mwr_wmin) * t / (1.0 + t)
-        mwr[angle_from_x > tilt_max_rad] = mwr_wmin
-
-        # --- CS ---
-        safe_cutoff = max(cs_cutoff, 1e-6)
-        cs = 1.0 / (1.0 + (np.abs(ky) / safe_cutoff) ** (2 * cs_order))
-
-        # --- Combined filter ---
-        angular_filter = np.maximum(mwr, cs)
-
-        # --- Apply vectorized over Z using rfft2 (real input → half-spectrum) ---
-        # rfft2 output has shape (nz, ny, nx//2+1) — ~half the complex memory of fft2.
-        # The filter is real and even-symmetric in Fourier space (built from |kx|, |ky|),
-        # so irfft2 is equivalent to real(ifft2) for this multiplication.
-        print("Applying Kovacik filter...")
-        filt_r = angular_filter[:, :nx // 2 + 1]  # trim to rfft2 half-spectrum
-        if cp is not None:
-            src_gpu = cp.asarray(source)
-            filt_gpu = cp.asarray(filt_r)
-            rfft_gpu = cp.fft.rfft2(src_gpu, axes=(1, 2))
-            filtered = cp.asnumpy(
-                cp.fft.irfft2(rfft_gpu * filt_gpu[cp.newaxis], s=(ny, nx), axes=(1, 2))
-            ).astype(source.dtype, copy=False)
-        else:
-            rfft = np.fft.rfft2(source, axes=(1, 2))
-            filtered = np.fft.irfft2(
-                rfft * filt_r[np.newaxis], s=(ny, nx), axes=(1, 2)
-            ).astype(source.dtype, copy=False)
-
-        self.recon = filtered
-
-        if plot:
-            import matplotlib.pyplot as plt
-
-            cz = plotSlice
-            orig_slice = source[cz, :, :]
-            filt_slice = filtered[cz, :, :]
-            diff_slice = filt_slice - orig_slice
-
-            fft_orig = np.fft.fftshift(np.log1p(np.abs(np.fft.fft2(orig_slice))))
-            fft_filt = np.fft.fftshift(np.log1p(np.abs(np.fft.fft2(filt_slice))))
-            filter_display = np.fft.fftshift(angular_filter)
-
-            # Shared display limits for the real-space images
-            vmin, vmax = np.percentile(orig_slice, [1, 99])
-
-            fig, axes = plt.subplots(2, 3, figsize=(14, 9))
-            fig.suptitle("Kovacik Filter — Central Slice Diagnostics", fontsize=14, y=1.01)
-
-            axes[0, 0].imshow(orig_slice, cmap="gray", vmin=vmin, vmax=vmax)
-            axes[0, 0].set_title("Central Slice — Before")
-            axes[0, 0].axis("off")
-
-            axes[0, 1].imshow(filt_slice, cmap="gray", vmin=vmin, vmax=vmax)
-            axes[0, 1].set_title("Central Slice — After")
-            axes[0, 1].axis("off")
-
-            im_diff = axes[0, 2].imshow(diff_slice, cmap="bwr",
-                                         vmin=-np.abs(diff_slice).max(),
-                                         vmax=np.abs(diff_slice).max())
-            axes[0, 2].set_title("Difference (After − Before)")
-            axes[0, 2].axis("off")
-            fig.colorbar(im_diff, ax=axes[0, 2], fraction=0.046, pad=0.04)
-
-            axes[1, 0].imshow(fft_orig, cmap="inferno")
-            axes[1, 0].set_title("FFT Magnitude — Before (log)")
-            axes[1, 0].axis("off")
-
-            axes[1, 1].imshow(fft_filt, cmap="inferno")
-            axes[1, 1].set_title("FFT Magnitude — After (log)")
-            axes[1, 1].axis("off")
-
-            im_flt = axes[1, 2].imshow(filter_display, cmap="viridis", vmin=0, vmax=1)
-            axes[1, 2].set_title("Kovacik Filter (Fourier space)")
-            axes[1, 2].axis("off")
-            fig.colorbar(im_flt, ax=axes[1, 2], fraction=0.046, pad=0.04)
-
-            plt.tight_layout()
-            plt.show()
-
-        print("Kovacik filter applied.")
+# Backwards-compatibility alias for the previous CAPS naming.
+tomoData.PMA = tomoData.projection_matching_alignment

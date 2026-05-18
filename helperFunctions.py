@@ -7,17 +7,8 @@ import time
 import sys
 from matplotlib.widgets import Slider
 import tifffile
-try:
-    import cupy as cp
-    cp.array([1])  # real allocation — raises if GPU is unavailable or busy
-    from cupyx.scipy.ndimage import fourier_shift, gaussian_filter as _gpu_gf
-    xp = cp
-except Exception:
-    cp = None
-    from scipy.ndimage import fourier_shift
-    _gpu_gf = None
-    xp = np
 
+from gpu import xp, cp, fourier_shift
 from scipy.ndimage import gaussian_filter as _cpu_gf
 
 
@@ -406,30 +397,17 @@ def convert_to_tiff(numpy_data, file_location, scale_info=None):
 
 def convert_to_2Dtiff(numpy_data, file_location, scale_info=None):
     """
-    Saves a 2D numpy array as a TIFF file, including scale information if provided.
-    
+    Saves a 2D numpy array as a TIFF file. Wraps the 2D array as a 1×H×W stack
+    before saving (preserving prior behavior) and delegates to ``convert_to_tiff``.
+
     Parameters:
     - numpy_data: 2D numpy array to be saved.
     - file_location: Path and filename for the output TIFF file.
     - scale_info: Optional dictionary containing 'XResolution', 'YResolution', and 'Unit'.
-                  If provided, these values are used to set the resolution of the TIFF file.
     """
     if numpy_data.ndim != 2:
         raise ValueError("Input array must be 2D.")
-
-    numpy_data = np.array([numpy_data])
-
-    # Convert scale information to appropriate units for TIFF metadata
-    if scale_info:
-        xres = scale_info.get('XResolution', 1)  # Default resolution is 1 if not specified
-        yres = scale_info.get('YResolution', 1)
-        unit = scale_info.get('Unit', 'MICRON')  # Default unit is inches
-
-        # Save the numpy array as a TIFF with resolution information
-        tifffile.imsave(file_location, numpy_data, resolution=(xres, yres, unit))
-    else:
-        # Save without resolution information if not provided
-        tifffile.imsave(file_location, numpy_data)
+    return convert_to_tiff(np.array([numpy_data]), file_location, scale_info)
 
 def degree_to_positiveRadians(angles):
     angles_radians = np.deg2rad(angles)
