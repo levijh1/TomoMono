@@ -32,6 +32,17 @@ RAW_HDF5    = '/home/ljh79/groups/grp_ptychi/nobackup/autodelete/Oct2025APSdata/
 DROP_ANGLES = [19, 26]
 
 
+def _correct_svmbir_geometry(recon):
+    """Align SVMBIR reconstruction to TomoPy coordinate system.
+
+    SVMBIR uses different rotation direction and detector conventions than TomoPy.
+    This function applies the necessary transformations to match TomoPy's geometry.
+    """
+    recon = np.flip(recon, axis=2)  # flip x-axis
+    recon = np.rot90(recon, k=1, axes=(1, 2))  # rotate 90° in XY plane
+    return recon
+
+
 def load_angles(hdf5_path, drop_indices):
     with h5py.File(hdf5_path, 'r') as hf:
         ang_deg = hf['angles'][...]

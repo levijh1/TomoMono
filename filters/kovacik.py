@@ -12,8 +12,8 @@ from gpu import cp
 
 def kovacik_filter(tomo, tilt_max=None,
                    mwr_length=20, mwr_order=4, mwr_wmin=0.2,
-                   cs_length=15, cs_order=4, cs_cutoff=10,
-                   plot=False, plotSlice=None):
+                   cs_order=4, cs_cutoff=10,
+                   plot=False, plotSlice=None, only_slice=None):
     """
     Apply the Kovacik soft Fourier angular filter to ``tomo.recon`` in-place.
 
@@ -44,8 +44,6 @@ def kovacik_filter(tomo, tilt_max=None,
     mwr_wmin : float
         Minimum filter weight at the tilt boundary (0–1). Lower values suppress
         artifacts more aggressively.
-    cs_length : int
-        Unused directly; kept for API symmetry with the paper notation.
     cs_order : int
         Butterworth order for the central stripe.
     cs_cutoff : int
@@ -56,9 +54,11 @@ def kovacik_filter(tomo, tilt_max=None,
         and the difference image.
     plotSlice : int, optional
         Z-slice index to display in diagnostic plots; defaults to the middle.
+    only_slice : int or tuple of (int, int), optional
+        If specified, only filter this single slice (int) or range of slices
+        (tuple: start_idx, end_idx inclusive). Useful for parameter tuning
+        before filtering the full volume. Default None filters all slices.
     """
-    if plot is True and plotSlice is None:
-        plotSlice = tomo.recon.shape[0] // 2
     if tilt_max is None:
         tilt_max = np.max(tomo.ang)
     if tomo.recon is None:
@@ -71,6 +71,23 @@ def kovacik_filter(tomo, tilt_max=None,
 
     nz, ny, nx = source.shape
     tilt_max_rad = tilt_max
+
+    # Parse only_slice parameter to determine slice range to filter.
+    if only_slice is not None:
+        if isinstance(only_slice, int):
+            z_start, z_end = only_slice, only_slice
+        elif isinstance(only_slice, (tuple, list)) and len(only_slice) == 2:
+            z_start, z_end = only_slice[0], only_slice[1]
+        else:
+            raise ValueError("only_slice must be an int or (start, end) tuple")
+        z_indices = np.arange(z_start, z_end + 1)
+    else:
+        z_indices = np.arange(nz)
+
+    if only_slice is not None:
+        plotSlice = z_start  # Always show the filtered slice(s) when only_slice is specified
+    elif plot is True and plotSlice is None:
+        plotSlice = nz // 2  # Default to middle slice when filtering entire volume
 
     # Build the 2D angular filter in fftfreq coordinate order.
     # Each XY slice recon[z, :, :] is the reconstruction plane; the missing
@@ -104,21 +121,32 @@ def kovacik_filter(tomo, tilt_max=None,
     # rfft2 output is (nz, ny, nx//2+1) — half the complex memory of fft2.
     # The filter is real and even-symmetric, so irfft2 is equivalent to
     # real(ifft2) for this multiplication.
-    print("Applying Kovacik filter...")
+    if only_slice is not None:
+        print(f"Applying Kovacik filter to slice(s) {z_start}–{z_end}...")
+    else:
+        print("Applying Kovacik filter...")
+
     filt_r = angular_filter[:, :nx // 2 + 1]
+
+    # Start with a copy of the source (to preserve non-filtered slices).
+    filtered = source.copy()
+
+    # Filter only the selected slices.
+    to_filter = source[z_indices]
     if cp is not None:
-        src_gpu = cp.asarray(source)
+        src_gpu = cp.asarray(to_filter)
         filt_gpu = cp.asarray(filt_r)
         rfft_gpu = cp.fft.rfft2(src_gpu, axes=(1, 2))
-        filtered = cp.asnumpy(
-            cp.fft.irfft2(rfft_gpu * filt_gpu[cp.newaxis], s=(ny, nx), axes=(1, 2))
+        filt_result = cp.asnumpy(
+            cp.fft.irfft2(rfft_gpu * filt_gpu[np.newaxis], s=(ny, nx), axes=(1, 2))
         ).astype(source.dtype, copy=False)
     else:
-        rfft = np.fft.rfft2(source, axes=(1, 2))
-        filtered = np.fft.irfft2(
+        rfft = np.fft.rfft2(to_filter, axes=(1, 2))
+        filt_result = np.fft.irfft2(
             rfft * filt_r[np.newaxis], s=(ny, nx), axes=(1, 2)
         ).astype(source.dtype, copy=False)
 
+    filtered[z_indices] = filt_result
     tomo.recon = filtered
 
     if plot:
@@ -155,10 +183,11 @@ def _plot_kovacik_diagnostics(source, filtered, angular_filter, plotSlice):
     axes[0, 2].set_title("Difference (After − Before)"); axes[0, 2].axis("off")
     fig.colorbar(im_diff, ax=axes[0, 2], fraction=0.046, pad=0.04)
 
-    axes[1, 0].imshow(fft_orig, cmap="inferno")
+    fft_vmin, fft_vmax = np.percentile(np.concatenate([fft_orig.ravel(), fft_filt.ravel()]), [1, 99])
+    axes[1, 0].imshow(fft_orig, cmap="inferno", vmin=fft_vmin, vmax=fft_vmax)
     axes[1, 0].set_title("FFT Magnitude — Before (log)"); axes[1, 0].axis("off")
 
-    axes[1, 1].imshow(fft_filt, cmap="inferno")
+    axes[1, 1].imshow(fft_filt, cmap="inferno", vmin=fft_vmin, vmax=fft_vmax)
     axes[1, 1].set_title("FFT Magnitude — After (log)"); axes[1, 1].axis("off")
 
     im_flt = axes[1, 2].imshow(filter_display, cmap="viridis", vmin=0, vmax=1)

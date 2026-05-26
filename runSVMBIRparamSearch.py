@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-SVMBIR parameter search — scan key qGGMRF and solver settings to diagnose
-periodic reconstruction artifacts.
+SVMBIR parameter search — focus on max_resolutions values (2-8) and sharpness tuning
+with default snr_db=30.0 and positivity constraint.
 
 Usage:
     python runSVMBIRparamSearch.py --tiff-file <path> [options]
@@ -12,17 +12,14 @@ Options:
     --y-end   N     Y crop end (exclusive)
     --width   N     Centered detector width in pixels
     --output-dir    Base directory; script creates dated recons/ and slices/ subdirs
-    --configs       Comma-separated names to run (default: all)
+                    (default: reconstructions/APSbeamtime_Oct25/svmbir)
+    --csv-file      CSV file path to save results (default: hyperparam_results/svmbir_search_<timestamp>.csv)
+    --configs       Comma-separated config names to run (default: all)
     --fsc           Also compute FSC resolution for each config (very slow: 3x compute)
     --list-configs  Print all available config names and exit
     --num-workers N Run N configs in parallel (default: 1)
 
-Periodic artifact suspects in order of likelihood:
-  1. max_resolutions  — grid upsampling can imprint periodic patterns
-  2. p (qGGMRF shape) — values near 1.0 (TV-like) create staircase/block artifacts
-  3. snr_db           — too high over-fits to noise stripes
-  4. sharpness        — positive values can cause Gibbs ringing
-  5. positivity=True  — forces non-negative, can create Gibbs-like ripples near edges
+Current focus (15 configs): maxres=2-8 sweep + sharpness tuning on maxres=3,4 + p=2.0 variants
 """
 
 import sys
@@ -53,6 +50,17 @@ except ImportError:
     print("ERROR: svmbir not installed — activate tomoMono conda env")
     sys.exit(1)
 
+
+def _correct_svmbir_geometry(recon):
+    """Align SVMBIR reconstruction to TomoPy coordinate system.
+
+    SVMBIR uses different rotation direction and detector conventions than TomoPy.
+    This function applies the necessary transformations to match TomoPy's geometry.
+    """
+    recon = np.flip(recon, axis=2)  # flip x-axis
+    recon = np.rot90(recon, k=1, axes=(1, 2))  # rotate 90° in XY plane
+    return recon
+
 RAW_HDF5    = '/home/ljh79/groups/grp_ptychi/nobackup/autodelete/Oct2025APSdata/tomo_data_run_final_2.hdf5'
 DROP_ANGLES = [19, 26]
 
@@ -60,24 +68,13 @@ DROP_ANGLES = [19, 26]
 # Parameter configurations
 # Each dict is one SVMBIR run. Keys map to svmbir.recon() kwargs.
 # 'name' is used for filenames and the results table.
+# Focus: higher maxres values (2-8) with default snr_db and sharpness sweep
 # ---------------------------------------------------------------------------
 ALL_CONFIGS = [
-    # ── Baseline (current production defaults) ──────────────────────────────
-    dict(name='baseline',
+    # ── maxres sweep with default snr_db=30.0 ──────────────────────────────
+    dict(name='maxres_2',
          snr_db=30.0, sharpness=0.0, p=1.2, q=2.0, T=1.0,
-         max_resolutions=None, positivity=True, weight_type='unweighted',
-         b_interslice=1.0),
-
-    # ── max_resolutions sweep — most likely cause of periodic grid patterns ─
-    # max_resolutions=0 → single-resolution (no multi-grid upsampling)
-    dict(name='maxres_0',
-         snr_db=30.0, sharpness=0.0, p=1.2, q=2.0, T=1.0,
-         max_resolutions=0, positivity=True, weight_type='unweighted',
-         b_interslice=1.0),
-
-    dict(name='maxres_1',
-         snr_db=30.0, sharpness=0.0, p=1.2, q=2.0, T=1.0,
-         max_resolutions=1, positivity=True, weight_type='unweighted',
+         max_resolutions=2, positivity=True, weight_type='unweighted',
          b_interslice=1.0),
 
     dict(name='maxres_3',
@@ -85,77 +82,72 @@ ALL_CONFIGS = [
          max_resolutions=3, positivity=True, weight_type='unweighted',
          b_interslice=1.0),
 
-    # ── snr_db sweep — controls data-fidelity weight ────────────────────────
-    dict(name='snr_db_20',
-         snr_db=20.0, sharpness=0.0, p=1.2, q=2.0, T=1.0,
-         max_resolutions=None, positivity=True, weight_type='unweighted',
+    dict(name='maxres_4',
+         snr_db=30.0, sharpness=0.0, p=1.2, q=2.0, T=1.0,
+         max_resolutions=4, positivity=True, weight_type='unweighted',
          b_interslice=1.0),
 
-    dict(name='snr_db_25',
-         snr_db=25.0, sharpness=0.0, p=1.2, q=2.0, T=1.0,
-         max_resolutions=None, positivity=True, weight_type='unweighted',
+    dict(name='maxres_5',
+         snr_db=30.0, sharpness=0.0, p=1.2, q=2.0, T=1.0,
+         max_resolutions=5, positivity=True, weight_type='unweighted',
          b_interslice=1.0),
 
-    dict(name='snr_db_40',
-         snr_db=40.0, sharpness=0.0, p=1.2, q=2.0, T=1.0,
-         max_resolutions=None, positivity=True, weight_type='unweighted',
+    dict(name='maxres_6',
+         snr_db=30.0, sharpness=0.0, p=1.2, q=2.0, T=1.0,
+         max_resolutions=6, positivity=True, weight_type='unweighted',
          b_interslice=1.0),
 
-    # ── p (qGGMRF shape) sweep — near-TV vs Gaussian prior ─────────────────
-    # p=1.0 is pure TV (prone to staircase/block artifacts)
-    dict(name='p_1p0',
-         snr_db=30.0, sharpness=0.0, p=1.0, q=2.0, T=1.0,
-         max_resolutions=None, positivity=True, weight_type='unweighted',
+    dict(name='maxres_7',
+         snr_db=30.0, sharpness=0.0, p=1.2, q=2.0, T=1.0,
+         max_resolutions=7, positivity=True, weight_type='unweighted',
          b_interslice=1.0),
 
-    dict(name='p_1p5',
-         snr_db=30.0, sharpness=0.0, p=1.5, q=2.0, T=1.0,
-         max_resolutions=None, positivity=True, weight_type='unweighted',
+    dict(name='maxres_8',
+         snr_db=30.0, sharpness=0.0, p=1.2, q=2.0, T=1.0,
+         max_resolutions=8, positivity=True, weight_type='unweighted',
          b_interslice=1.0),
 
-    dict(name='p_2p0',
-         snr_db=30.0, sharpness=0.0, p=2.0, q=2.0, T=2.0,
-         max_resolutions=None, positivity=True, weight_type='unweighted',
+    dict(name='maxres_9',
+         snr_db=30.0, sharpness=0.0, p=1.2, q=2.0, T=1.0,
+         max_resolutions=9, positivity=True, weight_type='unweighted',
          b_interslice=1.0),
 
-    # ── sharpness sweep ─────────────────────────────────────────────────────
-    dict(name='sharp_neg2',
-         snr_db=30.0, sharpness=-2.0, p=1.2, q=2.0, T=1.0,
-         max_resolutions=None, positivity=True, weight_type='unweighted',
-         b_interslice=1.0),
-
-    dict(name='sharp_neg1',
+    # ── sharpness sweep with maxres=3 ───────────────────────────────────────
+    dict(name='maxres3_sharp_neg1',
          snr_db=30.0, sharpness=-1.0, p=1.2, q=2.0, T=1.0,
-         max_resolutions=None, positivity=True, weight_type='unweighted',
+         max_resolutions=3, positivity=True, weight_type='unweighted',
          b_interslice=1.0),
 
-    dict(name='sharp_pos2',
-         snr_db=30.0, sharpness=2.0, p=1.2, q=2.0, T=1.0,
-         max_resolutions=None, positivity=True, weight_type='unweighted',
+    dict(name='maxres3_sharp_pos1',
+         snr_db=30.0, sharpness=1.0, p=1.2, q=2.0, T=1.0,
+         max_resolutions=3, positivity=True, weight_type='unweighted',
          b_interslice=1.0),
 
-    # ── positivity=False — may help phase data, reduces Gibbs ripple ────────
-    dict(name='no_positivity',
-         snr_db=30.0, sharpness=0.0, p=1.2, q=2.0, T=1.0,
-         max_resolutions=None, positivity=False, weight_type='unweighted',
+    # ── sharpness sweep with maxres=4 ───────────────────────────────────────
+    dict(name='maxres4_sharp_neg1',
+         snr_db=30.0, sharpness=-1.0, p=1.2, q=2.0, T=1.0,
+         max_resolutions=4, positivity=True, weight_type='unweighted',
          b_interslice=1.0),
 
-    # ── weight_type sweep ───────────────────────────────────────────────────
-    dict(name='wt_transmroot',
-         snr_db=30.0, sharpness=0.0, p=1.2, q=2.0, T=1.0,
-         max_resolutions=None, positivity=True, weight_type='transmission_root',
+    dict(name='maxres4_sharp_pos1',
+         snr_db=30.0, sharpness=1.0, p=1.2, q=2.0, T=1.0,
+         max_resolutions=4, positivity=True, weight_type='unweighted',
          b_interslice=1.0),
 
-    # ── Combined: single-resolution + Gaussian prior (clean starting point) ─
-    dict(name='maxres0_p2',
+    # ── Cleaner prior (p=2.0) with higher maxres ──────────────────────────
+    dict(name='maxres5_p2p0',
          snr_db=30.0, sharpness=0.0, p=2.0, q=2.0, T=2.0,
-         max_resolutions=0, positivity=True, weight_type='unweighted',
+         max_resolutions=5, positivity=True, weight_type='unweighted',
          b_interslice=1.0),
 
-    # ── Combined: low SNR + single-resolution ───────────────────────────────
-    dict(name='maxres0_snr20',
-         snr_db=20.0, sharpness=0.0, p=1.2, q=2.0, T=1.0,
-         max_resolutions=0, positivity=True, weight_type='unweighted',
+    dict(name='maxres6_p2p0',
+         snr_db=30.0, sharpness=0.0, p=2.0, q=2.0, T=2.0,
+         max_resolutions=6, positivity=True, weight_type='unweighted',
+         b_interslice=1.0),
+
+    dict(name='maxres7_p2p0',
+         snr_db=30.0, sharpness=0.0, p=2.0, q=2.0, T=2.0,
+         max_resolutions=7, positivity=True, weight_type='unweighted',
          b_interslice=1.0),
 ]
 
@@ -330,6 +322,7 @@ def run_single_config(task):
 
     t_recon = time.time()
     tomo.recon = svmbir.recon(tomo.finalProjections, tomo.ang, **svmbir_kwargs)
+    tomo.recon = _correct_svmbir_geometry(tomo.recon)
     tomo.recon = tomopy.circ_mask(tomo.recon, axis=0, ratio=0.99)
     elapsed_min = (time.time() - t_recon) / 60.0
     print(f'[pid={os.getpid()}] Done: {name}  ({elapsed_min:.1f} min)', flush=True)
@@ -394,11 +387,17 @@ def main(args):
     total_cpus  = int(os.environ.get('SLURM_CPUS_PER_TASK', os.cpu_count() or 1))
     num_workers = min(args.num_workers, len(configs))
 
-    base_dir = args.output_dir or os.path.join(_SCRIPT_DIR, 'reconstructions', 'APSbeamtime_Oct25')
+    base_dir = args.output_dir or os.path.join(_SCRIPT_DIR, 'reconstructions', 'APSbeamtime_Oct25', 'svmbir')
     recons_dir = os.path.join(base_dir, f'svmbir_recons_{timestamp}')
     slices_dir = os.path.join(base_dir, f'svmbir_slices_{timestamp}')
     csv_dir    = os.path.join(_SCRIPT_DIR, 'hyperparam_results')
-    csv_path   = os.path.join(csv_dir, f'svmbir_search_{timestamp}.csv')
+
+    # Use specified CSV file if provided, otherwise create a new timestamped one
+    if args.csv_file:
+        csv_path = args.csv_file
+    else:
+        csv_path = os.path.join(csv_dir, f'svmbir_search_{timestamp}.csv')
+
     log_path   = os.path.join(_SCRIPT_DIR, 'logs', f'svmbir_search_{timestamp}.txt')
 
     os.makedirs(recons_dir, exist_ok=True)
@@ -537,7 +536,9 @@ if __name__ == '__main__':
     parser.add_argument('--width',        type=int, default=None)
     parser.add_argument('--output-dir',   type=str, default=None,
                         help='Base dir; recons and slices subdirs are created inside it '
-                             '(default: reconstructions/APSbeamtime_Oct25)')
+                             '(default: reconstructions/APSbeamtime_Oct25/svmbir)')
+    parser.add_argument('--csv-file',     type=str, default=None,
+                        help='CSV file to save results to (default: hyperparam_results/svmbir_search_<timestamp>.csv)')
     parser.add_argument('--configs',      type=str, default=None,
                         help='Comma-separated config names to run (default: all)')
     parser.add_argument('--fsc',          action='store_true',

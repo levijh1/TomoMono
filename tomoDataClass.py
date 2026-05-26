@@ -9,6 +9,17 @@ from alignment_methods import *
 from gpu import xp, cp, torch, svmbir, ndimage_shift as _ndimage_shift
 
 
+def _correct_svmbir_geometry(recon):
+    """Align SVMBIR reconstruction to TomoPy coordinate system.
+
+    SVMBIR uses different rotation direction and detector conventions than TomoPy.
+    This function applies the necessary transformations to match TomoPy's geometry.
+    """
+    recon = np.flip(recon, axis=2)  # flip x-axis
+    recon = np.rot90(recon, k=1, axes=(1, 2))  # rotate 90° in XY plane
+    return recon
+
+
 def simulate_projections(recon, angles, center=None, emission=True, pad=False, ncore=None, use_astra=None):
     """
     Simulate projections through a 3D volume at the given angles.
@@ -496,6 +507,7 @@ class tomoData:
                 self.recon = svmbir.recon(self.finalProjections, self.ang, center_offset=self.center_offset, verbose=1)
             else:
                 self.recon = svmbir.recon(self.finalProjections, self.ang, center_offset=self.center_offset, snr_db=snr_db, verbose=1)
+            self.recon = _correct_svmbir_geometry(self.recon)
         else:
             print("Using CPU-based reconstruction. Algorithm: ", algorithm)
             self.recon = tomopy.recon(

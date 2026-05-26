@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --time=48:00:00  # walltime (48 hours for full-res parameter search)
+#SBATCH --time=6:00:00  # walltime (48 hours for full-res parameter search)
 #SBATCH --output=/home/ljh79/TomoMono/sbatch_output/tomopy_param_search/output-%j.txt
 #SBATCH --error=/home/ljh79/TomoMono/sbatch_output/tomopy_param_search/output-error-%j.txt
 #SBATCH --ntasks=1   # number of processor cores (i.e. tasks)

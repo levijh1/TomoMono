@@ -1,3 +1,32 @@
+def save_orthogonal_slices(tomo_obj, output_path):
+    """
+    Save orthogonal slices through the reconstruction to a PNG file.
+    """
+    import matplotlib.pyplot as plt
+    recon = tomo_obj.recon
+    nz, ny, nx = recon.shape
+    cx, cy, cz = nx // 2, ny // 2, nz // 2
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+    axes[0].imshow(recon[cz, :, :], cmap='gray', aspect='equal')
+    axes[0].set_title(f'XY  (z={cz})')
+
+    axes[1].imshow(recon[:, cy, :], cmap='gray', aspect='auto')
+    axes[1].set_title(f'XZ  (y={cy})')
+
+    axes[2].imshow(recon[:, :, cx], cmap='gray', aspect='auto')
+    axes[2].set_title(f'YZ  (x={cx})')
+
+    for ax in axes:
+        ax.axis('off')
+
+    plt.suptitle('Orthogonal slices through reconstruction')
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=100, bbox_inches='tight')
+    plt.close(fig)
+
+
 def main(args):
     # ===================== Imports =====================
     import os
@@ -7,6 +36,7 @@ def main(args):
     import h5py
     import numpy as np
     import tomopy
+    import matplotlib.pyplot as plt
     from datetime import datetime
 
     import tomoDataClass
@@ -15,7 +45,7 @@ def main(args):
 
     # ================== Configuration ==================
     TIFF_FILE  = args.tiff_file
-    OUTPUT_DIR = args.output_dir or '/home/ljh79/TomoMono/reconstructions/APSbeamtime_Oct25/tomopy'
+    BASE_OUTPUT_DIR = args.output_dir or '/home/ljh79/TomoMono/reconstructions/APSbeamtime_Oct25/tomopy'
     RAW_HDF5   = '/home/ljh79/groups/grp_ptychi/nobackup/autodelete/Oct2025APSdata/tomo_data_run_final_2.hdf5'
     DROP_ANGLES = [19, 26]
     LOG        = True
@@ -44,7 +74,10 @@ def main(args):
 
     # =============== Logging Setup =====================
     timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+    OUTPUT_DIR = os.path.join(BASE_OUTPUT_DIR, f'tomopyAlgorithmCheck_{timestamp}')
+    SLICES_DIR = os.path.join(OUTPUT_DIR, 'orthogonal_slices')
     os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(SLICES_DIR, exist_ok=True)
     os.makedirs('logs', exist_ok=True)
     if LOG:
         sys.stdout = DualLogger(f'logs/main_tomopy_{timestamp}.txt', 'w')
@@ -144,6 +177,7 @@ def main(args):
             return
 
         try:
+            tomo_base.finalReprojections = None  # Clear cached reprojections for fresh RCS per config
             rcs, _, _ = reprojection_consistency_score(tomo_base, plot=False, normalize_method='affine')
             _, fsc_resolutions, _ = tomo_base.fourier_shell_correlation(algorithm=algorithm, plot=False)
             fsc_res = fsc_resolutions.get('half-bit')
@@ -156,6 +190,10 @@ def main(args):
             out_path = os.path.join(OUTPUT_DIR, f'{name_stem}_{label}_{timestamp}.tif')
             convert_to_tiff(tomo_base.get_recon(), out_path, scale_info)
             print(f'  Saved: {out_path}')
+
+            slices_path = os.path.join(SLICES_DIR, f'{name_stem}_{label}_{timestamp}_slices.png')
+            save_orthogonal_slices(tomo_base, slices_path)
+            print(f'  Saved orthogonal slices: {slices_path}')
 
     # =========================================================
     # Section 1: Algorithm Comparison
