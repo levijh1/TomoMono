@@ -372,27 +372,32 @@ def convert_to_numpy(file_location):
 def convert_to_tiff(numpy_data, file_location, scale_info=None):
     """
     Saves a 3D numpy array as a TIFF file, including scale information if provided.
-    
+
     Parameters:
     - numpy_data: 3D numpy array to be saved.
     - file_location: Path and filename for the output TIFF file.
     - scale_info: Optional dictionary containing 'XResolution', 'YResolution', and 'Unit'.
                   If provided, these values are used to set the resolution of the TIFF file.
     """
-    # if numpy_data.ndim != 3:
-    #     raise ValueError("Input array must be 3D.")
-
-    # Convert scale information to appropriate units for TIFF metadata
     if scale_info:
-        xres = scale_info.get('XResolution', 1)  # Default resolution is 1 if not specified
+        xres = scale_info.get('XResolution', 1)
         yres = scale_info.get('YResolution', 1)
-        unit = scale_info.get('Unit', 'MICRON')  # Default unit is inches
-
-        # Save the numpy array as a TIFF with resolution information
-        tifffile.imsave(file_location, numpy_data, resolution=(xres, yres, unit))
+        # XResolution tag is stored as pixels-per-unit, so voxel size = 1/xres
+        z_spacing = 1.0 / xres[0] if isinstance(xres, tuple) else 1.0 / xres if xres else 1.0
+        tifffile.imwrite(
+            file_location,
+            numpy_data,
+            imagej=True,
+            resolution=(xres, yres),
+            metadata={'spacing': z_spacing, 'unit': 'um', 'axes': 'ZYX'},
+        )
     else:
-        # Save without resolution information if not provided
-        tifffile.imsave(file_location, numpy_data)
+        tifffile.imwrite(
+            file_location,
+            numpy_data,
+            imagej=True,
+            metadata={'axes': 'ZYX'},
+        )
 
 
 def convert_to_2Dtiff(numpy_data, file_location, scale_info=None):
