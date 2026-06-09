@@ -38,21 +38,26 @@ def _fsc_compute_shells(vol1, vol2):
     kz = _centred_freq(nz)
     ky = _centred_freq(ny)
     kx = _centred_freq(nx)
-    r_flat = np.sqrt(
+    r = np.sqrt(
         kz[:, None, None]**2 + ky[None, :, None]**2 + kx[None, None, :]**2
-    ).ravel()
+    )
 
     max_r = min(nz, ny, nx) // 2
-    shells = np.round(r_flat).astype(np.int32)
-    del r_flat
+    shells = np.round(r).astype(np.int32)
+    del r
     valid = shells <= max_r
     shells = shells[valid]
 
-    cross = (F1 * np.conj(F2)).real.ravel()[valid]
-    p1    = (np.abs(F1)**2).ravel()[valid]
-    del F1
-    p2    = (np.abs(F2)**2).ravel()[valid]
-    del F2
+    # Flatten once and index to avoid creating full-size intermediate arrays
+    valid_flat = valid.ravel()
+    F1_ravel = F1.ravel()[valid_flat]
+    F2_ravel = F2.ravel()[valid_flat]
+    del F1, F2
+
+    cross = np.real(F1_ravel * np.conj(F2_ravel))
+    p1    = np.abs(F1_ravel)**2
+    p2    = np.abs(F2_ravel)**2
+    del F1_ravel, F2_ravel
 
     n_vox  = np.bincount(shells, minlength=max_r + 1)
     num    = np.bincount(shells, weights=cross, minlength=max_r + 1)
@@ -69,11 +74,19 @@ def _fsc_compute_shells(vol1, vol2):
 
 def _fsc_crossing(fsc, threshold, freqs):
     """
-    Resolution at the *last* downward crossing of FSC below `threshold`.
+    Resolution at the *first* downward crossing of FSC below `threshold`.
 
     Uses linear interpolation between the last shell where FSC ≥ threshold
-    and the first shell below it.  The "last above" convention avoids false
-    crossings at low frequencies where the statistical thresholds can exceed 1.
+    *before that first crossing* and the shell below it.  The first-crossing
+    convention is the standard FSC resolution criterion: once the FSC drops
+    below the threshold the reconstruction is no longer reliable, and any
+    recovery at higher frequencies (noise correlation / reconstruction
+    artifacts) must not extend the reported resolution.
+
+    To avoid spurious crossings at the lowest frequencies — where the
+    statistical thresholds (3σ, half-bit) can exceed 1.0 while the FSC has
+    not yet risen — the search starts from the first shell where FSC is
+    actually above the threshold.
 
     Parameters
     ----------
@@ -87,25 +100,35 @@ def _fsc_crossing(fsc, threshold, freqs):
     """
     t = threshold if isinstance(threshold, np.ndarray) else np.full(len(fsc), float(threshold))
 
+    # Skip shell 0 (DC) and start looking only once the FSC is above threshold,
+    # so low-frequency statistical thresholds > 1 don't trigger a false crossing.
     above = fsc[1:] >= t[1:]
     if not above.any():
         return None
+    first_above = int(np.where(above)[0][0]) + 1
 
-    last_above = int(np.where(above)[0][-1]) + 1
-    if last_above + 1 >= len(fsc):
+    # First shell at or after first_above where FSC drops below threshold.
+    below = np.where(fsc[first_above:] < t[first_above:])[0]
+    if len(below) == 0:
         return None  # FSC stays above threshold all the way to Nyquist
+    cross = first_above + int(below[0])  # first shell below; cross-1 is last above
 
-    f1, f2 = fsc[last_above], fsc[last_above + 1]
-    t1, t2 = t[last_above], t[last_above + 1]
-    q1, q2 = freqs[last_above], freqs[last_above + 1]
+    i0 = cross - 1
+    f1, f2 = fsc[i0], fsc[cross]
+    t1, t2 = t[i0], t[cross]
+    q1, q2 = freqs[i0], freqs[cross]
 
     delta = (f1 - t1) - (f2 - t2)
     crossing_freq = q1 + (f1 - t1) / delta * (q2 - q1) if abs(delta) > 1e-12 else q2
     return 1.0 / crossing_freq if crossing_freq > 1e-9 else None
 
 
-def _fsc_recon_half(projs, angles, center, center_offset, algorithm):
+def _fsc_recon_half(projs, angles, center, center_offset, algorithm, min_constraint=None):
     """Reconstruct one FSC half-dataset using the same dispatch as tomoData.reconstruct."""
+    recon_kwargs = {}
+    if min_constraint is not None:
+        recon_kwargs['min_constraint'] = min_constraint
+
     if algorithm.endswith('CUDA'):
         if torch is None:
             raise ValueError("GPU algorithm requested but CUDA is not available.")
@@ -116,18 +139,21 @@ def _fsc_recon_half(projs, angles, center, center_offset, algorithm):
             'extra_options': {},
         }
         return tomopy.recon(projs, angles, center=center,
-                            algorithm=tomopy.astra, options=options, ncore=1)
+                            algorithm=tomopy.astra, options=options, ncore=1,
+                            **recon_kwargs)
     elif algorithm == 'svmbir':
         if svmbir is None:
             raise ImportError("svmbir is not installed.")
         return svmbir.recon(projs, angles, center_offset=center_offset, verbose=1)
     else:
         return tomopy.recon(projs, angles, center=center,
-                            algorithm=algorithm, sinogram_order=False)
+                            algorithm=algorithm, sinogram_order=False,
+                            **recon_kwargs)
 
 
 def fourier_shell_correlation(tomo, algorithm='gridrec', plot=True,
-                              smooth_sigma=0.0, apply_circ_mask=True):
+                              smooth_sigma=0.0, apply_circ_mask=True,
+                              min_constraint=None):
     """
     Estimate reconstruction resolution using the gold-standard half-dataset
     Fourier Shell Correlation (FSC) method.
@@ -162,6 +188,10 @@ def fourier_shell_correlation(tomo, algorithm='gridrec', plot=True,
         curve before threshold detection.  0 = no smoothing.
     apply_circ_mask : bool
         Apply the same circular mask used during full reconstruction.
+    min_constraint : float or None
+        If given, passed to tomopy.recon() as a lower-bound floor on voxel
+        values after each iteration.  Has no effect for the 'svmbir' algorithm.
+        Default None (no constraint).
 
     Returns
     -------
@@ -186,9 +216,11 @@ def fourier_shell_correlation(tomo, algorithm='gridrec', plot=True,
     print(f"  Half 2 (odd  angles): {len(odd_idx)}  projections")
 
     print("  Reconstructing half 1 …")
-    r1 = _fsc_recon_half(projs[even_idx], angles[even_idx], center, center_offset, algorithm)
+    r1 = _fsc_recon_half(projs[even_idx], angles[even_idx], center, center_offset, algorithm,
+                         min_constraint=min_constraint)
     print("  Reconstructing half 2 …")
-    r2 = _fsc_recon_half(projs[odd_idx],  angles[odd_idx],  center, center_offset, algorithm)
+    r2 = _fsc_recon_half(projs[odd_idx],  angles[odd_idx],  center, center_offset, algorithm,
+                         min_constraint=min_constraint)
 
     if apply_circ_mask:
         r1 = tomopy.circ_mask(r1, axis=0, ratio=0.99)
