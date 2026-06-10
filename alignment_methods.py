@@ -8,7 +8,7 @@ notebooks and downstream scripts.
 
 New code should import from the specific subpackage instead, e.g.:
 
-    from alignment import cross_correlate_align, PMA
+    from alignment import cross_correlate_align, projection_matching_alignment
     from metrics import reprojection_consistency_score, fourier_shell_correlation
     from filters import kovacik_filter
 """
@@ -17,7 +17,6 @@ from alignment import (
     cross_correlate_align,
     compute_grad_image,
     projection_matching_alignment,
-    PMA,
     vertical_mass_fluctuation_align,
     tomopy_align,
     optical_flow_align,
@@ -39,7 +38,6 @@ __all__ = [
     "cross_correlate_align",
     "compute_grad_image",
     "projection_matching_alignment",
-    "PMA",  # backwards-compat alias
     "vertical_mass_fluctuation_align",
     "tomopy_align",
     "optical_flow_align",

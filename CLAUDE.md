@@ -27,9 +27,15 @@ python align.py                          # interactive / local run
 sbatch runGPUAlign.sh                    # submit to SLURM cluster (48h, 1 GPU, 200 GB RAM)
 ```
 
-**3D reconstruction from pre-aligned projections:**
+**Single SIRT_CUDA reconstruction from pre-aligned projections:**
 ```bash
-python main.py
+python main.py --tiff-file <path> [--y-start N] [--y-end N] [--width N] [--output-dir <dir>] [--no-save]
+```
+
+**TomoPy algorithm/hyperparameter search (multi-algorithm comparison):**
+```bash
+python recon_param_search.py --tiff-file <path> [--y-start N] [--y-end N] [--width N] [--output-dir <dir>] [--no-save]
+sbatch runTomopyParamSearch.sh           # cluster submission (1 GPU, 500 GB RAM)
 ```
 
 **Hyperparameter search over XCA + PMA alignment configs:**
@@ -61,7 +67,7 @@ Logs go to `logs/`, SLURM stdout/err goes to `sbatch_output/`, hyperparam result
 
 ## Architecture
 
-The codebase is a single-package Python library; there are no submodules or imports from subdirectories.
+The codebase is organized as a root-level Python package with three subpackages for alignment, metrics, and filters.
 
 ### Core class: `tomoData` ([tomoDataClass.py](tomoDataClass.py))
 
@@ -74,29 +80,54 @@ All state lives in a `tomoData` instance:
 
 **Two-buffer alignment pattern**: alignment methods update `workingProjections` and accumulate into `tracked_shifts`. Call `make_updates_shift()` to commit those shifts to `finalProjections` via a single subpixel interpolation pass (avoids stacking interpolation error). `reconstruct()` always runs on `finalProjections`.
 
-GPU acceleration is transparent: CuPy is used for array ops if available, otherwise falls back to NumPy/SciPy. ASTRA is used for GPU forward projection inside `simulate_projections()` with a tomopy fallback.
+GPU acceleration is centralized in `gpu.py` (see below). ASTRA is used for GPU forward projection inside `simulate_projections()` (also exported as a standalone function from `tomoDataClass`) with a tomopy fallback.
 
-### Alignment methods ([alignment_methods.py](alignment_methods.py))
+### GPU backend ([gpu.py](gpu.py))
 
-Standalone functions that take a `tomoData` as first argument (the class just delegates to them):
+Centralizes GPU detection so other modules don't run their own try/except ladders. Probes run once at import time. Exports:
+- `xp` — CuPy if a working GPU is available, else NumPy
+- `cp` — CuPy module or `None`
+- `torch` — PyTorch module when CUDA/MPS device is present, or `None` (used as feature flag)
+- `svmbir` — SVMBIR module or `None`
+- `ndimage_shift`, `gaussian_filter`, `fourier_shift` — GPU-aware drop-ins for scipy.ndimage equivalents
+- `to_numpy(arr)` — convert xp array to numpy without copying if already numpy
 
-| Function | What it does |
+### Alignment package ([alignment/](alignment/))
+
+Standalone functions that take a `tomoData` as first argument (the class delegates to them). Import from `alignment` directly; `alignment_methods.py` is a backwards-compatibility shim that re-exports everything.
+
+| Module | Functions |
 |---|---|
-| `cross_correlate_align` | Sequential cross-correlation between adjacent projections; supports ROI, downsampling pyramid, gradient mode, rolling median reference |
-| `PMA` | Projection Matching Alignment — iterates: reconstruct → forward-project → measure shift (phase-XC or optical flow) → apply; multi-scale via `levels` param |
-| `rotate_correlate_align` | Corrects rotational misalignment |
-| `vertical_mass_fluctuation_align` | Aligns opposite-angle pairs by vertical CoM |
-| `tomopy_align` | Wraps TomoPy joint reprojection |
-| `optical_flow_align` | Dense TV-L1 optical flow |
-| `sinogram_consistency_score` | Quality metric: measures row-to-row consistency in sinograms |
-| `reprojection_consistency_score` | Quality metric (RCS): L2 between measured and re-projected projections |
-| `fourier_shell_correlation` | Resolution metric: splits data into two half-sets and computes FSC |
-| `kovacik_filter` | Post-reconstruction Fourier angular filter for missing-wedge artifacts (called on `tomoData`, lives in `tomoDataClass.py`) |
+| [alignment/cross_correlate.py](alignment/cross_correlate.py) | `cross_correlate_align`, `compute_grad_image` |
+| [alignment/pma.py](alignment/pma.py) | `projection_matching_alignment` |
+| [alignment/vmf.py](alignment/vmf.py) | `vertical_mass_fluctuation_align` |
+| [alignment/legacy.py](alignment/legacy.py) | `tomopy_align`, `optical_flow_align`, `rotate_correlate_align`, `find_optimal_rotation`, `bilateralFilter`, `shift_min_to_middle`, `unrotate` |
+
+Key functions:
+- `cross_correlate_align` — sequential XC between adjacent projections; ROI, downsampling pyramid, gradient mode, rolling median reference
+- `projection_matching_alignment` — Projection Matching Alignment: reconstruct → forward-project → measure shift (phase-XC or optical flow) → apply; multi-scale via `levels` param
+- `rotate_correlate_align` — corrects rotational misalignment
+- `vertical_mass_fluctuation_align` — aligns opposite-angle pairs by vertical CoM
+
+### Metrics package ([metrics/](metrics/))
+
+| Module | Function |
+|---|---|
+| [metrics/sinogram_consistency.py](metrics/sinogram_consistency.py) | `sinogram_consistency_score` — row-to-row consistency in sinograms |
+| [metrics/reprojection_consistency.py](metrics/reprojection_consistency.py) | `reprojection_consistency_score` — L2 between measured and re-projected projections |
+| [metrics/fsc.py](metrics/fsc.py) | `fourier_shell_correlation` — splits data into half-sets and computes FSC resolution |
+| [metrics/sharpness.py](metrics/sharpness.py) | `reconstruction_sharpness_score` — sharpness metric for reconstruction quality |
+
+### Filters package ([filters/](filters/))
+
+| Module | Function |
+|---|---|
+| [filters/kovacik.py](filters/kovacik.py) | `kovacik_filter` — post-reconstruction Fourier angular filter for missing-wedge artifacts |
 
 ### Helper utilities ([helperFunctions.py](helperFunctions.py))
 
 - `subpixel_shift` — Fourier-domain subpixel shift (GPU-dispatched)
-- `convert_to_tiff` / `convert_to_numpy` — TIFF I/O with scale metadata
+- `convert_to_tiff` / `convert_to_numpy` / `convert_to_2Dtiff` — TIFF I/O with scale metadata
 - `DualLogger` — tees stdout to both console and log file
 - `MoviePlotter` / `runwidget` — interactive projection/slice viewers for Jupyter and scripts
 - `degree_to_positiveRadians` — angle unit conversion
@@ -109,7 +140,7 @@ Load HDF5 → tomoData(projs, angles)
   → cross_correlate_align(...)           # updates workingProjections + tracked_shifts
   → make_updates_shift()                 # commits to finalProjections
   → [crop_center() if needed]
-  → PMA(...)                             # updates workingProjections + tracked_shifts
+  → projection_matching_alignment(...)   # updates workingProjections + tracked_shifts
   → make_updates_shift()
   → reconstruct(algorithm='SIRT_CUDA')   # runs on finalProjections → self.recon
   → kovacik_filter()                     # refines self.recon in-place
@@ -130,6 +161,8 @@ Root-level (main workflows):
 - [test_notebook_realData.ipynb](test_notebook_realData.ipynb) — alignment method comparison on real APS beamtime data
 - [ganrec_realData_walkthrough.ipynb](ganrec_realData_walkthrough.ipynb) — GANrec reconstruction walkthrough on real data
 - [lookAtRecons.ipynb](lookAtRecons.ipynb) — reconstruction viewing/comparison
+- [densityConversion.ipynb](densityConversion.ipynb) — mass density mapping from reconstructed volumes (histogram analysis, region segmentation, outputs massDensity*.tif)
+- [debug_FSC_resolution.ipynb](debug_FSC_resolution.ipynb) — FSC resolution analysis and debugging for SIRT_CUDA_positivity reconstructions
 
 Archived to [notebooks/](notebooks/) (reference/experimental):
 - `notebooks/test_notebook_phanton.ipynb` — alignment method comparison on phantom data
@@ -143,6 +176,7 @@ Archived to [notebooks/](notebooks/) (reference/experimental):
 - Aligned projections (TIFF): `alignedProjections/`
 - Reconstructions (TIFF): `reconstructions/`
 - Small test phantoms (HDF5): `data/`
+- Mass density outputs (TIFF): root directory (`massDensity*.tif`)
 
 ## HPC Notes
 

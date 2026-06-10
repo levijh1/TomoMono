@@ -552,7 +552,7 @@ class tomoData:
 # ``tomoData`` that takes the instance as its first argument. The generated
 # method prints a leading newline (preserves prior visual spacing in logs),
 # then forwards to the free function and returns its result. The wrapped
-# function's docstring is preserved so ``help(tomo.PMA)`` still works.
+# function's docstring is preserved for ``help()``.
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _attach_delegate(cls, fn):
@@ -586,6 +586,3 @@ for _fn in (
 ):
     _attach_delegate(tomoData, _fn)
 del _fn
-
-# Backwards-compatibility alias for the previous CAPS naming.
-tomoData.PMA = tomoData.projection_matching_alignment

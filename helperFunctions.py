@@ -248,10 +248,11 @@ def subpixel_shift(image, shift_y, shift_x):
 
 class MoviePlotter:
     """Plots a sequence of images as a movie in a Jupyter Notebook with interactive controls using widgets.Play."""
-    def __init__(self, x, trust_box=None, color='gray'):
+    def __init__(self, x, trust_box=None, color='gray', overlay=None):
         self.x = x  # (M, N, N) array where M is the total number of images and N is the number of pixels in x and y
         self.trust_box = trust_box  # (top, bottom, left, right) pixel margins, or None
         self.color = color
+        self.overlay = overlay  # optional (M, N, N) bool mask — drawn as a semi-transparent coloured overlay
         self.global_min = np.min(x)
         self.global_max = np.max(x)
         self.play = widgets.Play(
@@ -279,6 +280,9 @@ class MoviePlotter:
             self.output.clear_output(wait=True)
             plt.imshow(self.x[frame], vmin=self.global_min, vmax=self.global_max, cmap=self.color)
             ax = plt.gca()  # capture before colorbar changes current axes
+            if self.overlay is not None:
+                ax.imshow(np.ma.masked_where(~self.overlay[frame], self.overlay[frame]),
+                          cmap='autumn', alpha=0.5, interpolation='none')
             plt.colorbar(label='Intensity')
             plt.title(f"Frame {frame}")
             if self.trust_box is not None:

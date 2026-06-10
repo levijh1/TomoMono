@@ -24,7 +24,7 @@ mkdir -p /home/ljh79/TomoMono/sbatch_output/tomopy_param_search
 TIFF_FILE=/home/ljh79/TomoMono/alignedProjections/APSbeamtime_Oct25/cfg_fullres_aligned_20260514-115952.tif
 
 # LOAD MODULES, INSERT CODE, AND RUN YOUR PROGRAMS HERE
-/home/ljh79/.conda/envs/tomoMono/bin/python /home/ljh79/TomoMono/main.py \
+/home/ljh79/.conda/envs/tomoMono/bin/python /home/ljh79/TomoMono/recon_param_search.py \
     --tiff-file "$TIFF_FILE" \
     --y-start 40 \
     --y-end 440 \

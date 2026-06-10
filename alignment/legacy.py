@@ -66,14 +66,17 @@ def tomopy_align(tomo, tolerance=0.1, max_iterations=15, alg="sirt", crop_bottom
 
 def optical_flow_align(tomo):
     """
-    Aligns each projection to the next using dense optical flow (TV-L1).
-    WARNING: Does not update tracked_shifts.
+    Aligns each projection to the next using dense TV-L1 optical flow.
 
-    Parameters:
-    - tomo: Tomography object containing finalProjections to align.
+    Computes a per-pixel displacement field (u, v) between adjacent projections
+    and applies it with skimage.transform.warp(), deforming the spatial structure
+    of each image non-rigidly. This is fundamentally different from the
+    shift_method='optical_flow' option inside projection_matching_alignment (PMA),
+    which uses a Lucas-Kanade formulation to estimate a single global (dy, dx)
+    translation and then applies a rigid subpixel shift — it never warps pixels.
 
-    Notes:
-    - Updates tomo.finalProjections in place. Does not update tracked_shifts.
+    WARNING: Does not update tracked_shifts. The deformation cannot be composed
+    with other alignment steps. Not recommended for routine use.
     """
     print("Executing optical flow alignment")
     num_rows, num_cols = tomo.finalProjections[0].shape

@@ -61,7 +61,18 @@ def _preprocess_for_matching(img, sigma=2):
 
 
 def _optical_flow_shift(proj, reproj_img, sigma):
-    """Lucas-Kanade optical flow with the full 2x2 system on high-pass-filtered images."""
+    """
+    Estimate a global (dy, dx) translation using a Lucas-Kanade formulation.
+
+    Solves the 2x2 least-squares system over the whole image to find the single
+    rigid shift that best explains the intensity difference between the measured
+    projection and its reprojection. The result is a (dy, dx) pair — the image
+    is still shifted rigidly, same as phase cross-correlation.
+
+    This is NOT the same as standalone optical_flow_align (legacy.py), which
+    computes a dense per-pixel displacement field and deforms the image non-rigidly
+    via warp(). Here, "optical flow" refers only to the shift estimation technique.
+    """
     r_hp = _highpass(proj - reproj_img, sigma)
 
     dy_grad, dx_grad = _fourier_gradients(reproj_img)
@@ -109,7 +120,33 @@ def projection_matching_alignment(
         stepRatio=1,
         ):
     """
-    Projection Matching Alignment with ROI-based alignment (non-destructive cropping).
+    Projection Matching Alignment (PMA).
+
+    Each iteration: reconstruct the 3D volume → forward-project at each angle →
+    measure the per-projection shift between measured and reprojected images →
+    apply a rigid subpixel shift to each projection.
+
+    Multi-scale strategy (levels / scale):
+        ``levels`` controls how many resolution levels to run. At level L > 0,
+        projections are downsampled by ``scale**L`` before reconstructing and
+        measuring shifts. The coarse levels capture large alignment errors cheaply;
+        the fine level (level 0, always run at full resolution) refines to
+        sub-pixel accuracy. Shifts measured at a coarse level are scaled back up
+        before being added to the accumulated shift. Example: levels=2, scale=2
+        runs one pass at 2x downsampled then one pass at full resolution.
+
+    shift_method:
+        'cross_correlation' (default) — phase cross-correlation via skimage.
+        'optical_flow' — Lucas-Kanade shift estimation: solves the 2x2 least-
+            squares system to find the single global (dy, dx) that best explains
+            the image difference. Both methods produce a rigid translation that
+            is applied with subpixel_shift. Neither deforms the image pixel-by-pixel.
+
+        NOTE: 'optical_flow' here is entirely different from the standalone
+        optical_flow_align() in legacy.py, which computes a dense per-pixel
+        displacement field using TV-L1 and deforms the image non-rigidly via
+        warp(). That function changes the spatial structure of each projection;
+        this shift_method only estimates how far to translate it.
     """
     recon_crop_ratio = 0.99
     grad_str = " | gradient mode" if use_grad else ""
@@ -310,5 +347,3 @@ def _plot_pma_diff(measured_img, reproj_img, *, level, iteration, plot_idx, roi_
     plt.show()
 
 
-# Backwards-compatibility alias for the previous CAPS naming.
-PMA = projection_matching_alignment
