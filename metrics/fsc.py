@@ -10,14 +10,99 @@ import numpy as np
 from scipy.ndimage import gaussian_filter1d
 import tomopy
 import matplotlib.pyplot as plt
-from matplotlib import gridspec
 
 from gpu import torch, svmbir
+
+
+def _pad_taper_3d(vol, pad_length, taper_length):
+    """
+    Pad a 3D volume on all six faces, then taper its edges smoothly to zero.
+
+    The padding replicates the existing edge voxel values outward by
+    ``pad_length`` voxels per face (``np.pad(mode='edge')``).  A separable
+    Hann (raised-cosine) taper then ramps the outermost ``taper_length``
+    voxels of every axis from full value down to zero at the outer edge.
+
+    Removing the sharp real-space support boundary this way suppresses the
+    correlated high-frequency ringing that otherwise leaks into both half-maps
+    and makes the FSC curve dip then rise back toward 1.0 at high shells (cf.
+    van Heel & Schatz 2005).  The replicated-edge pad keeps that taper from
+    eating into the reconstructed object, and the extra extent zero-fills the
+    FFT grid for finer radial-shell sampling.
+
+    Parameters
+    ----------
+    vol : ndarray (nz, ny, nx)
+    pad_length : int     — voxels of edge-replicated padding added per face.
+    taper_length : int   — width (voxels) of the raised-cosine roll-off to zero
+                           at each edge of the padded volume.
+
+    Returns
+    -------
+    ndarray (nz + 2*pad_length, …)  — padded, tapered, float32.
+    """
+    vol = vol.astype(np.float32)
+    if pad_length and pad_length > 0:
+        vol = np.pad(vol, pad_length, mode='edge')
+
+    if taper_length and taper_length > 0:
+        window = np.ones(1, dtype=np.float32)
+        for axis, n in enumerate(vol.shape):
+            t = min(int(taper_length), n // 2)
+            w = np.ones(n, dtype=np.float32)
+            if t > 0:
+                # Ascending half of a Hann window: 0 at the outer edge → 1 by
+                # depth t.  sin^2 is equivalent to the raised cosine 0.5(1-cos).
+                ramp = np.sin(0.5 * np.pi * np.arange(t, dtype=np.float32) / t) ** 2
+                w[:t] = ramp
+                w[n - t:] = ramp[::-1]
+            shape_b = [1] * vol.ndim
+            shape_b[axis] = n
+            window = window * w.reshape(shape_b)
+        vol = vol * window
+
+    return vol
+
+
+def _soft_circ_mask(shape, ratio=0.99, taper=0.1):
+    """
+    Soft-edged circular field-of-view mask in the (axis-1, axis-2) plane,
+    broadcast over axis 0.
+
+    Drop-in replacement for tomopy.circ_mask's *hard* edge: a raised-cosine
+    roll-off of relative width `taper` (as a fraction of the mask radius)
+    between the inner and outer radius.  The hard mask edge is byte-for-byte
+    identical in both half-maps, so its ringing correlates near-perfectly and
+    inflates the FSC at high frequency; the soft edge removes that.
+
+    Parameters
+    ----------
+    shape : (nz, ny, nx)
+    ratio : float   — outer mask radius as a fraction of min(ny, nx)/2.
+    taper : float   — width of the cosine roll-off as a fraction of the radius.
+    """
+    nz, ny, nx = shape
+    cy, cx = (ny - 1) / 2.0, (nx - 1) / 2.0
+    yy = np.arange(ny) - cy
+    xx = np.arange(nx) - cx
+    rr = np.sqrt(yy[:, None]**2 + xx[None, :]**2)
+
+    r_out = ratio * min(ny, nx) / 2.0
+    r_in  = r_out * (1.0 - taper)
+    mask = np.ones((ny, nx), dtype=np.float32)
+    edge = (rr > r_in) & (rr <= r_out)
+    mask[edge] = 0.5 * (1.0 + np.cos(np.pi * (rr[edge] - r_in) / (r_out - r_in)))
+    mask[rr > r_out] = 0.0
+    return mask[None, :, :]
 
 
 def _fsc_compute_shells(vol1, vol2):
     """
     Core FSC computation via 3D FFT + vectorised bincount.
+
+    Edge tapering (pad+taper, see _pad_taper_3d) is expected to be applied by
+    the caller before this function, so the volumes can be passed straight into
+    the FFT here.
 
     Returns
     -------
@@ -27,9 +112,13 @@ def _fsc_compute_shells(vol1, vol2):
     """
     nz, ny, nx = vol1.shape
 
+    v1 = vol1.astype(np.float32)
+    v2 = vol2.astype(np.float32)
+
     # float32 yields complex64 FFTs (8 bytes/voxel vs 16 for float64/complex128).
-    F1 = np.fft.fftshift(np.fft.fftn(vol1.astype(np.float32)))
-    F2 = np.fft.fftshift(np.fft.fftn(vol2.astype(np.float32)))
+    F1 = np.fft.fftshift(np.fft.fftn(v1))
+    F2 = np.fft.fftshift(np.fft.fftn(v2))
+    del v1, v2
 
     # Radial distance from centre using broadcasting — avoids three full-size meshgrids.
     def _centred_freq(n):
@@ -123,6 +212,59 @@ def _fsc_crossing(fsc, threshold, freqs):
     return 1.0 / crossing_freq if crossing_freq > 1e-9 else None
 
 
+def _show_mask_slices(before_slices, r1_masked, shape):
+    """Orthogonal slices of half-map 1 before and after the soft circular mask."""
+    nz, ny, nx = shape
+    iz, iy, ix = nz // 2, ny // 2, nx // 2
+
+    after_slices = (
+        r1_masked[iz, :, :],
+        r1_masked[:, iy, :],
+        r1_masked[:, :, ix],
+    )
+    slice_names = [
+        f'Axial  (Z={iz})',
+        f'Coronal  (Y={iy})',
+        f'Sagittal  (X={ix})',
+    ]
+
+    all_before = np.concatenate([s.ravel() for s in before_slices])
+    vmin, vmax = float(np.percentile(all_before, 2)), float(np.percentile(all_before, 98))
+
+    fig, axes = plt.subplots(2, 3, figsize=(13, 8))
+    for col, (sl, name) in enumerate(zip(before_slices, slice_names)):
+        axes[0, col].imshow(sl, cmap='gray', vmin=vmin, vmax=vmax, origin='lower')
+        axes[0, col].set_title(name, fontsize=10)
+        axes[0, col].axis('off')
+    for col, sl in enumerate(after_slices):
+        axes[1, col].imshow(sl, cmap='gray', vmin=vmin, vmax=vmax, origin='lower')
+        axes[1, col].axis('off')
+
+    fig.text(0.02, 0.73, 'Before mask', va='center', rotation='vertical', fontsize=11)
+    fig.text(0.02, 0.27, 'After mask',  va='center', rotation='vertical', fontsize=11)
+    fig.suptitle('Soft Circular Mask — Orthogonal Slices (half-map 1)', fontsize=12)
+    plt.tight_layout(rect=[0.04, 0, 1, 1])
+    plt.show()
+
+
+def _square_crop_xy(vol):
+    """
+    Crop XY plane to the largest square inscribed in the circular FOV.
+
+    For a circular mask of diameter min(ny, nx) the inscribed square has
+    side = diameter / sqrt(2).  The crop boundary lies entirely inside the
+    circle, so there is no masked-edge discontinuity and no correlated
+    high-frequency artifact in the FSC curve.
+    """
+    nz, ny, nx = vol.shape
+    side = int(min(ny, nx) / np.sqrt(2))
+    if side % 2 != 0:
+        side -= 1
+    cy, cx = ny // 2, nx // 2
+    hy = hx = side // 2
+    return vol[:, cy - hy : cy + hy, cx - hx : cx + hx]
+
+
 def _fsc_recon_half(projs, angles, center, center_offset, algorithm, min_constraint=None):
     """Reconstruct one FSC half-dataset using the same dispatch as tomoData.reconstruct."""
     recon_kwargs = {}
@@ -152,8 +294,10 @@ def _fsc_recon_half(projs, angles, center, center_offset, algorithm, min_constra
 
 
 def fourier_shell_correlation(tomo, algorithm='gridrec', plot=True,
-                              smooth_sigma=0.0, apply_circ_mask=True,
-                              min_constraint=None):
+                              smooth_sigma=2.0, crop_mode='soft_circle',
+                              pad_length=50, taper_length=None,
+                              min_constraint=None,
+                              threshold='half-bit', pixel_size_nm=None):
     """
     Estimate reconstruction resolution using the gold-standard half-dataset
     Fourier Shell Correlation (FSC) method.
@@ -185,13 +329,51 @@ def fourier_shell_correlation(tomo, algorithm='gridrec', plot=True,
     plot : bool
     smooth_sigma : float
         Standard deviation (in shells) of a Gaussian used to smooth the FSC
-        curve before threshold detection.  0 = no smoothing.
-    apply_circ_mask : bool
-        Apply the same circular mask used during full reconstruction.
+        curve before threshold detection.  0 = no smoothing.  Defaults to 2.0
+        so the reported crossing is stable against single-shell noise dips.
+    crop_mode : str or None
+        Controls how each half-map is prepared before the FSC:
+
+        ``'soft_circle'`` (default)
+            Apply a soft-edged (raised-cosine) circular mask that tapers to
+            zero at the FOV boundary.  Avoids the correlated high-frequency
+            ringing a hard mask edge would inject into both half-maps.  The
+            pad+taper step (see ``pad_length``) is still applied afterward.
+
+        ``'square'``
+            Crop the XY plane to the largest square inscribed in the circular
+            FOV (side = min(ny,nx) / √2).  The crop boundary lies entirely
+            inside the circle, so no masking discontinuity exists and the FSC
+            curve is free of masked-edge artifacts.  No soft filter is applied.
+
+        ``None``
+            No masking or cropping.  Use only when the reconstruction already
+            fills the volume without a circular support constraint.
+    pad_length : int
+        Voxels of edge-replicated padding added to all six faces of each
+        half-map, applied *after* any ``crop_mode`` masking/cropping.  The
+        outer edges are then tapered to zero (see ``taper_length``), which
+        removes the sharp real-space support boundary and suppresses the
+        high-frequency FSC rise-back artifact (replacing the former Hann
+        apodization).  Default 50.  Set to 0 to disable padding/tapering.
+    taper_length : int or None
+        Width (voxels) of the raised-cosine roll-off to zero at each edge of
+        the padded volume.  When None (default) it equals ``pad_length`` so the
+        taper occupies exactly the replicated-edge pad strip; pass a smaller
+        value to keep an inner band of the pad at full edge value, or a larger
+        value to let the taper extend into the reconstructed object.
     min_constraint : float or None
         If given, passed to tomopy.recon() as a lower-bound floor on voxel
         values after each iteration.  Has no effect for the 'svmbir' algorithm.
         Default None (no constraint).
+    threshold : str
+        Resolution criterion used for the plot and the console table.
+        Options: ``'half-bit'`` (default), ``'FSC=0.5'``, ``'FSC=0.143'``,
+        ``'3-sigma'``.  All four are still computed and returned; only the
+        selected one is highlighted in the figure.
+    pixel_size_nm : float or None
+        Physical pixel size in nanometres.  When provided, the top x-axis of
+        the plot shows resolution in nm and the console table converts to nm.
 
     Returns
     -------
@@ -222,9 +404,39 @@ def fourier_shell_correlation(tomo, algorithm='gridrec', plot=True,
     r2 = _fsc_recon_half(projs[odd_idx],  angles[odd_idx],  center, center_offset, algorithm,
                          min_constraint=min_constraint)
 
-    if apply_circ_mask:
-        r1 = tomopy.circ_mask(r1, axis=0, ratio=0.99)
-        r2 = tomopy.circ_mask(r2, axis=0, ratio=0.99)
+    _before = None
+    if crop_mode == 'soft_circle':
+        soft_mask = _soft_circ_mask(r1.shape, ratio=0.99, taper=0.1)
+        _iz, _iy, _ix = r1.shape[0] // 2, r1.shape[1] // 2, r1.shape[2] // 2
+        _before = (r1[_iz, :, :].copy(), r1[:, _iy, :].copy(), r1[:, :, _ix].copy())
+        r1 = r1 * soft_mask
+        r2 = r2 * soft_mask
+    elif crop_mode == 'square':
+        orig_ny, orig_nx = r1.shape[1], r1.shape[2]
+        _iz, _iy, _ix = r1.shape[0] // 2, r1.shape[1] // 2, r1.shape[2] // 2
+        _before = (r1[_iz, :, :].copy(), r1[:, _iy, :].copy(), r1[:, :, _ix].copy())
+        r1 = _square_crop_xy(r1)
+        r2 = _square_crop_xy(r2)
+        print(f"  Square crop: XY {orig_ny}×{orig_nx} → {r1.shape[1]}×{r1.shape[2]} px "
+              f"(inscribed square, no masking)")
+    elif crop_mode is not None:
+        raise ValueError(f"crop_mode must be 'soft_circle', 'square', or None; got {crop_mode!r}")
+
+    # Pad each half-map by replicating edge voxels, then taper the outer edges
+    # to zero (Hann roll-off).  Done after any crop_mode masking/cropping; this
+    # removes the sharp real-space support boundary that causes the
+    # high-frequency FSC rise-back artifact, and zero-fills the FFT grid.
+    if pad_length and pad_length > 0:
+        tlen = pad_length if taper_length is None else taper_length
+        r1 = _pad_taper_3d(r1, pad_length, tlen)
+        r2 = _pad_taper_3d(r2, pad_length, tlen)
+        print(f"  Pad+taper: +{pad_length} px/face (edge-replicated), "
+              f"{tlen} px Hann taper to zero → half-map shape {r1.shape}")
+
+    # Show the half-map slices after masking *and* pad+taper, so the display
+    # reflects exactly what goes into the FFT.
+    if _before is not None:
+        _show_mask_slices(_before, r1, r1.shape)
 
     print("  Computing FSC …")
     fsc, n_vox, freqs = _fsc_compute_shells(r1, r2)
@@ -251,95 +463,84 @@ def fourier_shell_correlation(tomo, algorithm='gridrec', plot=True,
     print(f"  {'Threshold':<20} {'Freq (cyc/px)':>15} {'Resolution (px)':>16}")
     print(f"  {'─'*53}")
     for name, res in resolutions.items():
-        marker = " *" if name == 'half-bit' else ""
+        marker = " *" if name == threshold else ""
         if res is None:
             print(f"  {name:<20} {'> Nyquist':>15} {'(not reached)':>16}{marker}")
         else:
             freq = 1.0 / res
             print(f"  {name:<20} {freq:>15.4f} {res:>16.2f}{marker}")
-    print("  * default threshold")
+    print(f"  * selected threshold ({threshold})")
     print("──────────────────────────────────────────────────────────────\n")
 
     if plot:
-        _fsc_plot(fsc, fsc_smooth, freqs, three_sigma, half_bit, resolutions, r1, r2)
+        _fsc_plot(fsc, fsc_smooth, freqs, three_sigma, half_bit, resolutions,
+                  threshold, pixel_size_nm)
 
     del r1, r2
 
     return fsc, resolutions, freqs
 
 
-def _fsc_plot(fsc_raw, fsc_smooth, freqs, three_sigma, half_bit, resolutions, r1, r2):
-    """Plot FSC curve with thresholds and central-slice half-map comparison."""
-    fig = plt.figure(figsize=(10, 10))
-    gs  = gridspec.GridSpec(2, 2, height_ratios=[2, 1], hspace=0.4, wspace=0.3)
-    ax_fsc   = fig.add_subplot(gs[0, :])
-    ax_half1 = fig.add_subplot(gs[1, 0])
-    ax_half2 = fig.add_subplot(gs[1, 1])
-
-    shell_freqs = freqs[1:]
-    ax_fsc.plot(shell_freqs, fsc_raw[1:], color='#aaaaaa', linewidth=1.0,
-                label='FSC (raw)', alpha=0.7)
-    ax_fsc.plot(shell_freqs, fsc_smooth[1:], color='#1f77b4', linewidth=2.0,
-                label='FSC (smoothed)' if not np.array_equal(fsc_raw, fsc_smooth) else 'FSC')
-    ax_fsc.plot(shell_freqs, three_sigma[1:], color='#9467bd', linewidth=1.2,
-                linestyle=':', label='3σ threshold')
-    ax_fsc.plot(shell_freqs, half_bit[1:], color='#8c564b', linewidth=1.0,
-                linestyle=':', label='Half-bit threshold', alpha=0.6)
-
-    threshold_styles = {
-        'FSC=0.5':   (0.5,   '#d62728', '--'),
-        'FSC=0.143': (0.143, '#2ca02c', '--'),
-        '3-sigma':   (None,  '#9467bd', ':'),
+def _fsc_plot(fsc_raw, fsc_smooth, freqs, three_sigma, half_bit, resolutions,
+              threshold='half-bit', pixel_size_nm=None):
+    """Plot FSC curve with the selected threshold and crossing frequency."""
+    _thresh_options = {
+        'half-bit':  (half_bit,    'half-bit criteria'),
+        'FSC=0.5':   (0.5,         'FSC = 0.5'),
+        'FSC=0.143': (0.143,       'FSC = 0.143'),
+        '3-sigma':   (three_sigma, '3σ criteria'),
     }
-    for name, (val, color, ls) in threshold_styles.items():
-        if val is not None:
-            ax_fsc.axhline(val, color=color, linewidth=1.2, linestyle=ls,
-                           label=f'{name} = {val}', alpha=0.8)
-        res = resolutions.get(name)
-        if res is not None and res > 0:
-            freq_cross = 1.0 / res
-            if freq_cross <= freqs[-1]:
-                ax_fsc.axvline(freq_cross, color=color, linewidth=1.0,
-                               linestyle=':', alpha=0.6)
-                ax_fsc.annotate(f'{res:.1f} px',
-                                xy=(freq_cross, 0.02),
-                                xytext=(freq_cross + 0.005, 0.08),
-                                fontsize=7.5, color=color,
-                                arrowprops=dict(arrowstyle='->', color=color, lw=0.8))
+    thresh_val, thresh_label = _thresh_options.get(threshold, _thresh_options['half-bit'])
 
-    ax_fsc.set_xlim(0, freqs[-1])
-    ax_fsc.set_ylim(-0.05, 1.05)
-    ax_fsc.set_xlabel('Spatial frequency (cycles / pixel)', fontsize=10)
-    ax_fsc.set_ylabel('FSC', fontsize=10)
-    ax_fsc.set_title('Fourier Shell Correlation\n(half-dataset gold-standard)', fontsize=10)
-    ax_fsc.legend(fontsize=7.5, loc='upper right')
-    ax_fsc.grid(True, alpha=0.25)
+    fig, ax = plt.subplots(figsize=(8, 5))
+    shell_freqs = freqs[1:]
+    smoothed = not np.array_equal(fsc_raw, fsc_smooth)
 
-    ax_top = ax_fsc.twiny()
-    ax_top.set_xlim(ax_fsc.get_xlim())
-    tick_freqs = np.array([0.05, 0.1, 0.2, 0.3, 0.4, 0.5])
-    tick_freqs = tick_freqs[tick_freqs <= freqs[-1]]
-    ax_top.set_xticks(tick_freqs)
-    ax_top.set_xticklabels([f'{1/f:.1f}' for f in tick_freqs], fontsize=7)
-    ax_top.set_xlabel('Resolution (pixels)', fontsize=8)
+    ax.plot(shell_freqs, fsc_raw[1:], color='blue', linewidth=1.5, label='FSC')
+    if smoothed:
+        ax.plot(shell_freqs, fsc_smooth[1:], color='red', linewidth=2.0,
+                label='Smoothed FSC')
 
-    nz = r1.shape[0]
-    mid = nz // 2
-    slice1 = r1[mid]
-    slice2 = r2[mid]
-    vmin = min(slice1.min(), slice2.min())
-    vmax = max(slice1.max(), slice2.max())
-    kw = dict(cmap='gray', vmin=vmin, vmax=vmax, aspect='equal')
+    if isinstance(thresh_val, np.ndarray):
+        ax.plot(shell_freqs, thresh_val[1:], color='black', linewidth=1.2,
+                linestyle='--', label=thresh_label)
+    else:
+        ax.axhline(thresh_val, color='black', linewidth=1.2, linestyle='--',
+                   label=thresh_label)
 
-    ax_half1.imshow(slice1, **kw)
-    ax_half1.set_title('Half 1 (even angles)\ncentral slice', fontsize=9)
-    ax_half1.axis('off')
+    res = resolutions.get(threshold)
+    if res is not None and res > 0:
+        freq_cross = 1.0 / res
+        if freq_cross <= freqs[-1]:
+            ax.axvline(freq_cross, color='green', linewidth=1.2, linestyle=':',
+                       label=f'{freq_cross:.3f} pixel⁻¹')
+            if pixel_size_nm is not None:
+                res_text = f'Resolution: {res * pixel_size_nm:.0f} nm'
+            else:
+                res_text = f'Resolution: {res:.1f} px'
+            ax.text(0.25, 0.45, res_text, transform=ax.transAxes, fontsize=11)
 
-    im = ax_half2.imshow(slice2, **kw)
-    ax_half2.set_title('Half 2 (odd angles)\ncentral slice', fontsize=9)
-    ax_half2.axis('off')
-    plt.colorbar(im, ax=ax_half2, fraction=0.046, pad=0.04)
+    ax.set_xlim(0, freqs[-1])
+    ax.set_ylim(0.0, 1.05)
+    ax.set_xlabel('Spatial frequency (pixel⁻¹)', fontsize=11)
+    ax.set_ylabel('Correlation', fontsize=11)
+    ax.legend(fontsize=9, loc='upper right')
 
-    plt.suptitle('FSC Resolution Estimation', fontsize=11, y=1.01)
+    ax_top = ax.twiny()
+    ax_top.set_xlim(ax.get_xlim())
+    if pixel_size_nm is not None:
+        ax_top.set_xlabel('Resolution (nm)', fontsize=11)
+        cands_nm = np.array([500, 300, 200, 150, 100, 75, 60, 50, 40, 30])
+        cand_freqs = pixel_size_nm / cands_nm
+        ok = (cand_freqs > freqs[1]) & (cand_freqs <= freqs[-1])
+        ax_top.set_xticks(cand_freqs[ok])
+        ax_top.set_xticklabels([str(n) for n in cands_nm[ok]], fontsize=9)
+    else:
+        ax_top.set_xlabel('Resolution (pixels)', fontsize=11)
+        cand_freqs = np.array([0.05, 0.1, 0.2, 0.25, 0.33, 0.5])
+        ok = cand_freqs <= freqs[-1]
+        ax_top.set_xticks(cand_freqs[ok])
+        ax_top.set_xticklabels([f'{1/f:.0f}' for f in cand_freqs[ok]], fontsize=9)
+
     plt.tight_layout()
     plt.show()
