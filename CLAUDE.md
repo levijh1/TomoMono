@@ -94,7 +94,7 @@ Centralizes GPU detection so other modules don't run their own try/except ladder
 
 ### Alignment package ([alignment/](alignment/))
 
-Standalone functions that take a `tomoData` as first argument (the class delegates to them). Import from `alignment` directly; `alignment_methods.py` is a backwards-compatibility shim that re-exports everything.
+Standalone functions that take a `tomoData` as first argument (the class delegates to them). Import from the `alignment` package directly (e.g. `from alignment import cross_correlate_align`).
 
 | Module | Functions |
 |---|---|

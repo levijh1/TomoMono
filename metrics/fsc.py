@@ -4,6 +4,13 @@ Fourier Shell Correlation (FSC) resolution metric.
 Estimates 3D reconstruction resolution by splitting the tilt series into
 two interleaved halves, independently reconstructing each, and comparing
 the volumes shell-by-shell in 3D Fourier space.
+
+This is the **best metric of reconstruction quality** in this toolkit. Because
+the two half-volumes are reconstructed from disjoint data, their agreement is a
+genuine, noise-independent measure of how much real structure was recovered, and
+the crossing frequency is a physical resolution in pixels (or nm). Use FSC to
+judge how good a *reconstruction* is. (For judging *alignment* quality, use
+``reprojection_consistency_score`` instead.)
 """
 
 import numpy as np

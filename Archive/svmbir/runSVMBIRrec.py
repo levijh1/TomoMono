@@ -26,7 +26,7 @@ sys.path.insert(0, _SCRIPT_DIR)
 
 from helperFunctions import DualLogger, convert_to_numpy, convert_to_tiff
 import tomoDataClass
-from alignment_methods import reprojection_consistency_score
+from metrics import reprojection_consistency_score
 
 RAW_HDF5    = '/home/ljh79/groups/grp_ptychi/nobackup/autodelete/Oct2025APSdata/tomo_data_run_final_2.hdf5'
 DROP_ANGLES = [19, 26]

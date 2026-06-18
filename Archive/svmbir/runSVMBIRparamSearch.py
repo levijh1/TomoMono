@@ -42,7 +42,7 @@ sys.path.insert(0, _SCRIPT_DIR)
 
 from helperFunctions import DualLogger, convert_to_numpy, convert_to_tiff
 import tomoDataClass
-from alignment_methods import reprojection_consistency_score, fourier_shell_correlation
+from metrics import reprojection_consistency_score, fourier_shell_correlation
 
 try:
     import svmbir
@@ -280,7 +280,7 @@ def run_single_config(task):
 
     sys.path.insert(0, _SCRIPT_DIR)
     import tomoDataClass
-    from alignment_methods import reprojection_consistency_score, fourier_shell_correlation
+    from metrics import reprojection_consistency_score, fourier_shell_correlation
     from helperFunctions import convert_to_tiff
 
     # Set OMP threads so workers share CPUs evenly

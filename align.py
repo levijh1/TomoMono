@@ -6,7 +6,7 @@ if __name__ == '__main__':
     from datetime import datetime
     from scipy.ndimage import zoom
     from helperFunctions import DualLogger, convert_to_tiff
-    from alignment_methods import reprojection_consistency_score
+    from metrics import reprojection_consistency_score
 
     import matplotlib
     matplotlib.use('Agg')

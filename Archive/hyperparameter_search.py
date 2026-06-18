@@ -32,7 +32,7 @@ from datetime import datetime
 import tifffile
 
 from tomoDataClass import tomoData
-from alignment_methods import reprojection_consistency_score
+from metrics import reprojection_consistency_score
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CONFIGURATION

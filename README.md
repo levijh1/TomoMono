@@ -12,6 +12,7 @@
 - [Key Files](#key-files)
 - [Alignment Algorithms](#alignment-algorithms)
 - [Reconstruction Algorithms](#reconstruction-algorithms)
+- [Quality Metrics](#quality-metrics)
 - [Demo Notebook](#demo-notebook)
 - [Contact](#contact)
 
@@ -66,7 +67,6 @@ Key dependencies: Python 3.12, TomoPy, SVMBIR, ASTRA Toolbox 2.1 (CUDA), CuPy, P
 ```
 TomoMono/
 ├── tomoDataClass.py        # Core class — all state, alignment, and reconstruction
-├── alignment_methods.py    # Backwards-compatible re-export shim for alignment functions
 ├── helperFunctions.py      # Utilities: file I/O, subpixel shift, visualization
 ├── gpu.py                  # GPU detection; exports xp (CuPy or NumPy), torch, svmbir
 ├── main.py                 # Script: reconstruct from pre-aligned projections
@@ -79,11 +79,10 @@ TomoMono/
 │   ├── vmf.py              #   Vertical Mass Fluctuation alignment
 │   └── legacy.py           #   Optical flow, rotation correction, tomopy_align
 │
-├── metrics/                # Reconstruction quality metrics
-│   ├── fsc.py              #   Fourier Shell Correlation (resolution estimate)
-│   ├── reprojection_consistency.py  # L2 between measured and re-projected
-│   ├── sinogram_consistency.py      # Row-to-row sinogram consistency score
-│   └── sharpness.py        #   Sharpness metric
+├── metrics/                # Alignment & reconstruction quality metrics
+│   ├── fsc.py              #   Fourier Shell Correlation — best reconstruction-quality metric
+│   ├── reprojection_consistency.py  # RCS — best alignment-quality metric
+│   └── sinogram_consistency.py      # Helgason-Ludwig CoM check — rough alignment gauge
 │
 ├── filters/
 │   └── kovacik.py          # Post-reconstruction Fourier angular filter
@@ -170,13 +169,16 @@ Configuration variables in the file:
 
 ---
 
-### [alignment_methods.py](alignment_methods.py) — compatibility shim
+### Importing alignment, metrics, and filters
 
-This file re-exports everything from the `alignment/` and `metrics/` subpackages. It exists so that older code (notebooks, scripts) that did `from alignment_methods import cross_correlate_align` continues to work. For new code, import from the subpackages directly:
+Alignment algorithms, quality metrics, and post-reconstruction filters live in
+the `alignment/`, `metrics/`, and `filters/` subpackages. Import them directly
+from the subpackage that owns them:
 
 ```python
 from alignment import cross_correlate_align, projection_matching_alignment
 from metrics import fourier_shell_correlation, reprojection_consistency_score
+from filters import kovacik_filter
 ```
 
 ---
@@ -356,6 +358,65 @@ tomo.reconstruct(algorithm='gridrec')
 | No GPU, quick check | `gridrec` or `fbp` |
 | Sparse angles or high noise | `svmbir` or `tv` |
 | Inside PMA alignment loop | `SIRT_CUDA` (fast iterations matter) |
+
+---
+
+## Quality Metrics
+
+The `metrics/` package provides ways to quantify how good an alignment or a
+reconstruction is. They are imported from `metrics` and most are also attached
+as methods on the `tomoData` object.
+
+```python
+from metrics import (
+    fourier_shell_correlation,
+    reprojection_consistency_score,
+    sinogram_consistency_score,
+)
+```
+
+| Metric | Measures | Reliability |
+|---|---|---|
+| `fourier_shell_correlation` (FSC) | **Reconstruction quality / resolution** | ⭐ Best reconstruction-quality metric |
+| `reprojection_consistency_score` (RCS) | **Alignment quality** | ⭐ Best alignment-quality metric |
+| `sinogram_consistency_score` | Alignment (CoM consistency) | Rough gauge — use as a sanity check |
+
+### Fourier Shell Correlation — best for reconstruction quality
+
+FSC splits the tilt series into two independent half-sets, reconstructs each,
+and compares the two volumes shell-by-shell in 3D Fourier space. The frequency
+at which they stop agreeing is a genuine, noise-independent resolution estimate
+(reported in pixels, or nm if a pixel size is given). **This is the most
+trustworthy way to judge how good a reconstruction is.**
+
+```python
+tomo.fourier_shell_correlation(algorithm='SIRT_CUDA', pixel_size_nm=10.0)
+```
+
+### Reprojection Consistency Score — best for alignment quality
+
+RCS reprojects the reconstructed volume at every angle and measures the
+per-angle NRMSE against the measured projections. Well-aligned projections are
+mutually consistent, so the reconstruction reprojects back to match them closely
+and the score drops. **This is the most reliable metric for testing how good an
+alignment is**, and the per-angle bar chart pinpoints which projections are
+still misaligned (outliers).
+
+```python
+tomo.reprojection_consistency_score(plot=True)   # lower is better; < 0.10 is excellent
+```
+
+### Sinogram Consistency Score — rough gauge / sanity check
+
+This checks the Helgason-Ludwig center-of-mass consistency conditions on the
+sinogram. It is **not a super-reliable score** — the conditions are only an
+approximate proxy and are sensitive to background, asymmetric objects, and the
+missing wedge. Use it to get a coarse sense of how close the alignment is, to
+find outlier projections, and to visualize the central-slice sinogram.
+
+```python
+tomo.sinogram_consistency_score(plot=True)
+```
 
 ---
 

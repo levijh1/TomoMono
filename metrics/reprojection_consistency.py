@@ -10,7 +10,15 @@ from matplotlib import gridspec
 def reprojection_consistency_score(tomo, plot=True, use_circ_mask=True,
                                    normalize_method='none'):
     """
-    Computes the Reprojection Consistency Score (RCS) — Metric 1 for alignment quality.
+    Computes the Reprojection Consistency Score (RCS).
+
+    This is the **best metric of alignment quality** in this toolkit. When the
+    projections are well aligned they are mutually consistent, so the volume
+    reconstructed from them reprojects back to closely match every measured
+    projection — driving the per-angle NRMSE (and therefore the RCS) down. A low,
+    even score across angles is strong evidence of good alignment; outlier angles
+    flag projections that are still misaligned. (To judge *reconstruction
+    resolution* rather than alignment, use ``fourier_shell_correlation`` instead.)
 
     For each angle, reprojects the 3D reconstruction and computes the Normalized
     Root-Mean-Squared Error (NRMSE) against the corresponding measured projection.

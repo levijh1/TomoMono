@@ -68,7 +68,7 @@ from helperFunctions import convert_to_numpy, convert_to_tiff
 from ganrectorch.ganrec import GANtomo
 import tomopy
 import tomoDataClass
-from alignment_methods import reprojection_consistency_score
+from metrics import reprojection_consistency_score
 
 # Generate or use provided session ID (ensures unique output dirs for parallel runs)
 _timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')

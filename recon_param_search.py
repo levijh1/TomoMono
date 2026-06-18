@@ -41,7 +41,7 @@ def main(args):
 
     import tomoDataClass
     from helperFunctions import DualLogger, convert_to_numpy, convert_to_tiff
-    from alignment_methods import reprojection_consistency_score
+    from metrics import reprojection_consistency_score
 
     # ================== Configuration ==================
     TIFF_FILE  = args.tiff_file

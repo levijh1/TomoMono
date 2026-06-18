@@ -11,6 +11,16 @@ def sinogram_consistency_score(tomo, plot=True, bg_percentile=None):
     Quantifies alignment quality using the Helgason-Ludwig consistency conditions.
     Modified to handle datasets containing negative values.
     Also displays a central-slice sinogram for visual alignment assessment.
+
+    Treat this as a **rough gauge, not a reliable score.** The center-of-mass
+    consistency conditions are only an approximate proxy for alignment quality —
+    they are sensitive to the background, asymmetric objects, and the missing
+    wedge — so the absolute RMSE should not be trusted on its own. It is most
+    useful for getting a coarse sense of how close the alignment is, for spotting
+    outlier projections in the per-angle residuals, and for visualizing the
+    central-slice sinogram. For a trustworthy alignment score use
+    ``reprojection_consistency_score``; for reconstruction quality use
+    ``fourier_shell_correlation``.
     """
     n = tomo.num_angles
     angles = tomo.ang.ravel()
