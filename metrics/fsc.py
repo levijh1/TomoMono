@@ -14,21 +14,148 @@ judge how good a *reconstruction* is. (For judging *alignment* quality, use
 """
 
 import numpy as np
-from scipy.ndimage import gaussian_filter1d
+from scipy.ndimage import gaussian_filter1d, gaussian_filter
 import tomopy
 import matplotlib.pyplot as plt
 
 from gpu import torch, svmbir
 
 
-def _pad_taper_3d(vol, pad_length, taper_length):
+def _background_level(vol, method='median'):
     """
-    Pad a 3D volume on all six faces, then taper its edges smoothly to zero.
+    Estimate the empty-space (background) level of a half-map.
+
+    Subtracting this before masking/tapering makes the soft circular mask and
+    the edge taper roll off to the true background instead of stepping from a
+    nonzero background down to zero.
+
+    Parameters
+    ----------
+    method : {'mean', 'median'} or float
+        ``'mean'``   — volume mean (cheap; biased upward when the object fills
+                       much of the FOV).
+        ``'median'`` — more robust when the object occupies a large fraction
+                       of the volume.
+        float        — use a fixed value directly.
+    """
+    if isinstance(method, (int, float)):
+        return float(method)
+    if method == 'mean':
+        return float(vol.mean())
+    if method == 'median':
+        return float(np.median(vol))
+    raise ValueError(f"background must be 'mean', 'median', or a number; got {method!r}")
+
+
+def _edge_window_1d(n, pad_length, taper_length):
+    """
+    Build a 1D apodization window of length ``n`` (the *padded* axis length).
+
+    The window is 1.0 across the object, then rolls smoothly to 0 at each end so
+    that the reconstruction fades to the (background-subtracted) zero level
+    within ``taper_length`` voxels of the **object edge** — not the padded outer
+    edge.  Concretely, with object edge at depth ``pad_length`` from each end:
+
+        * the object interior stays at 1.0,
+        * the ``taper_length`` voxels just outside the object ramp 1 → 0
+          (Hann / raised-cosine half-window), and
+        * any remaining padding beyond that is held at 0.
+
+    So for ``pad_length=100`` and ``taper_length=50`` the value reaches the
+    background by 50 px outside the object edge, leaving the outer 50 px of
+    padding at zero.  The taper width is clamped to the available padding so it
+    never eats into the object; when there is no padding (``pad_length == 0``)
+    it falls back to tapering the outermost ``taper_length`` object voxels.
+    """
+    w = np.ones(n, dtype=np.float32)
+    t = int(taper_length)
+    if t <= 0:
+        return w
+
+    if pad_length > 0:
+        # Fade inside the padding: object edges sit at depth `pad_length`.
+        te = min(t, pad_length)
+        # Ascending half of a Hann window: 0 → 1 over te voxels (sin^2 == raised cosine).
+        ramp = np.sin(0.5 * np.pi * np.arange(te, dtype=np.float32) / te) ** 2
+        lo = pad_length          # low object edge index
+        hi = n - pad_length      # one past the high object edge
+        w[:lo - te] = 0.0
+        w[lo - te:lo] = ramp
+        w[hi:hi + te] = ramp[::-1]
+        w[hi + te:] = 0.0
+    else:
+        # No padding on this axis — taper eats into the outermost object voxels.
+        te = min(t, n // 2)
+        ramp = np.sin(0.5 * np.pi * np.arange(te, dtype=np.float32) / te) ** 2
+        w[:te] = ramp
+        w[n - te:] = ramp[::-1]
+    return w
+
+
+def _blur_pad_slabs(vol, pad_length, axes, step_sigma=0.7):
+    """
+    Progressively blur the edge-replicated padding slabs in place.
+
+    ``np.pad(mode='edge')`` copies the boundary profile outward unchanged, so the
+    padding keeps all the lateral (perpendicular-to-pad) spatial structure of the
+    object edge.  Even though the taper rolls its *amplitude* to zero, that frozen
+    structure still injects spatial frequencies into the FFT.  To avoid this, each
+    successive layer of padding is set to a blurred copy of the layer just inside
+    it: the smoothing compounds with depth (after ``k`` layers the effective
+    Gaussian σ ≈ ``step_sigma * sqrt(k)``), so the replicated profile relaxes
+    toward a flat, low-frequency level as it extends outward and then tapers to
+    zero with no sharp lateral content left to transform.
+
+    Only the slabs along ``axes`` are touched; the object interior (and the
+    object-edge slice each slab grows from) is never modified.
+    """
+    if pad_length <= 0 or step_sigma <= 0:
+        return vol
+
+    for ax in axes:
+        n = vol.shape[ax]
+
+        def _slice(i):
+            s = [slice(None)] * vol.ndim
+            s[ax] = i
+            return tuple(s)
+
+        # Low slab: grow outward (decreasing index) from the object-edge slice.
+        prev = vol[_slice(pad_length)]
+        for k in range(pad_length - 1, -1, -1):
+            prev = gaussian_filter(prev, step_sigma)
+            vol[_slice(k)] = prev
+
+        # High slab: grow outward (increasing index) from the object-edge slice.
+        prev = vol[_slice(n - pad_length - 1)]
+        for k in range(n - pad_length, n):
+            prev = gaussian_filter(prev, step_sigma)
+            vol[_slice(k)] = prev
+
+    return vol
+
+
+def _pad_taper_3d(vol, pad_length, taper_length, axes=(0, 1, 2), pad_blur_sigma=0.7):
+    """
+    Pad a 3D volume and taper its support edges smoothly to zero.
+
+    Padding and tapering are applied only along the axes listed in ``axes``.
+    The caller chooses these based on ``crop_mode``:
+
+        * ``'soft_circle'`` — the in-plane (ny, nx) edges have already been
+          rolled to zero by the circular mask, so only the vertical axis 0
+          ("top and bottom") still carries a hard support boundary.  Pass
+          ``axes=(0,)``.
+        * ``'square'`` / ``None`` — the crop leaves a hard object edge on every
+          in-plane side as well, so pad/taper all three axes (``axes=(0,1,2)``).
 
     The padding replicates the existing edge voxel values outward by
-    ``pad_length`` voxels per face (``np.pad(mode='edge')``).  A separable
-    Hann (raised-cosine) taper then ramps the outermost ``taper_length``
-    voxels of every axis from full value down to zero at the outer edge.
+    ``pad_length`` voxels per face (``np.pad(mode='edge')``) on the selected
+    axes.  Each padding slab is then progressively blurred outward
+    (:func:`_blur_pad_slabs`) so the replicated edge profile relaxes toward a
+    flat level instead of freezing the object-edge structure into the pad.  A
+    separable Hann (raised-cosine) taper finally rolls the object edge to zero
+    within ``taper_length`` voxels (see :func:`_edge_window_1d`).
 
     Removing the sharp real-space support boundary this way suppresses the
     correlated high-frequency ringing that otherwise leaks into both half-maps
@@ -37,32 +164,44 @@ def _pad_taper_3d(vol, pad_length, taper_length):
     eating into the reconstructed object, and the extra extent zero-fills the
     FFT grid for finer radial-shell sampling.
 
+    The caller is expected to have background-subtracted the volume first, so
+    tapering to zero rolls the edge off to the true empty-space level rather
+    than stepping from a nonzero background down to zero.
+
     Parameters
     ----------
     vol : ndarray (nz, ny, nx)
-    pad_length : int     — voxels of edge-replicated padding added per face.
+    pad_length : int     — voxels of edge-replicated padding added per face on
+                           the selected axes.
     taper_length : int   — width (voxels) of the raised-cosine roll-off to zero
-                           at each edge of the padded volume.
+                           measured outward from the object edge.
+    axes : tuple of int  — which axes to pad and taper.
+    pad_blur_sigma : float — per-layer Gaussian σ for the progressive blur of
+                           the padding slabs; 0 disables the blur.
 
     Returns
     -------
-    ndarray (nz + 2*pad_length, …)  — padded, tapered, float32.
+    ndarray  — padded (on ``axes``), tapered, float32.
     """
     vol = vol.astype(np.float32)
+    axes = tuple(axes)
+
     if pad_length and pad_length > 0:
-        vol = np.pad(vol, pad_length, mode='edge')
+        pad_width = [(0, 0)] * vol.ndim
+        for ax in axes:
+            pad_width[ax] = (pad_length, pad_length)
+        vol = np.pad(vol, pad_width, mode='edge')
+        # Smooth the replicated padding so it carries no frozen edge structure.
+        vol = _blur_pad_slabs(vol, pad_length, axes, step_sigma=pad_blur_sigma)
 
     if taper_length and taper_length > 0:
         window = np.ones(1, dtype=np.float32)
-        for axis, n in enumerate(vol.shape):
-            t = min(int(taper_length), n // 2)
-            w = np.ones(n, dtype=np.float32)
-            if t > 0:
-                # Ascending half of a Hann window: 0 at the outer edge → 1 by
-                # depth t.  sin^2 is equivalent to the raised cosine 0.5(1-cos).
-                ramp = np.sin(0.5 * np.pi * np.arange(t, dtype=np.float32) / t) ** 2
-                w[:t] = ramp
-                w[n - t:] = ramp[::-1]
+        for axis in range(vol.ndim):
+            n = vol.shape[axis]
+            if axis in axes:
+                w = _edge_window_1d(n, pad_length if pad_length else 0, int(taper_length))
+            else:
+                w = np.ones(n, dtype=np.float32)
             shape_b = [1] * vol.ndim
             shape_b[axis] = n
             window = window * w.reshape(shape_b)
@@ -262,9 +401,14 @@ def _square_crop_xy(vol):
     side = diameter / sqrt(2).  The crop boundary lies entirely inside the
     circle, so there is no masked-edge discontinuity and no correlated
     high-frequency artifact in the FSC curve.
+
+    The side is shrunk by an additional margin (~5 px) so the square's
+    corners pull in from the edge of the FOV, keeping ring artifacts that
+    hug the circular boundary out of the cropped region.
     """
     nz, ny, nx = vol.shape
-    side = int(min(ny, nx) / np.sqrt(2))
+    margin = 5  # px to pull each side in, keeping ring artifacts out of the corners
+    side = int(min(ny, nx) / np.sqrt(2)) - 2 * margin
     if side % 2 != 0:
         side -= 1
     cy, cx = ny // 2, nx // 2
@@ -303,6 +447,7 @@ def _fsc_recon_half(projs, angles, center, center_offset, algorithm, min_constra
 def fourier_shell_correlation(tomo, algorithm='gridrec', plot=True,
                               smooth_sigma=2.0, crop_mode='soft_circle',
                               pad_length=50, taper_length=None,
+                              background='median',
                               min_constraint=None,
                               threshold='half-bit', pixel_size_nm=None):
     """
@@ -369,6 +514,15 @@ def fourier_shell_correlation(tomo, algorithm='gridrec', plot=True,
         taper occupies exactly the replicated-edge pad strip; pass a smaller
         value to keep an inner band of the pad at full edge value, or a larger
         value to let the taper extend into the reconstructed object.
+    background : {'mean', 'median'} or float
+        Background level subtracted from each half-map before masking and
+        tapering, so the soft circular mask and the edge taper both roll off to
+        the true empty-space level instead of stepping from a nonzero
+        background down to zero (which would inject correlated high-frequency
+        ringing into both half-maps).  ``'mean'`` (default) uses each
+        half-map's own mean; ``'median'`` is more robust when the object fills
+        much of the FOV; a float subtracts a fixed value.  FSC ignores the DC
+        shell, so this constant shift does not otherwise affect the curve.
     min_constraint : float or None
         If given, passed to tomopy.recon() as a lower-bound floor on voxel
         values after each iteration.  Has no effect for the 'svmbir' algorithm.
@@ -411,6 +565,20 @@ def fourier_shell_correlation(tomo, algorithm='gridrec', plot=True,
     r2 = _fsc_recon_half(projs[odd_idx],  angles[odd_idx],  center, center_offset, algorithm,
                          min_constraint=min_constraint)
 
+    # Background-subtract each half *before* masking/tapering so the soft
+    # circular mask and the edge taper both roll off to the true empty-space
+    # level (≈0 after subtraction) rather than stepping from a nonzero
+    # background down to zero — that step is what injects correlated
+    # high-frequency ringing into both half-maps.  One subtraction here serves
+    # both the mask multiply and the pad+taper (doing it in both would
+    # double-subtract).  Each half uses its own estimate; FSC ignores the DC
+    # shell, so the constant shift does not otherwise change the curve.
+    b1 = _background_level(r1, background)
+    b2 = _background_level(r2, background)
+    r1 = r1 - b1
+    r2 = r2 - b2
+    print(f"  Background-subtracted halves ({background}): b1={b1:.4g}, b2={b2:.4g}")
+
     _before = None
     if crop_mode == 'soft_circle':
         soft_mask = _soft_circ_mask(r1.shape, ratio=0.99, taper=0.1)
@@ -435,10 +603,16 @@ def fourier_shell_correlation(tomo, algorithm='gridrec', plot=True,
     # high-frequency FSC rise-back artifact, and zero-fills the FFT grid.
     if pad_length and pad_length > 0:
         tlen = pad_length if taper_length is None else taper_length
-        r1 = _pad_taper_3d(r1, pad_length, tlen)
-        r2 = _pad_taper_3d(r2, pad_length, tlen)
-        print(f"  Pad+taper: +{pad_length} px/face (edge-replicated), "
-              f"{tlen} px Hann taper to zero → half-map shape {r1.shape}")
+        # soft_circle already rolled the in-plane edges to zero, so only the
+        # vertical axis still has a hard support boundary; square/None leave a
+        # hard object edge on every side.
+        pad_axes = (0,) if crop_mode == 'soft_circle' else (0, 1, 2)
+        r1 = _pad_taper_3d(r1, pad_length, tlen, axes=pad_axes)
+        r2 = _pad_taper_3d(r2, pad_length, tlen, axes=pad_axes)
+        _axes_desc = "axis 0 (top/bottom)" if pad_axes == (0,) else "all axes"
+        print(f"  Pad+taper ({_axes_desc}): +{pad_length} px/face "
+              f"(edge-replicated), {tlen} px Hann taper rolling the object edge "
+              f"to zero → half-map shape {r1.shape}")
 
     # Show the half-map slices after masking *and* pad+taper, so the display
     # reflects exactly what goes into the FFT.
