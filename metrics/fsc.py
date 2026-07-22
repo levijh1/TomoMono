@@ -699,9 +699,15 @@ def _fsc_plot(fsc_raw, fsc_smooth, freqs, three_sigma, half_bit, resolutions,
                 res_text = f'Resolution: {res * pixel_size_nm:.0f} nm'
             else:
                 res_text = f'Resolution: {res:.1f} px'
-            ax.text(0.25, 0.45, res_text, transform=ax.transAxes, fontsize=11)
+            # Anchor the label just to the right of the crossing line (x in data
+            # coords, y in axes fraction) so the dotted green line never runs
+            # through the text.
+            ax.text(freq_cross + 0.012 * freqs[-1], 0.45, res_text,
+                    transform=ax.get_xaxis_transform(), fontsize=11, ha='left')
 
-    ax.set_xlim(0, freqs[-1])
+    # Start the x-axis just below zero (matching the reference figure) so the
+    # curve doesn't sit flush against the left spine.
+    ax.set_xlim(-0.02 * freqs[-1], freqs[-1])
     ax.set_ylim(0.0, 1.05)
     ax.set_xlabel('Spatial frequency (pixel⁻¹)', fontsize=11)
     ax.set_ylabel('Correlation', fontsize=11)
