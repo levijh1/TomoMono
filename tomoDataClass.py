@@ -453,7 +453,7 @@ class tomoData:
         plt.ylabel('Angle')
         plt.show()
 
-    def center_projections(self):
+    def center_projections(self, method = 'vo'):
         """
         Determines and adjusts the center of rotation for 2D projection images by finding the initial center,
         shifting the projections to center them, and calculating any remaining offset (to check if it needs to be done again).
@@ -465,7 +465,10 @@ class tomoData:
         iterator = 0
         while self.center_offset > 1 and iterator < 3:
             iterator += 1
-            self.rotation_center = tomopy.find_center_vo(self.workingProjections)
+            if method == 'vo':
+                self.rotation_center = tomopy.find_center_vo(self.workingProjections)
+            else:
+                self.rotation_center = tomopy.find_center(self.workingProjections, self.ang)[0]
             print("Original center: {}".format(self.rotation_center))
             print("Center of frame: {}".format(self.image_size[1] // 2))
             x_shift = (self.image_size[1] / 2 - (self.rotation_center))
@@ -473,7 +476,10 @@ class tomoData:
             if abs(x_shift) > 0.01:
                 for m in range(self.num_angles):
                     self.workingProjections[m] = subpixel_shift(self.workingProjections[m], y_shift, x_shift)
-                self.rotation_center = tomopy.find_center_vo(self.workingProjections)
+                if method == 'vo':    
+                    self.rotation_center = tomopy.find_center_vo(self.workingProjections)
+                else:
+                    self.rotation_center = tomopy.find_center(self.workingProjections, self.ang)[0]
                 print("Aligned projections shifted by {} pixels".format(x_shift))
                 x_shift_check = (self.image_size[1] // 2 - (self.rotation_center))
             else:
@@ -482,7 +488,7 @@ class tomoData:
             print(f"Projections are currently centered at pixel {self.rotation_center}. Residual offset: {self.center_offset}")
             self.tracked_shifts[:, 1] += x_shift
 
-    def reconstruct(self, algorithm, snr_db=None, num_iter=400, extra_options=None):
+    def reconstruct(self, algorithm, snr_db=None, num_iter=400, find_center_method = 'vo', extra_options=None):
         """
         Reconstructs the 3D volume from projections using the specified algorithm.
 
@@ -493,7 +499,10 @@ class tomoData:
         - extra_options (dict or None): Extra ASTRA options (e.g. {'MinConstraint': 0}).
         """
         #Center projections before reconstruction. So reconstruction knows where center is.
-        self.rotation_center = tomopy.find_center_vo(self.finalProjections)
+        if find_center_method == 'vo':
+            self.rotation_center = tomopy.find_center_vo(self.finalProjections)
+        else:
+            self.rotation_center = tomopy.find_center(self.finalProjections, self.ang)[0]
 
         print("\n")
         if algorithm.endswith("CUDA"):

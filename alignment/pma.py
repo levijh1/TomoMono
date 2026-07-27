@@ -110,6 +110,7 @@ def projection_matching_alignment(
         shift_method='cross_correlation',
         of_sigma=3.0,
         smooth_sigma=None,
+        centering_method='vo',
         plot=False,
 
         use_matching_preprocess=True,
@@ -155,7 +156,8 @@ def projection_matching_alignment(
 
     if standardize:
         tomo.standardize(isPhaseData=isPhaseData)
-    tomo.center_projections()
+        
+    tomo.center_projections(method=centering_method)
 
     iters_per_level = ([max_iterations] * levels if iterations_per_level is None
                        else list(iterations_per_level))
@@ -206,19 +208,27 @@ def projection_matching_alignment(
             assert 0 <= x0_ds < x1_ds <= W
             assert 0 <= y0_ds < y1_ds <= H
 
-            # The xROI must be centered at the rotation center so the rotation axis
-            # stays at the ROI midpoint. This guarantees roi_center = (x1-x0)/2 and
-            # avoids a lateral offset in the smaller reconstruction.
+            # The rotation axis need not sit at the ROI midpoint. Its position
+            # within the cropped ROI is simply the full-frame rotation center
+            # minus the ROI's left edge, which is valid for any xROI. This keeps
+            # PMA working even when find_center returns a slightly inconsistent
+            # rotation center relative to the chosen xROI.
             roi_x_center = (x0_ds + x1_ds) / 2.0
-            assert abs(roi_x_center - scaled_center) <= 1.0, (
-                f"xROI must be centered at the rotation center (scaled_center={scaled_center:.1f}), "
-                f"but xROI midpoint is at {roi_x_center:.1f} (diff={abs(roi_x_center - scaled_center):.2f} px). "
-                f"Adjust xROI_Range to [{int(scaled_center * downsample_factor) - (_xr[1] - _xr[0]) // 2}, "
-                f"{int(scaled_center * downsample_factor) + (_xr[1] - _xr[0]) // 2}]."
+            roi_center = scaled_center - x0_ds
+            if abs(roi_x_center - scaled_center) > 1.0:
+                print(
+                    f"Note: xROI is not centered on the rotation axis "
+                    f"(scaled_center={scaled_center:.1f}, xROI midpoint={roi_x_center:.1f}, "
+                    f"diff={abs(roi_x_center - scaled_center):.2f} px). Using rotation center "
+                    f"offset within ROI (roi_center={roi_center:.2f})."
+                )
+            # Guard against a rotation axis that falls outside the ROI entirely,
+            # which would make the reconstruction geometry meaningless.
+            assert 0 <= roi_center <= (x1_ds - x0_ds), (
+                f"Rotation center (scaled_center={scaled_center:.1f}) falls outside xROI "
+                f"[{x0_ds}, {x1_ds}] (downsampled). Widen xROI_Range to include the rotation axis."
             )
             roi_active = True
-            # Because xROI is centered on the rotation axis, roi_center is simply the ROI midpoint.
-            roi_center = (x1_ds - x0_ds) / 2.0
         else:
             roi_active = False
             roi_center = scaled_center
