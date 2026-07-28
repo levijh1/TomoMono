@@ -22,6 +22,7 @@ from metrics import (
 from filters import kovacik_filter
 
 from gpu import xp, cp, torch, svmbir, ndimage_shift as _ndimage_shift
+import matplotlib.pyplot as plt
 
 
 def _correct_svmbir_geometry(recon):
@@ -112,9 +113,9 @@ class tomoData:
         self.image_size = data.shape[1:]
         self.data = data
         self.workingProjections = np.copy(data)
+        self.finalProjections = np.copy(data)
         self.rotation_center = 0
         self.center_offset = 0
-        self.finalProjections = np.copy(data)
         self.tracked_shifts = np.zeros((self.num_angles, 2))
         self.tracked_rotations = np.zeros(self.num_angles)
         self.finalReprojections = None
@@ -259,14 +260,14 @@ class tomoData:
         return self.crop(new_y, new_x, anchor='bottom')
 
 
-    def track_shifts(self):
-        """
-        Resets tracked shifts and rotations, and sets final projections to the current working projections.
-        Allows you to track all changes to workingProjections so that you can apply the final changes later to finalProjections.
-        """
-        self.finalProjections = self.workingProjections.copy()
-        self.tracked_shifts = np.zeros((self.num_angles, 2))
-        self.tracked_rotations = np.zeros(self.num_angles)
+    # def track_shifts(self):
+    #     """
+    #     Resets tracked shifts and rotations, and sets final projections to the current working projections.
+    #     Allows you to track all changes to workingProjections so that you can apply the final changes later to finalProjections.
+    #     """
+    #     self.finalProjections = self.workingProjections.copy()
+    #     self.tracked_shifts = np.zeros((self.num_angles, 2))
+    #     self.tracked_rotations = np.zeros(self.num_angles)
 
     def make_updates_shift(self):
         """
@@ -498,7 +499,7 @@ class tomoData:
         - num_iter (int): Number of iterations for iterative CUDA algorithms (default 400).
         - extra_options (dict or None): Extra ASTRA options (e.g. {'MinConstraint': 0}).
         """
-        #Center projections before reconstruction. So reconstruction knows where center is.
+        #Center projections before reconstruction. So reconstruction knows where center is. Generally 'vo' works better, but it didn't work as well on the wedding cake sample
         if find_center_method == 'vo':
             self.rotation_center = tomopy.find_center_vo(self.finalProjections)
         else:

@@ -14,6 +14,7 @@ judge how good a *reconstruction* is. (For judging *alignment* quality, use
 """
 
 import numpy as np
+
 from scipy.ndimage import gaussian_filter1d, gaussian_filter
 import tomopy
 import matplotlib.pyplot as plt

@@ -260,9 +260,6 @@ def projection_matching_alignment(
                 ref_roi = reproj[i]
                 mov_roi = recon_projs[i]
 
-                if plot and k == 0 and i == plot_idx:
-                    plot_ref_raw, plot_mov_raw = ref_roi.copy(), mov_roi.copy()
-
                 if use_matching_preprocess:
                     ref_roi = _preprocess_for_matching(ref_roi, matching_sigma)
                     mov_roi = _preprocess_for_matching(mov_roi, matching_sigma)
@@ -275,6 +272,9 @@ def projection_matching_alignment(
                     dy[i], dx[i] = _optical_flow_shift(mov_roi, ref_roi, of_sigma)
                 else:
                     dy[i], dx[i] = _cross_correlation_shift(ref_roi, mov_roi, upsample_factor)
+
+                if plot and k == 0 and i == plot_idx:
+                    plot_ref_raw, plot_mov_raw = ref_roi.copy(), mov_roi.copy()
 
             if plot and k == 0 and plot_ref_raw is not None:
                 _plot_pma_diff(plot_mov_raw, plot_ref_raw,

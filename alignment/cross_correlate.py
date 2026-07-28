@@ -35,6 +35,7 @@ def cross_correlate_align(
         maxShiftTolerance=1,
         isFull360=False,
         num_images_for_median=None,
+        average_all=False,
         upsample_factor=20,
         downsample=1,
         use_grad=False,
@@ -95,9 +96,6 @@ def cross_correlate_align(
     def _compute_shift(ref, mov):
         ref_c = _crop(ref)
         mov_c = _crop(mov)
-        if use_grad:
-            ref_c = compute_grad_image(ref_c)
-            mov_c = compute_grad_image(mov_c)
         if downsample != 1:
             ref_c = _downsample(ref_c)
             mov_c = _downsample(mov_c)
@@ -109,11 +107,20 @@ def cross_correlate_align(
         rel_shifts = np.zeros((n, 2), dtype=np.float64)
         _plot_data = None
 
+        if average_all:
+            ref_average_all = np.median(snapshot, axis=0)
         for i in tqdm(range(1, n), desc=f'Iteration {iteration + 1}/{max_iterations}'):
-            if K is None:
+            if average_all ==True:
+                ref = ref_average_all
+            elif K is None:
                 ref = snapshot[i - 1]
             else:
                 ref = np.median(snapshot[max(0, i - K):i], axis=0)
+            
+            if use_grad:
+                ref = compute_grad_image(ref)
+                snapshot[i] = compute_grad_image(snapshot[i])
+
             y_shift, x_shift = _compute_shift(ref, snapshot[i])
             rel_shifts[i] = [y_shift, x_shift]
             if plot and i == n//2:
