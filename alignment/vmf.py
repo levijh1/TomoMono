@@ -25,6 +25,32 @@ def vertical_mass_fluctuation_align(
     plot=False,           # Plot window profile, final overall profile, and second projection profile
     stepRatio=1.0,        # Fraction of computed shift to apply each iteration (damping)
 ):
+    """
+    Aligns projections vertically using their per-row mass profiles (VMF).
+
+    Each projection is collapsed to a 1D vertical profile (sum along x), which is
+    then differentiated, normalized, and windowed. Every profile is registered by
+    phase cross-correlation against the mean profile across all angles, and the
+    resulting y-shifts (mean-subtracted to keep the volume centered) are applied.
+    Corrects vertical drift only — x is left untouched.
+
+    Like the other alignment routines, this shifts workingProjections and
+    accumulates into tracked_shifts; call make_updates_shift() to commit.
+
+    Parameters:
+    - tomo: Tomography object with .workingProjections and .tracked_shifts.
+    - tolerance (float): Stop once the mean correction per iteration falls below this.
+    - max_iterations (int): Maximum number of alignment iterations.
+    - y_range (list or None): [start, end] row range used to build the profile.
+    - upsample_factor (int): Sub-pixel precision of phase_cross_correlation.
+    - window ({'hanning', 'soft_roi', None}): Vertical taper suppressing cut-off
+      boundary artifacts at the top/bottom of the frame.
+    - roi_sigma (float): Gaussian half-width as a fraction of frame height ('soft_roi' only).
+    - use_gradient (bool): Differentiate the profile so internal features drive the
+      registration instead of the overall bulk (which may be cut off by the frame).
+    - plot (bool): Show the window, reference profile, and one sample profile per iteration.
+    - stepRatio (float): Fraction of the computed shift applied each iteration (damping).
+    """
     print(f"VMF Alignment (upsample={upsample_factor}, window={window}, gradient={use_gradient}, stepRatio={stepRatio})")
     n = tomo.num_angles
 

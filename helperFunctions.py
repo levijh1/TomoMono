@@ -1,3 +1,16 @@
+"""
+Shared utilities for TomoMono.
+
+Contents:
+    FFT/IFFT wrappers   — centered (fftshift-ed) Fourier transforms
+    subpixel_shift      — Fourier-domain subpixel image shift with edge tapering
+    MoviePlotter        — interactive image-stack viewer for Jupyter notebooks
+    runwidget           — interactive image-stack viewer for scripts
+    DualLogger          — tees stdout to both the console and a log file
+    convert_to_*        — TIFF <-> numpy I/O preserving scale metadata
+    degree_to_positiveRadians — angle unit conversion
+"""
+
 import numpy as np
 import matplotlib.pyplot as plt
 import tomopy
@@ -16,23 +29,29 @@ from scipy.ndimage import gaussian_filter as _cpu_gf
 
 
 def FFT2(input):
+  """Centered 2D FFT: zero frequency at the middle of both input and output."""
   return np.fft.fftshift(np.fft.fft2(np.fft.ifftshift(input)))
 
 def FFT(input):
+  """Centered 1D FFT: zero frequency at the middle of both input and output."""
   return np.fft.fftshift(np.fft.fft(np.fft.ifftshift(input)))
 
 def IFFT2(input):
+  """Centered 2D inverse FFT — inverse of ``FFT2``."""
   return np.fft.fftshift(np.fft.ifft2(np.fft.ifftshift(input)))
 
 def IFFT(input):
+  """Centered 1D inverse FFT — inverse of ``FFT``."""
   return np.fft.fftshift(np.fft.ifft(np.fft.ifftshift(input)))
 
 def show(matrix, title):
+  """Display a 2D array with a title (quick debugging helper)."""
   plt.imshow(matrix)
   plt.title(title)
   plt.show()
 
 def add_noise(m):
+  """Add Poisson-like noise to projections via tomopy (for phantom testing)."""
   m = tomopy.prep.alignment.add_noise(m)
   return m
 
@@ -247,7 +266,16 @@ def subpixel_shift(image, shift_y, shift_x):
     )
 
 class MoviePlotter:
-    """Plots a sequence of images as a movie in a Jupyter Notebook with interactive controls using widgets.Play."""
+    """
+    Plots a sequence of images as a movie in a Jupyter Notebook with interactive controls using widgets.Play.
+
+    Parameters:
+    - x: (M, N, N) stack — projections or reconstruction slices.
+    - trust_box: optional (top, bottom, left, right) margins drawn as red dashed
+      lines, marking the region unaffected by alignment shifts.
+    - color: matplotlib colormap name.
+    - overlay: optional (M, N, N) bool mask drawn semi-transparently on top.
+    """
     def __init__(self, x, trust_box=None, color='gray', overlay=None):
         self.x = x  # (M, N, N) array where M is the total number of images and N is the number of pixels in x and y
         self.trust_box = trust_box  # (top, bottom, left, right) pixel margins, or None
@@ -273,9 +301,11 @@ class MoviePlotter:
         self.update_plot(0)
 
     def slider_update(self, change):
+        """Redraw when the frame slider (or play widget) moves."""
         self.update_plot(change['new'])
 
     def update_plot(self, frame):
+        """Draw one frame with a fixed global intensity scale, plus overlay/trust box."""
         with self.output:
             self.output.clear_output(wait=True)
             plt.imshow(self.x[frame], vmin=self.global_min, vmax=self.global_max, cmap=self.color)
@@ -326,18 +356,27 @@ def runwidget(m):
 
 # Custom logger class
 class DualLogger:
+    """
+    Drop-in replacement for sys.stdout that writes to both the console and a log file.
+
+    Usage: ``sys.stdout = DualLogger('logs/run.txt', 'w')`` at the start of a
+    script, then ``sys.stdout.close()`` and restore ``sys.__stdout__`` at the end.
+    """
     def __init__(self, filepath, mode='a'):
         self.terminal = sys.stdout
         self.log = open(filepath, mode)
 
     def write(self, message):
+        """Write ``message`` to the console and the log file."""
         self.terminal.write(message)
         self.log.write(message)
 
     def flush(self):
+        """Flush buffered output to the log file."""
         self.log.flush()
 
     def close(self):
+        """Close the log file (the console stream is left untouched)."""
         self.log.close()
 
 
@@ -419,5 +458,6 @@ def convert_to_2Dtiff(numpy_data, file_location, scale_info=None):
     return convert_to_tiff(np.array([numpy_data]), file_location, scale_info)
 
 def degree_to_positiveRadians(angles):
+    """Convert angles in degrees to radians wrapped into the range [0, 2*pi)."""
     angles_radians = np.deg2rad(angles)
     return (angles_radians + 2*np.pi) % (2*np.pi)

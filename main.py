@@ -1,3 +1,15 @@
+"""
+Single reconstruction from pre-aligned projections.
+
+Loads an aligned projection TIFF (produced by align.py) plus the acquisition
+angles from the raw HDF5, normalizes the phase data, re-centers the rotation
+axis, reconstructs with one algorithm, and saves the volume as a TIFF.
+
+This is the "just give me one reconstruction" script — edit the configuration
+block below and run ``python main.py``. Use recon_param_search.py instead to
+compare several algorithms or iteration counts in one run.
+"""
+
 import os
 import sys
 import time

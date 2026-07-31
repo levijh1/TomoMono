@@ -89,6 +89,14 @@ def optical_flow_align(tomo):
         tomo.finalProjections[m % tomo.num_angles] = aligned_img
 
 def shift_min_to_middle(tomo):
+    """
+    Coarse horizontal centering: shifts each projection so its darkest pixel sits
+    at the middle column. Only useful as a rough first pass on data with a single
+    dominant dark feature.
+
+    Parameters:
+    - tomo: Tomography object with .workingProjections and .tracked_shifts.
+    """
     print("Shifting min values to middle")
     n_images, height, width = tomo.workingProjections.shape
     center_x = width // 2  # middle of array

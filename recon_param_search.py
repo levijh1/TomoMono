@@ -1,6 +1,25 @@
+"""
+Reconstruction algorithm and hyperparameter comparison.
+
+Reconstructs the same pre-aligned projections many times over and scores each
+result, so the best algorithm/settings for a dataset can be picked by number
+rather than by eye. Two sweeps run back to back:
+
+  1. Algorithm comparison — SIRT_CUDA, ART_CUDA, FBP_CUDA, gridrec, tv.
+  2. SIRT_CUDA hyperparameters — iteration count and the positivity constraint.
+
+Each configuration is scored with RCS and FSC and saved as a TIFF plus an
+orthogonal-slice PNG. The projections can be cropped in y (and to a centered
+width) so a sweep runs on a manageable subvolume.
+
+Usage:
+    python recon_param_search.py --tiff-file <aligned.tif> [--y-start N] [--y-end N] [--width N]
+"""
+
+
 def save_orthogonal_slices(tomo_obj, output_path):
     """
-    Save orthogonal slices through the reconstruction to a PNG file.
+    Save the three central orthogonal slices (XY, XZ, YZ) of the reconstruction to a PNG.
     """
     import matplotlib.pyplot as plt
     recon = tomo_obj.recon
@@ -28,6 +47,7 @@ def save_orthogonal_slices(tomo_obj, output_path):
 
 
 def main(args):
+    """Load and crop the projections once, then run every configuration against them."""
     # ===================== Imports =====================
     import os
     import sys
@@ -163,6 +183,7 @@ def main(args):
     # or ang — so we safely reuse tomo_base across all configs (no deepcopy needed,
     # which matters for ~160 GB full-res projections).
     def run_config(label, algorithm, num_iter=400, extra_options=None):
+        """Reconstruct with one configuration, print its RCS/FSC scores, and save the outputs."""
         print(f'\n{"─"*60}')
         print(f'Config: {label}')
         extra_options = extra_options or {}

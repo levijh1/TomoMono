@@ -1,3 +1,18 @@
+"""
+Core data container for TomoMono.
+
+``tomoData`` holds a tilt series and every buffer used to align and reconstruct
+it. Alignment, metric, and filter functions live in the ``alignment``,
+``metrics``, and ``filters`` subpackages as free functions that take a
+``tomoData`` as their first argument; at the bottom of this module they are
+auto-attached as methods on the class (see ``_attach_delegate``), so
+``tomo.cross_correlate_align(...)`` and ``cross_correlate_align(tomo, ...)``
+are equivalent.
+
+Also provides ``simulate_projections`` — forward projection of a volume via
+ASTRA on the GPU, falling back to tomopy on the CPU.
+"""
+
 import tomopy
 import numpy as np
 import scipy as sp
@@ -98,6 +113,17 @@ def simulate_projections(recon, angles, center=None, emission=True, pad=False, n
 class tomoData:
     """
     Class for handling tomographic data, including preprocessing, alignment, and reconstruction.
+
+    Two-buffer alignment pattern:
+      - ``data``               — the raw projections as loaded (only ``jitter()`` changes them).
+      - ``workingProjections`` — scratch copy the alignment routines shift repeatedly.
+      - ``tracked_shifts``     — running (y, x) shift per projection accumulated by those routines.
+      - ``finalProjections``   — the buffer that gets reconstructed. ``make_updates_shift()``
+        commits ``tracked_shifts`` to it in a single interpolation pass, so stacking
+        many alignment iterations does not stack their interpolation blur.
+      - ``recon``              — 3D volume produced by ``reconstruct()``.
+
+    Typical order: normalize → align (working) → make_updates_shift → reconstruct → filter.
     """
 
     def __init__(self, data, angles = None):
@@ -138,6 +164,8 @@ class tomoData:
         """
         self.workingProjections = np.copy(self.data)
         self.finalProjections = np.copy(self.data)
+        self.tracked_shifts = np.zeros((self.num_angles, 2))
+        self.tracked_rotations = np.zeros(self.num_angles)
         if x_size is not None and y_size is not None:
             anchor = 'bottom' if cropBottomCenter else 'center'
             self.crop(y_size, x_size, anchor=anchor)
@@ -182,11 +210,11 @@ class tomoData:
 
     def jitter_y(self, maxShift=5):
         """
-        Applies random jitter to the projections to simulate real-world misalignments.
-        Jitter ranges from -maxShift to +maxShift pixels in both x and y directions. Affects data variable as well.
+        Applies random vertical-only jitter to the projections, for testing alignment
+        methods that correct vertical drift. Affects the data variable as well.
 
         Parameters:
-        - maxShift (float): Maximum shift in pixels for both x and y directions.
+        - maxShift (float): Maximum shift in pixels in the y direction.
         """
         for i in range(1, self.num_angles-1):
             x_shift = 0
@@ -198,6 +226,7 @@ class tomoData:
         self.finalProjections = self.data.copy()
 
     def add_noise(self):
+        """Adds synthetic noise to the projections (phantom testing). Affects the data variable as well."""
         self.data = tomopy.prep.alignment.add_noise(self.data)
         self.workingProjections = self.data.copy()
         self.finalProjections = self.data.copy()   
@@ -306,7 +335,11 @@ class tomoData:
 
     def normalize(self, isPhaseData):
         """
-        Normalizes all projections to be positive values between 0 and 1.
+        Normalizes workingProjections to positive values between 0 and 1.
+
+        Parameters:
+        - isPhaseData (bool): If True, inverts the sign first — phase data is negative
+          where the sample is dense, so this makes dense regions bright.
         """
         print("\n")
         print("Normalizing projections")
@@ -423,6 +456,10 @@ class tomoData:
         runwidget(self.recon)
 
     def displayReconOrthogonalSlices(self):
+        """
+        Displays the three central orthogonal slices (XY, XZ, YZ) through the
+        reconstruction — a quick check of overall reconstruction quality.
+        """
         import matplotlib.pyplot as plt
         recon = self.recon
         nz, ny, nx = recon.shape
@@ -447,6 +484,13 @@ class tomoData:
         plt.show()
     
     def displayWorkingSinogram(self, row_index=None):
+        """
+        Displays the sinogram (angle vs. detector pixel) for one detector row of
+        workingProjections. Smooth sinusoidal streaks indicate good alignment.
+
+        Parameters:
+        - row_index (int or None): Detector row; defaults to the middle row.
+        """
         if row_index is None:
             row_index = self.workingProjections.shape[1] // 2
         plt.imshow(self.workingProjections[:,row_index,:], cmap='gray')
@@ -454,7 +498,7 @@ class tomoData:
         plt.ylabel('Angle')
         plt.show()
 
-    def center_projections(self, method = 'vo'):
+    def center_projections(self):
         """
         Determines and adjusts the center of rotation for 2D projection images by finding the initial center,
         shifting the projections to center them, and calculating any remaining offset (to check if it needs to be done again).
@@ -466,10 +510,7 @@ class tomoData:
         iterator = 0
         while self.center_offset > 1 and iterator < 3:
             iterator += 1
-            if method == 'vo':
-                self.rotation_center = tomopy.find_center_vo(self.workingProjections)
-            else:
-                self.rotation_center = tomopy.find_center(self.workingProjections, self.ang)[0]
+            self.rotation_center = tomopy.find_center_vo(self.workingProjections)
             print("Original center: {}".format(self.rotation_center))
             print("Center of frame: {}".format(self.image_size[1] // 2))
             x_shift = (self.image_size[1] / 2 - (self.rotation_center))
@@ -477,10 +518,7 @@ class tomoData:
             if abs(x_shift) > 0.01:
                 for m in range(self.num_angles):
                     self.workingProjections[m] = subpixel_shift(self.workingProjections[m], y_shift, x_shift)
-                if method == 'vo':    
-                    self.rotation_center = tomopy.find_center_vo(self.workingProjections)
-                else:
-                    self.rotation_center = tomopy.find_center(self.workingProjections, self.ang)[0]
+                self.rotation_center = tomopy.find_center_vo(self.workingProjections)
                 print("Aligned projections shifted by {} pixels".format(x_shift))
                 x_shift_check = (self.image_size[1] // 2 - (self.rotation_center))
             else:
@@ -489,21 +527,24 @@ class tomoData:
             print(f"Projections are currently centered at pixel {self.rotation_center}. Residual offset: {self.center_offset}")
             self.tracked_shifts[:, 1] += x_shift
 
-    def reconstruct(self, algorithm, snr_db=None, num_iter=400, find_center_method = 'vo', extra_options=None):
+    def reconstruct(self, algorithm, snr_db=None, num_iter=400, extra_options=None, crop_ratio = 0.98):
         """
-        Reconstructs the 3D volume from projections using the specified algorithm.
+        Reconstructs the 3D volume from finalProjections into self.recon.
+
+        Dispatches on the algorithm name: '*_CUDA' → ASTRA on the GPU via tomopy.astra,
+        'svmbir' → SVMBIR MBIR (CPU, slow but high quality), anything else → tomopy
+        on the CPU ('gridrec', 'sirt', 'art', 'tv', ...).
 
         Parameters:
         - algorithm (str): The reconstruction algorithm to use.
         - snr_db (float or None): Signal-to-noise ratio for SVMBIR, if applicable.
         - num_iter (int): Number of iterations for iterative CUDA algorithms (default 400).
         - extra_options (dict or None): Extra ASTRA options (e.g. {'MinConstraint': 0}).
+        - crop_ratio (float): Radius of the circular mask applied to the finished
+          volume, as a fraction of its width, zeroing the corners outside the FOV.
         """
-        #Center projections before reconstruction. So reconstruction knows where center is. Generally 'vo' works better, but it didn't work as well on the wedding cake sample
-        if find_center_method == 'vo':
-            self.rotation_center = tomopy.find_center_vo(self.finalProjections)
-        else:
-            self.rotation_center = tomopy.find_center(self.finalProjections, self.ang)[0]
+        #Center projections before reconstruction. So reconstruction knows where center is.
+        self.rotation_center = tomopy.find_center_vo(self.finalProjections)
 
         print("\n")
         if algorithm.endswith("CUDA"):
@@ -542,7 +583,7 @@ class tomoData:
                 algorithm=algorithm,
                 sinogram_order=False
             )
-        self.recon = tomopy.circ_mask(self.recon, axis=0, ratio=0.99)
+        self.recon = tomopy.circ_mask(self.recon, axis=0, ratio=crop_ratio)
         self._recon_pre_kovacik = None  # reset so kovacik_filter uses the new recon
         print("Reconstruction completed.")
 

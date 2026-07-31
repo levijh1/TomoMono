@@ -8,7 +8,7 @@ Pipeline: reset → normalize → XCA (varied) → PMA (varied)
 Varied axes:
   XCA: multi-pass strategy, use_grad, stepRatio, ROI (lowerboundCropPercentage)
   PMA: stepRatio, of_sigma, levels, iterations_per_level,
-       use_matching_preprocess, use_grad, ROI
+       use_highpass_filter, use_grad, ROI
 
 All (XCA config × PMA config) combinations are evaluated.  Results are
 continuously appended to a CSV log so partial runs are safe to inspect
@@ -170,7 +170,7 @@ XCA_ROI_PARAMS = {
 # ══════════════════════════════════════════════════════════════════════════════
 # PMA PARAMETER GRID
 # New fields vs. original schema:
-#   use_matching_preprocess (bool, default True)  — highpass+normalize preprocessing
+#   use_highpass_filter (bool, default False)  — highpass+normalize preprocessing
 #   use_grad                (bool, default False) — gradient magnitude preprocessing
 #   use_roi                 (bool, default False) — use ROI for shift estimation
 #   lb                      (float)               — lowerboundCropPercentage for ROI
@@ -306,7 +306,7 @@ PMA_CONFIGS = {
         shift_method='optical_flow', of_sigma=4.0, stepRatio=0.8,
     ),
 
-    # ── PMA preprocessing ablation (use_matching_preprocess / use_grad) ───────
+    # ── PMA preprocessing ablation (use_highpass_filter / use_grad) ───────
     # Baseline (preprocess=True, grad=False) is the default used by 100-132.
     # Testing the other 3 combinations on scale=4 and scale=2.
 
@@ -314,33 +314,33 @@ PMA_CONFIGS = {
     'pma_3lev_sr09_sig4_nopreprocess': dict(
         run=True, levels=3, scale=4, iterations_per_level=[8, 5, 3],
         shift_method='optical_flow', of_sigma=4.0, stepRatio=0.9,
-        use_matching_preprocess=False, use_grad=False,
+        use_highpass_filter=False, use_grad=False,
     ),
     'pma_3lev_sr09_sig4_pmagrad': dict(
         run=True, levels=3, scale=4, iterations_per_level=[8, 5, 3],
         shift_method='optical_flow', of_sigma=4.0, stepRatio=0.9,
-        use_matching_preprocess=False, use_grad=True,
+        use_highpass_filter=False, use_grad=True,
     ),
     'pma_3lev_sr09_sig4_preprocess_pmagrad': dict(
         run=True, levels=3, scale=4, iterations_per_level=[8, 5, 3],
         shift_method='optical_flow', of_sigma=4.0, stepRatio=0.9,
-        use_matching_preprocess=True, use_grad=True,
+        use_highpass_filter=True, use_grad=True,
     ),
     # scale=2
     'pma_3lev_sc2_sr09_sig4_nopreprocess': dict(
         run=True, levels=3, scale=2, iterations_per_level=[8, 5, 5],
         shift_method='optical_flow', of_sigma=4.0, stepRatio=0.9,
-        use_matching_preprocess=False, use_grad=False,
+        use_highpass_filter=False, use_grad=False,
     ),
     'pma_3lev_sc2_sr09_sig4_pmagrad': dict(
         run=True, levels=3, scale=2, iterations_per_level=[8, 5, 5],
         shift_method='optical_flow', of_sigma=4.0, stepRatio=0.9,
-        use_matching_preprocess=False, use_grad=True,
+        use_highpass_filter=False, use_grad=True,
     ),
     'pma_3lev_sc2_sr09_sig4_preprocess_pmagrad': dict(
         run=True, levels=3, scale=2, iterations_per_level=[8, 5, 5],
         shift_method='optical_flow', of_sigma=4.0, stepRatio=0.9,
-        use_matching_preprocess=True, use_grad=True,
+        use_highpass_filter=True, use_grad=True,
     ),
 
     # ── PMA ROI ablation ──────────────────────────────────────────────────────
@@ -378,7 +378,7 @@ PMA_CONFIGS = {
 # New columns appended after the original 14 so old rows stay valid.
 # Defaults for configs 100-114 (backfilled on resume):
 #   xca_use_roi = False, xca_lb_crop_pct = ''
-#   pma_use_matching_preprocess = True (when pma_run=True), else ''
+#   pma_use_highpass_filter = False (when pma_run=True), else ''
 #   pma_use_grad = False (when pma_run=True), else ''
 #   pma_use_roi = False (when pma_run=True), else ''
 #   pma_lb_crop_pct = ''
@@ -391,7 +391,7 @@ CSV_FIELDS = [
     'pma_name',
     'pma_run', 'pma_levels', 'pma_scale', 'pma_iters_per_level',
     'pma_of_sigma', 'pma_step_ratio',
-    'pma_use_matching_preprocess', 'pma_use_grad',
+    'pma_use_highpass_filter', 'pma_use_grad',
     'pma_use_roi', 'pma_lb_crop_pct',
     'rcs', 'align_time_s', 'recon_time_s', 'status',
 ]
@@ -436,7 +436,7 @@ def build_row(config_id, xca_name, xca_passes, xca_roi_params,
         pma_iters_per_level=str(pma_cfg.get('iterations_per_level', '')),
         pma_of_sigma=pma_cfg.get('of_sigma', ''),
         pma_step_ratio=pma_cfg.get('stepRatio', ''),
-        pma_use_matching_preprocess=pma_cfg.get('use_matching_preprocess', True) if pma_run else '',
+        pma_use_highpass_filter=pma_cfg.get('use_highpass_filter', False) if pma_run else '',
         pma_use_grad=pma_cfg.get('use_grad', False) if pma_run else '',
         pma_use_roi=pma_cfg.get('use_roi', False) if pma_run else '',
         pma_lb_crop_pct=pma_cfg.get('lb', '') if pma_run else '',
@@ -454,7 +454,7 @@ def migrate_csv_schema(path):
     """
     NEW_FIELDS = [
         'xca_use_roi', 'xca_lb_crop_pct',
-        'pma_use_matching_preprocess', 'pma_use_grad',
+        'pma_use_highpass_filter', 'pma_use_grad',
         'pma_use_roi', 'pma_lb_crop_pct',
     ]
 
@@ -473,7 +473,7 @@ def migrate_csv_schema(path):
         pma_run = str(row.get('pma_run', '')).strip().lower() in ('true', '1')
         row.setdefault('xca_use_roi',                'False')
         row.setdefault('xca_lb_crop_pct',            '')
-        row.setdefault('pma_use_matching_preprocess', 'True'  if pma_run else '')
+        row.setdefault('pma_use_highpass_filter', 'False' if pma_run else '')
         row.setdefault('pma_use_grad',               'False' if pma_run else '')
         row.setdefault('pma_use_roi',                'False' if pma_run else '')
         row.setdefault('pma_lb_crop_pct',            '')
@@ -541,7 +541,7 @@ def run_pipeline(projections, angles, xca_name, xca_passes, xca_roi_params,
 
     PMA:
       ROI applied if pma_cfg['use_roi'] is True (lb from pma_cfg['lb'])
-      use_matching_preprocess and use_grad taken from pma_cfg (defaults: True, False)
+      use_highpass_filter and use_grad taken from pma_cfg (defaults: False, False)
     """
     t = tomoData(projections, angles)
 
@@ -590,7 +590,7 @@ def run_pipeline(projections, angles, xca_name, xca_passes, xca_roi_params,
             shift_method=pma_cfg['shift_method'],
             of_sigma=pma_cfg['of_sigma'],
             stepRatio=pma_cfg['stepRatio'],
-            use_matching_preprocess=pma_cfg.get('use_matching_preprocess', True),
+            use_highpass_filter=pma_cfg.get('use_highpass_filter', False),
             use_grad=pma_cfg.get('use_grad', False),
             yROI_Range=pma_yROI,
             xROI_Range=pma_xROI,
@@ -667,7 +667,7 @@ def main():
     # Explicit experiment list — (config_id, xca_name, pma_name)
     EXPERIMENTS = [
         # ── original 2x search (100-114) ──────────────────────────────────────
-        # xca_use_grad=True (all), pma_use_matching_preprocess=True (all), no ROI
+        # xca_use_grad=True (all), pma_use_highpass_filter=True (all), no ROI
         (100, 'xca_4p_grad_sr08',   'pma_skip'),
         (101, 'xca_4p_grad_sr08',   'pma_3lev_sr08_sig4'),
         (102, 'xca_4p_grad_sr08',   'pma_3lev_sr08_sig3'),
@@ -790,7 +790,7 @@ def main():
         if xca_roi_params:
             print(f"  XCA ROI: lb={xca_roi_params['lb']}")
         if pma_cfg.get('run'):
-            print(f"  PMA: use_matching_preprocess={pma_cfg.get('use_matching_preprocess', True)}"
+            print(f"  PMA: use_highpass_filter={pma_cfg.get('use_highpass_filter', False)}"
                   f"  use_grad={pma_cfg.get('use_grad', False)}"
                   f"  use_roi={pma_cfg.get('use_roi', False)}")
         print("━" * 70)
@@ -840,7 +840,7 @@ def main():
             ['config_id', 'xca_name', 'xca_use_roi', 'xca_lb_crop_pct',
              'pma_name', 'pma_levels', 'pma_iters_per_level',
              'pma_of_sigma', 'pma_step_ratio',
-             'pma_use_matching_preprocess', 'pma_use_grad',
+             'pma_use_highpass_filter', 'pma_use_grad',
              'pma_use_roi', 'pma_lb_crop_pct',
              'rcs', 'align_time_s', 'recon_time_s']
         ].to_string())

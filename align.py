@@ -1,3 +1,19 @@
+"""
+Staged alignment pipeline for the Oct 2025 APS beamtime tilt series.
+
+Runs three resolution stages — 4x downsampled, 2x downsampled, then full
+resolution. The 4x stage does the heavy lifting (cross-correlation alignment at
+3 downsampling levels, centering, then projection matching); each later stage
+seeds itself with the previous stage's shifts scaled up by 2 and only refines
+them with projection matching. Working coarse-to-fine this way removes large
+misalignments cheaply before paying full-resolution cost for sub-pixel refinement.
+
+Each stage saves aligned projections, a central sinogram PNG, a reconstruction,
+its cumulative shifts, and reports RCS + FSC scores so the stages can be compared.
+
+Run with ``python align.py`` or submit via ``sbatch runGPUAlign.sh`` (needs a GPU).
+"""
+
 if __name__ == '__main__':
     import time
     import sys
@@ -73,6 +89,13 @@ if __name__ == '__main__':
     run_results = []
 
     def save_outputs(tomo, label):
+        """
+        Save one stage's results and score it.
+
+        Writes aligned projections (TIFF), a central-row sinogram (PNG), and
+        optionally a reconstruction (TIFF), then returns
+        (RCS, FSC half-bit resolution in px, reconstruction time in seconds).
+        """
         final = tomo.get_final_projections()
         if cp is not None and isinstance(final, cp.ndarray):
             final_np = cp.asnumpy(final)
