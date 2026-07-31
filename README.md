@@ -12,8 +12,10 @@
 - [Key Files](#key-files)
 - [Alignment Algorithms](#alignment-algorithms)
 - [Reconstruction Algorithms](#reconstruction-algorithms)
+- [Post-Reconstruction Filtering](#post-reconstruction-filtering)
 - [Quality Metrics](#quality-metrics)
-- [Demo Notebook](#demo-notebook)
+- [Notebooks](#notebooks)
+- [Running on the HPC Cluster](#running-on-the-hpc-cluster)
 - [Contact](#contact)
 
 ---
@@ -69,12 +71,14 @@ TomoMono/
 ├── tomoDataClass.py        # Core class — all state, alignment, and reconstruction
 ├── helperFunctions.py      # Utilities: file I/O, subpixel shift, visualization
 ├── gpu.py                  # GPU detection; exports xp (CuPy or NumPy), torch, svmbir
-├── main.py                 # Script: reconstruct from pre-aligned projections
 ├── align.py                # Script: staged 4x → 2x → 1x alignment pipeline
-├── recon_param_search.py   # Script: compare SIRT/ART/FBP/gridrec/svmbir side by side
+├── main.py                 # Script: one reconstruction from pre-aligned projections
+├── recon_param_search.py   # Script: compare SIRT/ART/FBP/gridrec/tv side by side
+├── runGPUAlign.sh          # SLURM submission for align.py
+├── runTomopyParamSearch.sh # SLURM submission for recon_param_search.py
 │
 ├── alignment/              # Alignment algorithms (import from here)
-│   ├── cross_correlate.py  #   Cross-correlation alignment
+│   ├── cross_correlate.py  #   Cross-correlation alignment (XCA)
 │   ├── pma.py              #   Projection Matching Alignment (PMA)
 │   ├── vmf.py              #   Vertical Mass Fluctuation alignment
 │   └── legacy.py           #   Optical flow, rotation correction, tomopy_align
@@ -87,19 +91,25 @@ TomoMono/
 ├── filters/
 │   └── kovacik.py          # Post-reconstruction Fourier angular filter
 │
-├── tomoMono_demo.ipynb     # Interactive demo — start here
-├── densityConversion.ipynb # Convert reconstructed volume to mass density
-├── debug_FSC_resolution.ipynb  # FSC resolution analysis
-├── lookAtRecons.ipynb      # Browse and compare reconstructions
+├── tomoMono_demo.ipynb           # Interactive demo on a phantom — start here
+├── weddingCake_roughDraft.ipynb  # Same pipeline on real measured phase data
+├── densityConversion.ipynb       # Convert a reconstructed volume to mass density
+├── notebooks/              # Reference / experimental notebooks (FSC, XRF, filters, ...)
 │
-├── data/                   # Previous datasets used
+├── data/                   # Small phantoms and angle files
 ├── alignedProjections/     # Aligned projection TIFFs (output of align.py)
 ├── reconstructions/        # Reconstructed 3D volumes (TIFFs)
+├── massDensity/            # Mass density maps (output of densityConversion.ipynb)
+├── figures/                # Plots and paper figures
+├── XRF_Data/               # XRF scans used by notebooks/projectXRFonVolume.ipynb
 ├── hyperparam_results/     # CSV results from parameter searches
 ├── logs/                   # Script run logs
 ├── sbatch_output/          # SLURM stdout/stderr
-└── Archive/                # Older scripts (GANrec, SVMBIR search, hyperparameter search)
+└── Archive/                # Retired code: GANrec, SVMBIR scripts, alignment param search
 ```
+
+Data products (`*.tif`, `data/`, `figures/`, `reconstructions/`, `alignedProjections/`, `logs/`,
+`hyperparam_results/`, `sbatch_output/`) are gitignored — only code and notebooks are tracked.
 
 ---
 
@@ -115,6 +125,8 @@ All state lives in a `tomoData` instance. The main internal buffers are:
 | `workingProjections` | Scratch copy updated by alignment methods |
 | `finalProjections` | Accumulates committed shifts; used for reconstruction |
 | `tracked_shifts` | Per-projection (y, x) shift accumulator |
+| `ang` | Projection angles, in radians |
+| `rotation_center` | Rotation-axis position found by `center_projections()` / `reconstruct()` |
 | `recon` | 3D volume after `reconstruct()` |
 
 **The two-buffer pattern**: alignment methods write shifts to `workingProjections` and accumulate them in `tracked_shifts`. Calling `make_updates_shift()` applies all accumulated shifts to `finalProjections` in a single subpixel-interpolation pass — this avoids stacking interpolation error across multiple alignment rounds. `reconstruct()` always runs on `finalProjections`.
@@ -131,6 +143,27 @@ tomo.make_updates_shift()               # commit before reconstructing
 tomo.reconstruct(algorithm='SIRT_CUDA')
 ```
 
+Useful extras on the class: `crop(new_y, new_x, anchor='center'|'bottom')`,
+`reset_workingProjections()`, `jitter()` / `add_noise()` for simulating misalignment,
+`shift_envelope` (how many edge pixels the accumulated shifts have exposed),
+`simulateProjections()` (ASTRA GPU forward projection with a tomopy fallback), and the
+`makeNotebookProjMovie()` / `makeNotebookReconMovie()` / `displayReconOrthogonalSlices()` viewers.
+
+---
+
+### [gpu.py](gpu.py) and [helperFunctions.py](helperFunctions.py) — support modules
+
+`gpu.py` probes for a working GPU once at import time and exports the backends everything else
+uses: `xp` (CuPy or NumPy), `cp`, `torch`, `svmbir`, GPU-aware drop-ins for
+`scipy.ndimage.shift` / `gaussian_filter` / `fourier_shift`, and `to_numpy()`. Other modules import
+from here rather than running their own try/except ladders, so the code runs unchanged on a laptop
+without a GPU.
+
+`helperFunctions.py` holds the shared utilities: `subpixel_shift` (Fourier-domain subpixel shift),
+`convert_to_numpy` / `convert_to_tiff` / `convert_to_2Dtiff` (TIFF I/O carrying scale metadata),
+`DualLogger` (tees stdout to a log file), `MoviePlotter` / `runwidget` (interactive viewers), and
+`degree_to_positiveRadians`.
+
 ---
 
 ### [align.py](align.py) — staged alignment pipeline
@@ -141,14 +174,16 @@ The production alignment script for real experimental data. It runs a **three-st
 2. **Stage 2 — 2× downsampled**: Seeds from the scaled-up 4× shifts, then refines with PMA.
 3. **Stage 3 — Full resolution**: Seeds from scaled-up 2× shifts, then one final PMA pass.
 
-At each stage, aligned projections and a mid-stack sinogram are saved to `alignedProjections/`, and a reconstruction is optionally saved to `reconstructions/`. Quality metrics (RCS and FSC resolution) are printed for each stage.
+At each stage, aligned projections, a mid-stack sinogram, and the cumulative shifts are saved under `alignedProjections/`, and a reconstruction is optionally saved to `reconstructions/`. Quality metrics (RCS and FSC resolution) are printed for each stage and summarized at the end so the stages can be compared.
 
 Run it directly or via the SLURM cluster:
 
 ```bash
 python align.py                 # interactive
-sbatch runGPUAlign.sh           # cluster (48h, 1 GPU, 200 GB RAM)
+sbatch runGPUAlign.sh           # cluster (6 h, 1 GPU, ~400 GB RAM)
 ```
+
+`align.py` takes no command-line arguments — the input HDF5 path, dropped angle indices, output directories, and per-stage alignment parameters are edited inside the script.
 
 ---
 
@@ -165,7 +200,25 @@ Configuration variables in the file:
 - `OUTPUT_DIR` — where to save the result
 - `ALGORITHM` — e.g. `'SIRT_CUDA'`, `'gridrec'`, `'svmbir'`
 - `NUM_ITER` — iteration count (relevant for iterative algorithms)
+- `RAW_HDF5` — raw file the acquisition angles are read from
 - `DROP_ANGLES` — list of projection indices to exclude (bad angles)
+
+---
+
+### [recon_param_search.py](recon_param_search.py) — algorithm and hyperparameter comparison
+
+Reconstructs the same pre-aligned projections many times over and scores each result, so the best settings for a dataset can be picked by number rather than by eye. Two sweeps run back to back:
+
+1. **Algorithm comparison** — `SIRT_CUDA`, `ART_CUDA`, `FBP_CUDA`, `gridrec`, `tv`.
+2. **SIRT_CUDA hyperparameters** — 100 / 200 / 400 / 600 iterations, plus a positivity-constrained run (`MinConstraint=0`).
+
+Every configuration is scored with RCS and FSC and saved as a TIFF plus an orthogonal-slice PNG. The projections can be cropped in y and to a centered width so a sweep runs on a manageable subvolume.
+
+```bash
+python recon_param_search.py --tiff-file alignedProjections/.../yourfile.tif \
+    --y-start 40 --y-end 440 --width 1200
+sbatch runTomopyParamSearch.sh  # cluster (6 h, 1 GPU, ~500 GB RAM)
+```
 
 ---
 
@@ -181,28 +234,28 @@ from metrics import fourier_shell_correlation, reprojection_consistency_score
 from filters import kovacik_filter
 ```
 
----
+Each of these is a free function whose first argument is a `tomoData` object, and each is also
+auto-attached as a method on the class. So these two calls are equivalent:
 
-### [densityConversion.ipynb](densityConversion.ipynb) — mass density analysis
-
-Takes a reconstructed volume (TIFF) and converts the voxel intensity values to physical mass density. The notebook:
-
-1. Loads a reconstruction TIFF
-2. Plots intensity histograms to identify material phases
-3. Segments the volume by region (e.g. sample vs. background)
-4. Converts intensities to mass density using calibration
-5. Saves mass density maps as `massDensity*.tif`
-
----
-
-### [recon_param_search.py](recon_param_search.py) — algorithm comparison
-
-Runs multiple reconstruction algorithms on the same aligned projections and saves orthogonal slice images side by side, so you can visually compare SIRT_CUDA vs ART_CUDA vs FBP_CUDA vs gridrec vs svmbir. Useful for choosing the best algorithm for a new dataset.
-
-```bash
-python recon_param_search.py --tiff-file alignedProjections/.../yourfile.tif
-sbatch runTomopyParamSearch.sh  # cluster (1 GPU, 500 GB RAM)
+```python
+cross_correlate_align(tomo, max_iterations=10)   # free function
+tomo.cross_correlate_align(max_iterations=10)    # attached method
 ```
+
+To add a new alignment method, metric, or filter: write it as a free function taking `tomo` first,
+export it from the subpackage's `__init__.py`, and add it to the delegate list at the bottom of
+[tomoDataClass.py](tomoDataClass.py).
+
+---
+
+### Archived scripts
+
+[Archive/](Archive/) holds code that is no longer part of the main pipeline but is kept for
+reference: `Archive/svmbir/` (SVMBIR reconstruction and parameter-search scripts),
+`Archive/ganrec/` (GANrec scripts, walkthrough notebooks, and a vendored `ganrec_pkg`),
+`Archive/hyperparameter_search.py` (XCA/PMA alignment config search), and older aligned/recon
+TIFFs. Paths and imports in these scripts predate the current package layout and need checking
+before reuse.
 
 ---
 
@@ -320,7 +373,7 @@ Other ASTRA GPU variants: `'ART_CUDA'` (algebraic, faster convergence on sparse 
 
 - Much slower than SIRT_CUDA (hours vs. minutes for full-resolution data)
 - Best for final high-quality reconstructions after alignment is done
-- Controlled via a separate `runSVMBIRrec.py` script for production runs
+- Production run scripts live in [Archive/svmbir/](Archive/svmbir/) (`runSVMBIRrec.py`, `runSVMBIRparamSearch.py`)
 
 ```python
 tomo.reconstruct(algorithm='svmbir')
@@ -358,6 +411,28 @@ tomo.reconstruct(algorithm='gridrec')
 | No GPU, quick check | `gridrec` or `fbp` |
 | Sparse angles or high noise | `svmbir` or `tv` |
 | Inside PMA alignment loop | `SIRT_CUDA` (fast iterations matter) |
+
+Note that `GRIDREC_CUDA` and `TV_CUDA` do not exist — ASTRA and TomoPy provide gridrec and TV on
+the CPU only.
+
+---
+
+## Post-Reconstruction Filtering
+
+### Kovacik filter (`kovacik_filter`)
+
+A soft Fourier angular filter (Kovacik et al. 2014, *J. Struct. Biol.* **186**, 141-152) that
+suppresses missing-wedge ray artifacts. It smooths the sharp Fourier-space transition between the
+sampled region and the missing wedge — Butterworth ramps adjacent to the highest-tilt projection
+boundaries, combined with a central stripe that protects low spatial frequencies from attenuation.
+
+It edits `tomo.recon` in place, caching the unfiltered volume as `tomo._recon_pre_kovacik` so it
+can be re-run with different parameters without reconstructing again.
+
+```python
+tomo.reconstruct(algorithm='SIRT_CUDA')
+tomo.kovacik_filter(plot=True)     # tilt_max defaults to the largest angle in tomo.ang
+```
 
 ---
 
@@ -420,9 +495,37 @@ tomo.sinogram_consistency_score(plot=True)
 
 ---
 
-## Demo Notebook
+## Notebooks
 
-**[tomoMono_demo.ipynb](tomoMono_demo.ipynb)** is the best place to start. It walks through the entire pipeline on a simulated Shepp-Logan phantom so you can see every step without needing experimental data:
+Three notebooks at the root are the active workflows; everything in [notebooks/](notebooks/) is
+reference or experimental material kept for future use.
+
+| Notebook | Purpose |
+|---|---|
+| [tomoMono_demo.ipynb](tomoMono_demo.ipynb) | End-to-end pipeline on a simulated phantom — **start here** |
+| [weddingCake_roughDraft.ipynb](weddingCake_roughDraft.ipynb) | The same sequence run on real measured phase projections (TPP foam "wedding cake" sample) |
+| [densityConversion.ipynb](densityConversion.ipynb) | Scale a reconstruction and convert voxel intensity to physical mass density |
+
+Notable notebooks in [notebooks/](notebooks/): `debug_FSC_resolution.ipynb` (FSC resolution
+analysis), `lookAtRecons.ipynb` (browse and compare reconstructions), `featureSizeFFT.ipynb`
+(feature size from the 3D radial power spectrum), `projectXRFonVolume.ipynb` (project XRF maps
+onto aligned projections), `recon_algorithm_comparison.ipynb`, and `test_notebook_phanton.ipynb`
+(alignment method comparison on a phantom). They import the root package via a `sys.path` preamble,
+so they run from inside the `notebooks/` directory.
+
+### [densityConversion.ipynb](densityConversion.ipynb) — mass density analysis
+
+Takes a reconstructed volume (TIFF) and converts the voxel intensity values to physical mass density:
+
+1. Loads a reconstruction TIFF and computes its scale information
+2. Plots intensity histograms to identify material phases
+3. Segments the volume by region (whole volume, thresholded sample, interior prism)
+4. Converts intensities to mass density using the phase-shift calibration
+5. Saves mass density maps to `massDensity/` and histogram figures to `figures/`
+
+### [tomoMono_demo.ipynb](tomoMono_demo.ipynb) — the walkthrough
+
+It walks through the entire pipeline on a simulated Shepp-Logan phantom so you can see every step without needing experimental data:
 
 1. **Generate a phantom** — uses TomoPy to create a 3D phantom and simulate projections at many angles
 2. **Add jitter and noise** — simulates realistic projection misalignment and detector noise
@@ -441,12 +544,17 @@ Each cell prints metrics (shift magnitudes, reprojection consistency score) so y
 
 This project runs on the BYU HPC cluster (SLURM). The `tomoMono` conda environment is pre-installed at `/home/ljh79/.conda/envs/tomoMono/`.
 
-| Task | Command |
-|---|---|
-| Staged alignment (GPU) | `sbatch runGPUAlign.sh` |
-| TomoPy algorithm search | `sbatch runTomopyParamSearch.sh` |
+| Task | Command | Resources requested |
+|---|---|---|
+| Staged alignment (GPU) | `sbatch runGPUAlign.sh` | 6 h, 1 GPU, 4 CPUs × 100 GB |
+| Algorithm / hyperparameter search | `sbatch runTomopyParamSearch.sh` | 6 h, 1 GPU, 4 CPUs × 125 GB |
 
-Logs go to `logs/`, SLURM stdout/stderr goes to `sbatch_output/`.
+Full-resolution Oct 2025 data needs roughly 160 GB in memory, which is why the requests are so
+large; a 4× downsampled run fits in about 12 GB per CPU.
+
+Logs go to `logs/`, SLURM stdout/stderr goes to `sbatch_output/<jobname>/` — create that
+subdirectory before submitting if it does not exist. Compute directories on the cluster are not
+backed up; only home directories are.
 
 ---
 
