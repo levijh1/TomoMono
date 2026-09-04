@@ -17,9 +17,16 @@ import numpy as np
 
 from scipy.ndimage import gaussian_filter1d, gaussian_filter
 import tomopy
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 
 from gpu import torch, svmbir
+
+# Arial for all figure text; falls back to a metrically-compatible substitute
+# (Liberation Sans) or matplotlib's default (DejaVu Sans) if Arial isn't
+# installed on the system, so findfont doesn't warn.
+_FONT_RC = {'font.family': 'sans-serif',
+            'font.sans-serif': ['Arial', 'Liberation Sans', 'DejaVu Sans']}
 
 
 def _background_level(vol, method='median'):
@@ -378,20 +385,21 @@ def _show_mask_slices(before_slices, r1_masked, shape):
     all_before = np.concatenate([s.ravel() for s in before_slices])
     vmin, vmax = float(np.percentile(all_before, 2)), float(np.percentile(all_before, 98))
 
-    fig, axes = plt.subplots(2, 3, figsize=(13, 8))
-    for col, (sl, name) in enumerate(zip(before_slices, slice_names)):
-        axes[0, col].imshow(sl, cmap='gray', vmin=vmin, vmax=vmax, origin='lower')
-        axes[0, col].set_title(name, fontsize=10)
-        axes[0, col].axis('off')
-    for col, sl in enumerate(after_slices):
-        axes[1, col].imshow(sl, cmap='gray', vmin=vmin, vmax=vmax, origin='lower')
-        axes[1, col].axis('off')
+    with mpl.rc_context(_FONT_RC):
+        fig, axes = plt.subplots(2, 3, figsize=(13, 8))
+        for col, (sl, name) in enumerate(zip(before_slices, slice_names)):
+            axes[0, col].imshow(sl, cmap='gray', vmin=vmin, vmax=vmax, origin='lower')
+            axes[0, col].set_title(name, fontsize=10)
+            axes[0, col].axis('off')
+        for col, sl in enumerate(after_slices):
+            axes[1, col].imshow(sl, cmap='gray', vmin=vmin, vmax=vmax, origin='lower')
+            axes[1, col].axis('off')
 
-    fig.text(0.02, 0.73, 'Before mask', va='center', rotation='vertical', fontsize=11)
-    fig.text(0.02, 0.27, 'After mask',  va='center', rotation='vertical', fontsize=11)
-    fig.suptitle('Soft Circular Mask — Orthogonal Slices (half-map 1)', fontsize=12)
-    plt.tight_layout(rect=[0.04, 0, 1, 1])
-    plt.show()
+        fig.text(0.02, 0.73, 'Before mask', va='center', rotation='vertical', fontsize=11)
+        fig.text(0.02, 0.27, 'After mask',  va='center', rotation='vertical', fontsize=11)
+        fig.suptitle('Soft Circular Mask — Orthogonal Slices (half-map 1)', fontsize=12)
+        plt.tight_layout(rect=[0.04, 0, 1, 1])
+        plt.show()
 
 
 def _square_crop_xy(vol):
@@ -674,61 +682,62 @@ def _fsc_plot(fsc_raw, fsc_smooth, freqs, three_sigma, half_bit, resolutions,
     }
     thresh_val, thresh_label = _thresh_options.get(threshold, _thresh_options['half-bit'])
 
-    fig, ax = plt.subplots(figsize=(8, 5))
-    shell_freqs = freqs[1:]
-    smoothed = not np.array_equal(fsc_raw, fsc_smooth)
+    with mpl.rc_context(_FONT_RC):
+        fig, ax = plt.subplots(figsize=(7, 4))
+        shell_freqs = freqs[1:]
+        smoothed = not np.array_equal(fsc_raw, fsc_smooth)
 
-    ax.plot(shell_freqs, fsc_raw[1:], color='blue', linewidth=1.5, label='FSC')
-    if smoothed:
-        ax.plot(shell_freqs, fsc_smooth[1:], color='red', linewidth=2.0,
-                label='Smoothed FSC')
+        ax.plot(shell_freqs, fsc_raw[1:], color='blue', linewidth=1.5, label='FSC')
+        if smoothed:
+            ax.plot(shell_freqs, fsc_smooth[1:], color='red', linewidth=2.0,
+                    label='Smoothed FSC')
 
-    if isinstance(thresh_val, np.ndarray):
-        ax.plot(shell_freqs, thresh_val[1:], color='black', linewidth=1.2,
-                linestyle='--', label=thresh_label)
-    else:
-        ax.axhline(thresh_val, color='black', linewidth=1.2, linestyle='--',
-                   label=thresh_label)
+        if isinstance(thresh_val, np.ndarray):
+            ax.plot(shell_freqs, thresh_val[1:], color='black', linewidth=1.2,
+                    linestyle='--', label=thresh_label)
+        else:
+            ax.axhline(thresh_val, color='black', linewidth=1.2, linestyle='--',
+                       label=thresh_label)
 
-    res = resolutions.get(threshold)
-    if res is not None and res > 0:
-        freq_cross = 1.0 / res
-        if freq_cross <= freqs[-1]:
-            ax.axvline(freq_cross, color='green', linewidth=1.2, linestyle=':',
-                       label=f'{freq_cross:.3f} pixel⁻¹')
-            if pixel_size_nm is not None:
-                res_text = f'Resolution: {res * pixel_size_nm:.0f} nm'
-            else:
-                res_text = f'Resolution: {res:.1f} px'
-            # Anchor the label just to the right of the crossing line (x in data
-            # coords, y in axes fraction) so the dotted green line never runs
-            # through the text.
-            ax.text(freq_cross + 0.012 * freqs[-1], 0.45, res_text,
-                    transform=ax.get_xaxis_transform(), fontsize=11, ha='left')
+        res = resolutions.get(threshold)
+        if res is not None and res > 0:
+            freq_cross = 1.0 / res
+            if freq_cross <= freqs[-1]:
+                ax.axvline(freq_cross, color='green', linewidth=1.2, linestyle=':',
+                           label=f'{freq_cross:.3f} pixel⁻¹')
+                if pixel_size_nm is not None:
+                    res_text = f'Resolution: {res * pixel_size_nm:.0f} nm'
+                else:
+                    res_text = f'Resolution: {res:.1f} px'
+                # Anchor the label just to the right of the crossing line (x in data
+                # coords, y in axes fraction) so the dotted green line never runs
+                # through the text.
+                ax.text(freq_cross + 0.012 * freqs[-1], 0.45, res_text,
+                        transform=ax.get_xaxis_transform(), fontsize=11, ha='left')
 
-    # Start the x-axis just below zero (matching the reference figure) so the
-    # curve doesn't sit flush against the left spine.
-    ax.set_xlim(-0.02 * freqs[-1], freqs[-1])
-    ax.set_ylim(0.0, 1.05)
-    ax.set_xlabel('Spatial frequency (pixel⁻¹)', fontsize=11)
-    ax.set_ylabel('Correlation', fontsize=11)
-    ax.legend(fontsize=9, loc='upper right')
+        # Start the x-axis just below zero (matching the reference figure) so the
+        # curve doesn't sit flush against the left spine.
+        ax.set_xlim(-0.02 * freqs[-1], freqs[-1])
+        ax.set_ylim(0.0, 1.05)
+        ax.set_xlabel('Spatial frequency (pixel⁻¹)', fontsize=11)
+        ax.set_ylabel('Correlation', fontsize=11)
+        ax.legend(fontsize=9, loc='upper right')
 
-    ax_top = ax.twiny()
-    ax_top.set_xlim(ax.get_xlim())
-    if pixel_size_nm is not None:
-        ax_top.set_xlabel('Resolution (nm)', fontsize=11)
-        cands_nm = np.array([500, 300, 200, 150, 100, 75, 60, 50, 40, 30])
-        cand_freqs = pixel_size_nm / cands_nm
-        ok = (cand_freqs > freqs[1]) & (cand_freqs <= freqs[-1])
-        ax_top.set_xticks(cand_freqs[ok])
-        ax_top.set_xticklabels([str(n) for n in cands_nm[ok]], fontsize=9)
-    else:
-        ax_top.set_xlabel('Resolution (pixels)', fontsize=11)
-        cand_freqs = np.array([0.05, 0.1, 0.2, 0.25, 0.33, 0.5])
-        ok = cand_freqs <= freqs[-1]
-        ax_top.set_xticks(cand_freqs[ok])
-        ax_top.set_xticklabels([f'{1/f:.0f}' for f in cand_freqs[ok]], fontsize=9)
+        ax_top = ax.twiny()
+        ax_top.set_xlim(ax.get_xlim())
+        if pixel_size_nm is not None:
+            ax_top.set_xlabel('Resolution (nm)', fontsize=11)
+            cands_nm = np.array([500, 300, 200, 150, 100, 75, 60, 50, 40, 30])
+            cand_freqs = pixel_size_nm / cands_nm
+            ok = (cand_freqs > freqs[1]) & (cand_freqs <= freqs[-1])
+            ax_top.set_xticks(cand_freqs[ok])
+            ax_top.set_xticklabels([str(n) for n in cands_nm[ok]], fontsize=9)
+        else:
+            ax_top.set_xlabel('Resolution (pixels)', fontsize=11)
+            cand_freqs = np.array([0.05, 0.1, 0.2, 0.25, 0.33, 0.5])
+            ok = cand_freqs <= freqs[-1]
+            ax_top.set_xticks(cand_freqs[ok])
+            ax_top.set_xticklabels([f'{1/f:.0f}' for f in cand_freqs[ok]], fontsize=9)
 
-    plt.tight_layout()
-    plt.show()
+        plt.tight_layout()
+        plt.show()

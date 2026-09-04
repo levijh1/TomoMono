@@ -460,28 +460,31 @@ class tomoData:
         Displays the three central orthogonal slices (XY, XZ, YZ) through the
         reconstruction — a quick check of overall reconstruction quality.
         """
+        import matplotlib as mpl
         import matplotlib.pyplot as plt
         recon = self.recon
         nz, ny, nx = recon.shape
         cx, cy, cz = nx // 2, ny // 2, nz // 2
 
-        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+        with mpl.rc_context({'font.family': 'sans-serif',
+                             'font.sans-serif': ['Liberation Sans', 'DejaVu Sans']}):
+            fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 
-        axes[0].imshow(recon[cz, :, :], cmap='gray', aspect='equal')
-        axes[0].set_title(f'XY  (z={cz})')
+            axes[0].imshow(recon[cz, :, :], cmap='gray', aspect='equal')
+            axes[0].set_title(f'XY  (z={cz})')
 
-        axes[1].imshow(recon[:, cy, :], cmap='gray', aspect='auto')
-        axes[1].set_title(f'XZ  (y={cy})')
+            axes[1].imshow(recon[:, cy, :], cmap='gray', aspect='auto')
+            axes[1].set_title(f'XZ  (y={cy})')
 
-        axes[2].imshow(recon[:, :, cx], cmap='gray', aspect='auto')
-        axes[2].set_title(f'YZ  (x={cx})')
+            axes[2].imshow(recon[:, :, cx], cmap='gray', aspect='auto')
+            axes[2].set_title(f'YZ  (x={cx})')
 
-        for ax in axes:
-            ax.axis('off')
+            for ax in axes:
+                ax.axis('off')
 
-        plt.suptitle('Orthogonal slices through reconstruction')
-        plt.tight_layout()
-        plt.show()
+            plt.suptitle('Orthogonal slices through reconstruction')
+            plt.tight_layout()
+            plt.show()
     
     def displayWorkingSinogram(self, row_index=None):
         """
