@@ -10,7 +10,8 @@ auto-attached as methods on the class (see ``_attach_delegate``), so
 are equivalent.
 
 Also provides ``simulate_projections`` — forward projection of a volume via
-ASTRA on the GPU, falling back to tomopy on the CPU.
+tomopy on the CPU by default (deterministic regardless of GPU availability),
+or via ASTRA on the GPU when explicitly requested with ``use_astra=True``.
 """
 
 import tomopy
@@ -51,7 +52,7 @@ def _correct_svmbir_geometry(recon):
     return recon
 
 
-def simulate_projections(recon, angles, center=None, emission=True, pad=False, ncore=None, use_astra=None):
+def simulate_projections(recon, angles, center=None, emission=True, pad=False, ncore=None, use_astra=False):
     """
     Simulate projections through a 3D volume at the given angles.
 
@@ -63,14 +64,15 @@ def simulate_projections(recon, angles, center=None, emission=True, pad=False, n
     emission : bool
     pad : bool
     ncore : int or None
-    use_astra : bool or None — if True, require ASTRA; if False, use tomopy only; if None (default), try ASTRA first, fall back to tomopy
+    use_astra : bool — if True, require ASTRA; if False (default), use tomopy only.
+        ASTRA and tomopy use different angle-origin/rotation-direction/center
+        conventions, so switching backends changes reprojection results even for
+        the same angle array. Default is tomopy-only so results are identical
+        whether or not a CUDA GPU is present; opt into ASTRA explicitly only
+        after converting angles to its convention and validating a reprojection
+        against a measured projection.
     """
-    # Auto-disable ASTRA when there's no working GPU — ASTRA prints alarming
-    # stderr messages before raising, even though the fallback path works.
-    if use_astra is None and torch is None:
-        use_astra = False
-    # Try ASTRA if not explicitly disabled
-    if use_astra is not False:
+    if use_astra:
         vol_id = proj_id = alg_id = None
         try:
             import astra
@@ -90,7 +92,7 @@ def simulate_projections(recon, angles, center=None, emission=True, pad=False, n
             astra.data3d.delete(vol_id)
             # ASTRA parallel3d output: (nz, n_angles, nx) → tomopy order: (n_angles, nz, nx)
             return np.transpose(proj_data, (1, 0, 2))
-        except Exception as e:
+        except Exception:
             # Free any ASTRA GPU objects that were created before the failure
             try:
                 if alg_id is not None:
@@ -101,9 +103,7 @@ def simulate_projections(recon, angles, center=None, emission=True, pad=False, n
                     astra.data3d.delete(vol_id)
             except Exception:
                 pass
-            if use_astra is True:
-                raise
-            print(f"ASTRA forward projection failed ({e}), falling back to tomopy.project")
+            raise
     kwargs = {'emission': emission, 'pad': pad, 'ncore': ncore}
     if center is not None:
         kwargs['center'] = center
@@ -590,7 +590,7 @@ class tomoData:
         self._recon_pre_kovacik = None  # reset so kovacik_filter uses the new recon
         print("Reconstruction completed.")
 
-    def simulateProjections(self, recon=None, angles=None, center=None, emission=True, pad=False, ncore=None, use_astra=None):
+    def simulateProjections(self, recon=None, angles=None, center=None, emission=True, pad=False, ncore=None, use_astra=False):
         """
         Simulate projections through the reconstruction at the angles stored in this object.
 
@@ -602,7 +602,8 @@ class tomoData:
         emission : bool
         pad : bool
         ncore : int or None
-        use_astra : bool or None — if True, require ASTRA; if False, use tomopy only; if None (default), try ASTRA first, fall back to tomopy
+        use_astra : bool — if True, require ASTRA; if False (default), use tomopy only.
+            See ``simulate_projections`` for why this defaults to tomopy.
         """
         if recon is None:
             if not hasattr(self, 'recon') or self.recon is None:
